@@ -18,6 +18,9 @@ import java.util.function.IntToDoubleFunction;
  * extraction over several roots sharing a DAG uses {@code nodeCost} alone, since a shared node
  * is paid once there and only an additive cost can be summed over a set.
  *
+ * <p>Every cost must be finite and non-negative: a negative one lets a cycle of nodes get
+ * cheaper forever, and the extractor refuses either with an {@link IllegalArgumentException}.
+ *
  * @param <L> the language
  */
 @FunctionalInterface

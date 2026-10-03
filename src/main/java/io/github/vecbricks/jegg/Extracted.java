@@ -9,7 +9,10 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * An extracted term: the node chosen for a class over the terms chosen for its children. A
@@ -24,18 +27,43 @@ public record Extracted<L extends Language<L>>(int eclass, L node, List<Extracte
     children = List.copyOf(children);
   }
 
-  /** The term as a client's tree, through {@code bridge}, bottom-up. */
+  /**
+   * The term as a client's tree, through {@code bridge}, bottom-up; a subterm object reached
+   * twice is built once, and the client's tree shares it.
+   */
   public <T> T toTree(TreeBridge<T, L> bridge) {
-    List<T> kids = children.stream().map(c -> c.toTree(bridge)).toList();
-    return bridge.build(node, kids);
+    return toTree(bridge, new IdentityHashMap<>());
+  }
+
+  private <T> T toTree(TreeBridge<T, L> bridge, Map<Extracted<L>, T> built) {
+    T done = built.get(this);
+    if (done != null) {
+      return done;
+    }
+    List<T> kids = new ArrayList<>(children.size());
+    for (Extracted<L> c : children) {
+      kids.add(c.toTree(bridge, built));
+    }
+    T tree = bridge.build(node, kids);
+    built.put(this, tree);
+    return tree;
   }
 
   /** How many nodes the term has as a tree, shared subterms counted each time. */
-  public int treeSize() {
-    int n = 1;
-    for (Extracted<L> c : children) {
-      n += c.treeSize();
+  public long treeSize() {
+    return treeSize(new IdentityHashMap<>());
+  }
+
+  private long treeSize(Map<Extracted<L>, Long> counted) {
+    Long done = counted.get(this);
+    if (done != null) {
+      return done;
     }
+    long n = 1;
+    for (Extracted<L> c : children) {
+      n += c.treeSize(counted);
+    }
+    counted.put(this, n);
     return n;
   }
 

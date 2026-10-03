@@ -61,7 +61,7 @@ public final class Selection<L extends Language<L>> {
 
   /** The lowest class the selection covers. */
   Integer firstClass() {
-    return chosen.firstKey();
+    return chosen.isEmpty() ? null : chosen.firstKey();
   }
 
   /** The next class the selection covers after {@code eclass}, or null. */

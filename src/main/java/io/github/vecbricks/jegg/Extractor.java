@@ -9,6 +9,7 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
@@ -38,19 +39,36 @@ public final class Extractor<L extends Language<L>, D> {
   private final EGraph<L, D> graph;
   private final CostFunction<L> costs;
   private final Map<Integer, Best<L>> best = new HashMap<>();
+  // The graph's size when priced: a changed size means the prices are stale.
+  private final int nodes;
+  private final int classes;
 
-  /** Prices every class of the graph; the graph must be rebuilt. */
+  /**
+   * Prices every class of the graph, which must be rebuilt. The extractor is a snapshot of the
+   * graph as it is now: after the graph changes, build a new one. A call that sees the graph's
+   * size changed refuses with an {@link IllegalStateException}; a change that keeps the size
+   * goes unseen.
+   */
   public Extractor(EGraph<L, D> graph, CostFunction<L> costs) {
     if (graph.isDirty()) {
       throw new IllegalStateException("rebuild the graph before extracting from it");
     }
     this.graph = graph;
     this.costs = costs;
+    this.nodes = graph.numNodes();
+    this.classes = graph.numClasses();
     findCosts();
+  }
+
+  private void checkUnchanged() {
+    if (graph.isDirty() || graph.numNodes() != nodes || graph.numClasses() != classes) {
+      throw new IllegalStateException("the graph changed since this extractor priced it");
+    }
   }
 
   /** The best node of a class and its tree cost; every class reachable from leaves has one. */
   public Best<L> best(int eclass) {
+    checkUnchanged();
     Best<L> b = best.get(graph.find(eclass));
     if (b == null) {
       throw new IllegalStateException("class " + eclass + " has no finite-cost term");
@@ -58,12 +76,29 @@ public final class Extractor<L extends Language<L>, D> {
     return b;
   }
 
-  /** The cheapest term in the class, as a tree. */
+  /**
+   * The cheapest term in the class, as a tree. A class the tree reaches more than once is one
+   * object, so a tree exponentially larger than the graph is built in time linear in it.
+   */
   public Extracted<L> extract(int eclass) {
-    int root = graph.find(eclass);
+    checkUnchanged();
+    return extract(graph.find(eclass), new HashMap<>());
+  }
+
+  private Extracted<L> extract(int root, Map<Integer, Extracted<L>> built) {
+    Extracted<L> done = built.get(root);
+    if (done != null) {
+      return done;
+    }
     L node = best(root).node();
-    List<Extracted<L>> kids = node.children().stream().mapToObj(this::extract).toList();
-    return new Extracted<>(root, node, kids);
+    List<Extracted<L>> kids = new ArrayList<>();
+    IntList children = node.children();
+    for (int i = 0; i < children.size(); i++) {
+      kids.add(extract(graph.find(children.get(i)), built));
+    }
+    Extracted<L> term = new Extracted<>(root, node, kids);
+    built.put(root, term);
+    return term;
   }
 
   // The fixed point of egg's find_costs: a class's cost is the cheapest of its nodes' costs
@@ -90,13 +125,25 @@ public final class Extractor<L extends Language<L>, D> {
   }
 
   private double costIfKnown(L node) {
-    IntList children = node.children();
-    for (int i = 0; i < children.size(); i++) {
-      if (!best.containsKey(graph.find(children.get(i)))) {
-        return Double.NaN;
-      }
+    if (!priced(node)) {
+      return Double.NaN;
     }
-    return costs.cost(node, id -> best.get(graph.find(id)).cost());
+    // The node's own price is checked too: a negative one can hide in a non-negative tree.
+    nodeCost(node);
+    return checked(node, costs.cost(node, id -> best.get(graph.find(id)).cost()));
+  }
+
+  /** The node's own cost, checked. */
+  private double nodeCost(L node) {
+    return checked(node, costs.nodeCost(node));
+  }
+
+  private static double checked(Object node, double cost) {
+    if (!(cost >= 0.0) || cost == Double.POSITIVE_INFINITY) {
+      throw new IllegalArgumentException("the cost function priced " + node + " at " + cost
+          + "; costs must be finite and non-negative");
+    }
+    return cost;
   }
 
   /** {@link #extractAll(IntList, ToDoubleFunction)} minimising the selection's summed cost. */
@@ -119,8 +166,13 @@ public final class Extractor<L extends Language<L>, D> {
    * the other roots take it too. It repeats until a pass keeps nothing. Deterministic (class
    * order, node order, strict improvement) and bounded, as every kept change lowers the score;
    * the exact problem is the ILP the plan leaves out.
+   *
+   * <p>The selection's cost sums {@link CostFunction#nodeCost}; an overridden
+   * {@link CostFunction#cost}, such as {@link CostFunction#astDepth}'s, is a tree's cost and is
+   * not used here. A cost that is not a sum over nodes belongs in {@code score}.
    */
   public Selection<L> extractAll(IntList roots, ToDoubleFunction<Selection<L>> score) {
+    checkUnchanged();
     IntList canonical = roots.map(graph::find);
     for (int i = 0; i < canonical.size(); i++) {
       if (!best.containsKey(canonical.get(i))) {
@@ -131,7 +183,8 @@ public final class Extractor<L extends Language<L>, D> {
     Selection<L> start = select(canonical, assigned);
     if (start == null) {
       // The greedy choices, each made against its children's choices at the time, can close
-      // a cycle once a child changes; the tree choice cannot, so it is the start instead.
+      // a cycle once a child changes; the tree choice, with costs non-negative, cannot, so it
+      // is the start instead.
       assigned = new HashMap<>();
       for (Map.Entry<Integer, Best<L>> e : best.entrySet()) {
         assigned.put(e.getKey(), e.getValue().node());
@@ -218,7 +271,7 @@ public final class Extractor<L extends Language<L>, D> {
     }
     double total = 0.0;
     for (L node : chosen.values()) {
-      total += costs.nodeCost(node);
+      total += nodeCost(node);
     }
     return new Selection<>(chosen, roots, total);
   }
@@ -255,7 +308,7 @@ public final class Extractor<L extends Language<L>, D> {
         Choice<L> current = choice.get(eclass.id());
         for (L node : eclass.nodes()) {
           Choice<L> candidate = dagChoice(eclass.id(), node, choice);
-          if (candidate != null && (current == null || candidate.cost < current.cost)) {
+          if (candidate != null && (current == null || candidate.cost() < current.cost())) {
             current = candidate;
             changed = true;
           }
@@ -266,21 +319,12 @@ public final class Extractor<L extends Language<L>, D> {
       }
     }
     Map<Integer, L> assigned = new HashMap<>();
-    choice.forEach((id, c) -> assigned.put(id, c.node));
+    choice.forEach((id, c) -> assigned.put(id, c.node()));
     return assigned;
   }
 
   /** A class's DAG choice: the node, the classes its DAG covers, and their nodes' costs summed. */
-  private static final class Choice<L extends Language<L>> {
-    final L node;
-    final BitSet classes;
-    final double cost;
-
-    Choice(L node, BitSet classes, double cost) {
-      this.node = node;
-      this.classes = classes;
-      this.cost = cost;
-    }
+  private record Choice<L extends Language<L>>(L node, BitSet classes, double cost) {
   }
 
   private Choice<L> dagChoice(int id, L node, Map<Integer, Choice<L>> choice) {
@@ -289,14 +333,15 @@ public final class Extractor<L extends Language<L>, D> {
     IntList children = node.children();
     for (int i = 0; i < children.size(); i++) {
       Choice<L> child = choice.get(graph.find(children.get(i)));
-      if (child == null) {
+      if (child == null || child.classes().get(id)) {
+        // Not priced yet, or a DAG through this class itself: a cycle, never a term.
         return null;
       }
-      classes.or(child.classes);
+      classes.or(child.classes());
     }
     double total = 0.0;
     for (int c = classes.nextSetBit(0); c >= 0; c = classes.nextSetBit(c + 1)) {
-      total += costs.nodeCost(c == id ? node : choice.get(c).node);
+      total += nodeCost(c == id ? node : choice.get(c).node());
     }
     return new Choice<>(node, classes, total);
   }

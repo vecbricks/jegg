@@ -10,6 +10,8 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -185,5 +187,71 @@ class ExtractorTest {
     assertEquals(new Toy.Add(IntList.of(x, y)), byCost.node(g.find(s)));
     assertEquals(new Toy.Mul(IntList.of(x, y)), byScore.node(g.find(s)));
     assertEquals(15.0, byScore.cost(), 1e-9, "the selection's cost stays the summed node cost");
+  }
+
+  @Test
+  void noRootsSelectNothing() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    g.add(new Toy.Var("x"));
+    Selection<Toy> none = new Extractor<>(g, CostFunction.<Toy>astSize()).extractAll(IntList.EMPTY);
+    assertEquals(0, none.size());
+    assertEquals(0.0, none.cost());
+    assertEquals(List.of(), none.terms());
+  }
+
+  @Test
+  void aTreeThatRepeatsAClassIsBuiltOncePerClass() {
+    // s_i = s_(i-1) * s_(i-1), forty deep: a tree of 2^41 - 1 nodes over 41 classes.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int s = g.add(new Toy.Var("x"));
+    for (int i = 0; i < 40; i++) {
+      s = g.add(new Toy.Mul(IntList.of(s, s)));
+    }
+    Extracted<Toy> term = new Extractor<>(g, CostFunction.<Toy>astSize()).extract(s);
+    assertSame(term.children().get(0), term.children().get(1));
+    assertEquals((1L << 41) - 1, term.treeSize());
+    Toy.Tree tree = term.toTree(Toy.BRIDGE);
+    assertSame(tree.kids().get(0), tree.kids().get(1));
+  }
+
+  @Test
+  void aNodeThroughItsOwnClassIsNeverChosen() {
+    // x's class also holds x + 0, free under this table: a DAG through the class itself, which
+    // the greedy start must not take, as no term ends there.
+    CostFunction<Toy> table = node -> switch (node) {
+      case Toy.Var v -> 1.0;
+      default -> 0.0;
+    };
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int x = g.add(new Toy.Var("x"));
+    int zero = g.add(new Toy.Num(0));
+    g.merge(x, g.add(new Toy.Add(IntList.of(x, zero))));
+    int root = g.add(new Toy.Mul(IntList.of(x, zero)));
+    g.rebuild();
+    Selection<Toy> sel = new Extractor<>(g, table).extractAll(IntList.of(root));
+    assertEquals(new Toy.Var("x"), sel.node(g.find(x)));
+    assertEquals(1.0, sel.cost());
+  }
+
+  @Test
+  void aNegativeOrNotANumberCostIsRefused() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int x = g.add(new Toy.Var("x"));
+    g.merge(x, g.add(new Toy.Add(IntList.of(x, x))));
+    g.rebuild();
+    assertThrows(IllegalArgumentException.class,
+        () -> new Extractor<>(g, node -> node instanceof Toy.Add ? -1.0 : 1.0));
+    assertThrows(IllegalArgumentException.class,
+        () -> new Extractor<>(g, node -> Double.NaN));
+  }
+
+  @Test
+  void anExtractorRefusesAGraphThatChangedSinceItPricedIt() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int x = g.add(new Toy.Var("x"));
+    Extractor<Toy, Void> ex = new Extractor<>(g, CostFunction.astSize());
+    g.add(new Toy.Var("y"));
+    assertThrows(IllegalStateException.class, () -> ex.extract(x));
+    assertThrows(IllegalStateException.class, () -> ex.extractAll(IntList.of(x)));
   }
 }
