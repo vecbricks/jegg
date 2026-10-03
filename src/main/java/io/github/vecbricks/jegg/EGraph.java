@@ -29,7 +29,10 @@ import java.util.OptionalInt;
  * empty. Keeping the repair out of {@code merge} is the paper's whole point (its section 3): a
  * batch of merges is repaired once, and a class merged many times is repaired once. Between a
  * merge and the next rebuild the graph is not congruent, and {@link #lookup} may miss a node
- * whose children were merged.
+ * whose children were merged. The {@link Analysis}'s facts are kept in the same rebuild: a
+ * class's fact is made when its first node is added, joined when classes merge, re-made for
+ * parents whose children's facts grew, and the analysis's modify hook runs on every class whose
+ * fact changed (paper section 4.1).
  *
  * <p><b>Order is fixed.</b> Ids are assigned by insertion order and a class's nodes and parents
  * are kept in insertion order, so everything the graph exposes is a function of the sequence of
@@ -47,6 +50,11 @@ public final class EGraph<L extends Language<L>, D> {
   private final List<EClass<L, D>> classes = new ArrayList<>();
   // Roots of classes a merge touched since the last rebuild; repaired in id order.
   private final List<Integer> worklist = new ArrayList<>();
+  // Parent entries whose class's fact may have grown because a child's fact did (paper
+  // section 4.1, egg's analysis_pending): each is re-made and joined into its class's fact.
+  private final List<EClass.Parent<L>> analysisPending = new ArrayList<>();
+  // Roots whose fact changed in a merge, owed a call of the analysis's modify hook.
+  private final List<Integer> modifyPending = new ArrayList<>();
 
   public EGraph(Analysis<L, D> analysis) {
     this.analysis = Objects.requireNonNull(analysis, "analysis");
@@ -172,7 +180,7 @@ public final class EGraph<L extends Language<L>, D> {
 
   /** Whether a merge since the last {@link #rebuild} has left work to do. */
   public boolean isDirty() {
-    return !worklist.isEmpty();
+    return !worklist.isEmpty() || !analysisPending.isEmpty() || !modifyPending.isEmpty();
   }
 
   /**
@@ -191,11 +199,21 @@ public final class EGraph<L extends Language<L>, D> {
     int other = root == ra ? rb : ra;
     EClass<L, D> kept = classes.get(root);
     EClass<L, D> gone = classes.get(other);
+    // The joined fact: where it grew past what a side had, that side's parents are re-made,
+    // since their facts were made from the smaller one (paper Figure 9).
+    D joined = analysis.join(kept.data(), gone.data());
+    if (!Objects.equals(joined, kept.data())) {
+      analysisPending.addAll(kept.mutableParents());
+    }
+    if (!Objects.equals(joined, gone.data())) {
+      analysisPending.addAll(gone.mutableParents());
+    }
     kept.mutableNodes().addAll(gone.mutableNodes());
     kept.mutableParents().addAll(gone.mutableParents());
-    kept.setData(analysis.join(kept.data(), gone.data()));
+    kept.setData(joined);
     classes.set(other, null);
     worklist.add(root);
+    modifyPending.add(root);
     return root;
   }
 
@@ -207,17 +225,50 @@ public final class EGraph<L extends Language<L>, D> {
    */
   public int rebuild() {
     int repaired = 0;
-    while (!worklist.isEmpty()) {
-      int[] todo = worklist.stream().mapToInt(unionFind::find).distinct().sorted().toArray();
-      worklist.clear();
-      for (int id : todo) {
-        if (classes.get(id) != null) {
-          repair(classes.get(id));
-          repaired++;
+    boolean touched = false;
+    while (isDirty()) {
+      touched = true;
+      while (!worklist.isEmpty()) {
+        int[] todo = worklist.stream().mapToInt(unionFind::find).distinct().sorted().toArray();
+        worklist.clear();
+        for (int id : todo) {
+          if (classes.get(id) != null) {
+            repair(classes.get(id));
+            repaired++;
+          }
+        }
+      }
+      // The facts: a parent whose child's fact grew is re-made and joined into its class; a
+      // class whose fact grew enqueues its own parents and is offered to modify, which may add
+      // nodes or merge (constant folding does both), feeding the union worklist again.
+      while (!analysisPending.isEmpty() || !modifyPending.isEmpty()) {
+        List<EClass.Parent<L>> pending = new ArrayList<>(analysisPending);
+        analysisPending.clear();
+        for (EClass.Parent<L> entry : pending) {
+          int id = unionFind.find(entry.classId());
+          EClass<L, D> eclass = classes.get(id);
+          D made = analysis.make(this, canonicalize(entry.node()));
+          D joined = analysis.join(eclass.data(), made);
+          if (!Objects.equals(joined, eclass.data())) {
+            eclass.setData(joined);
+            analysisPending.addAll(eclass.mutableParents());
+            modifyPending.add(id);
+          }
+        }
+        int[] toModify = modifyPending.stream().mapToInt(unionFind::find).distinct().sorted()
+            .toArray();
+        modifyPending.clear();
+        for (int id : toModify) {
+          if (classes.get(id) != null) {
+            analysis.modify(this, id);
+          }
+        }
+        if (!worklist.isEmpty()) {
+          break;
         }
       }
     }
-    if (repaired > 0) {
+    if (touched) {
       // The hashcons is repaired through the parent lists, but a node sits in its own class's
       // list too, with children that may have been merged since: every class's nodes are
       // re-canonicalised and deduplicated once per rebuild, as egg's rebuild_classes does.
@@ -287,6 +338,28 @@ public final class EGraph<L extends Language<L>, D> {
       }
     }
     classOf(eclass.id()).mutableParents().addAll(seen);
+  }
+
+  /**
+   * Checks the analysis invariant (paper section 4.1): every class's fact equals the join of
+   * {@code make} over its nodes. Holds after {@link #rebuild} for an analysis whose {@code join}
+   * is a semilattice join and whose {@code modify} is idempotent. Throws
+   * {@link IllegalStateException} naming the first class that breaks it.
+   */
+  public void checkAnalysisInvariant() {
+    for (EClass<L, D> eclass : classes()) {
+      D expected = null;
+      boolean first = true;
+      for (L node : eclass.nodes()) {
+        D made = analysis.make(this, node);
+        expected = first ? made : analysis.join(expected, made);
+        first = false;
+      }
+      if (!Objects.equals(expected, eclass.data())) {
+        throw new IllegalStateException("class " + eclass.id() + " holds " + eclass.data()
+            + " where the join of its nodes' facts is " + expected);
+      }
+    }
   }
 
   /**
