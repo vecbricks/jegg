@@ -23,9 +23,13 @@ import java.util.OptionalInt;
  * is in, and the classes themselves - egg's {@code EGraph}, the paper's Figure 4, with the
  * data structures in plain Java.
  *
- * <p>This commit holds the part of the graph that grows: {@link #add} with its canonicalisation
- * and hashcons lookup, {@link #find}, and {@link #addTree} through a {@link TreeBridge}. Merging
- * and the deferred rebuild that restores congruence come next, as the plan sequences them.
+ * <p>{@link #add} canonicalises a node and looks it up in the hashcons; {@link #merge} unions two
+ * classes and does nothing else but note the class on a worklist; {@link #rebuild} works the list
+ * off, repairing the hashcons and merging the parents a merge made congruent, until the list is
+ * empty. Keeping the repair out of {@code merge} is the paper's whole point (its section 3): a
+ * batch of merges is repaired once, and a class merged many times is repaired once. Between a
+ * merge and the next rebuild the graph is not congruent, and {@link #lookup} may miss a node
+ * whose children were merged.
  *
  * <p><b>Order is fixed.</b> Ids are assigned by insertion order and a class's nodes and parents
  * are kept in insertion order, so everything the graph exposes is a function of the sequence of
@@ -41,7 +45,8 @@ public final class EGraph<L extends Language<L>, D> {
   private final Map<L, Integer> hashcons = new HashMap<>();
   // Indexed by id; an entry is null once its id is no longer a root.
   private final List<EClass<L, D>> classes = new ArrayList<>();
-  private int numNodes = 0;
+  // Roots of classes a merge touched since the last rebuild; repaired in id order.
+  private final List<Integer> worklist = new ArrayList<>();
 
   public EGraph(Analysis<L, D> analysis) {
     this.analysis = Objects.requireNonNull(analysis, "analysis");
@@ -95,7 +100,6 @@ public final class EGraph<L extends Language<L>, D> {
       classOf(children.get(i)).addParent(canonical, id);
     }
     hashcons.put(canonical, id);
-    numNodes++;
     eclass.setData(analysis.make(this, canonical));
     analysis.modify(this, id);
     return unionFind.find(id);
@@ -161,22 +165,149 @@ public final class EGraph<L extends Language<L>, D> {
     return n;
   }
 
-  /** How many distinct e-nodes the graph holds. */
+  /** How many distinct canonical e-nodes the graph holds, once rebuilt. */
   public int numNodes() {
-    return numNodes;
+    return hashcons.size();
+  }
+
+  /** Whether a merge since the last {@link #rebuild} has left work to do. */
+  public boolean isDirty() {
+    return !worklist.isEmpty();
   }
 
   /**
-   * Checks the hashcons invariant (paper Definition 2.7): every node of every live class is
-   * canonical and maps in the hashcons to that class, and every hashcons entry's node is in the
-   * class it maps to. For tests and debugging; throws {@link IllegalStateException} naming the
+   * Makes {@code a} and {@code b} one class and returns its root (paper Figure 4, lines 12-22).
+   * The surviving root is the smaller id. The other class's nodes and parents move to it and its
+   * facts are joined; the root goes on the worklist and nothing is repaired until
+   * {@link #rebuild}. Returns the root even when the two were one class already.
+   */
+  public int merge(int a, int b) {
+    int ra = unionFind.find(a);
+    int rb = unionFind.find(b);
+    if (ra == rb) {
+      return ra;
+    }
+    int root = unionFind.union(ra, rb);
+    int other = root == ra ? rb : ra;
+    EClass<L, D> kept = classes.get(root);
+    EClass<L, D> gone = classes.get(other);
+    kept.mutableNodes().addAll(gone.mutableNodes());
+    kept.mutableParents().addAll(gone.mutableParents());
+    kept.setData(analysis.join(kept.data(), gone.data()));
+    classes.set(other, null);
+    worklist.add(root);
+    return root;
+  }
+
+  /**
+   * Restores the hashcons and congruence invariants after any number of merges (paper Figure 4,
+   * lines 27-53): takes the worklist, deduplicates it by root, repairs each class, and repeats
+   * while repairs merged more classes. Returns how many classes were repaired. The order is fixed:
+   * each pass repairs its roots in ascending id order.
+   */
+  public int rebuild() {
+    int repaired = 0;
+    while (!worklist.isEmpty()) {
+      int[] todo = worklist.stream().mapToInt(unionFind::find).distinct().sorted().toArray();
+      worklist.clear();
+      for (int id : todo) {
+        if (classes.get(id) != null) {
+          repair(classes.get(id));
+          repaired++;
+        }
+      }
+    }
+    if (repaired > 0) {
+      // The hashcons is repaired through the parent lists, but a node sits in its own class's
+      // list too, with children that may have been merged since: every class's nodes are
+      // re-canonicalised and deduplicated once per rebuild, as egg's rebuild_classes does.
+      for (EClass<L, D> eclass : classes) {
+        if (eclass != null) {
+          canonicalizeNodes(eclass);
+        }
+      }
+      // A repair re-keys a parent under its canonical form and records that form in the repaired
+      // class's parent list only; the node's other child classes keep the form they were given
+      // at insertion. So a later merge through one of those can leave the re-keyed entry behind
+      // with no list naming it. Such a key is non-canonical and no lookup can reach it (lookups
+      // canonicalise first), so egg leaves it as garbage; here it is swept, so that the hashcons
+      // holds exactly the graph's nodes and its size is their count.
+      hashcons.keySet().removeIf(node -> !node.equals(canonicalize(node)));
+    }
+    return repaired;
+  }
+
+  private void canonicalizeNodes(EClass<L, D> eclass) {
+    List<L> nodes = eclass.mutableNodes();
+    List<L> canonicalNodes = new ArrayList<>(nodes.size());
+    for (L node : nodes) {
+      L canonical = canonicalize(node);
+      if (!canonicalNodes.contains(canonical)) {
+        canonicalNodes.add(canonical);
+      }
+    }
+    nodes.clear();
+    nodes.addAll(canonicalNodes);
+  }
+
+  /**
+   * One class's repair (paper Figure 4, lines 36-53): each parent is taken out of the hashcons
+   * and put back canonical under its class's root, and two parents that became the same
+   * canonical node are merged, which puts their root on the worklist for the next pass.
+   */
+  private void repair(EClass<L, D> eclass) {
+    canonicalizeNodes(eclass);
+    // The parent list is taken out of the class before the loop, as egg's is: a merge below may
+    // append to the class's list (when it is the root the merge keeps) or merge the class away
+    // into a smaller root (when the cascade reaches it), and in both cases the repaired entries
+    // go to whichever class is the root when the loop ends, after anything appended meanwhile.
+    List<EClass.Parent<L>> parents = new ArrayList<>(eclass.mutableParents());
+    eclass.mutableParents().clear();
+    List<EClass.Parent<L>> seen = new ArrayList<>(parents.size());
+    for (EClass.Parent<L> parent : parents) {
+      hashcons.remove(parent.node());
+      L canonical = canonicalize(parent.node());
+      hashcons.put(canonical, unionFind.find(parent.classId()));
+    }
+    for (EClass.Parent<L> parent : parents) {
+      L canonical = canonicalize(parent.node());
+      int classId = unionFind.find(parent.classId());
+      EClass.Parent<L> same = null;
+      for (EClass.Parent<L> s : seen) {
+        if (s.node().equals(canonical)) {
+          same = s;
+          break;
+        }
+      }
+      if (same != null) {
+        int merged = merge(same.classId(), classId);
+        seen.set(seen.indexOf(same), new EClass.Parent<>(canonical, merged));
+      } else {
+        seen.add(new EClass.Parent<>(canonical, classId));
+      }
+    }
+    classOf(eclass.id()).mutableParents().addAll(seen);
+  }
+
+  /**
+   * Checks the hashcons invariant (paper Definition 2.7) and the congruence invariant (its
+   * Theorem 3.1): every node of every live class is canonical and maps in the hashcons to that
+   * class, every hashcons entry's node is in the class it maps to, and no two classes hold an
+   * equal canonical node. Both hold after {@link #rebuild}; the second may not between a merge
+   * and the rebuild. For tests and debugging; throws {@link IllegalStateException} naming the
    * first violation.
    */
-  public void checkHashconsInvariant() {
+  public void checkInvariants() {
     int counted = 0;
+    Map<L, Integer> owner = new HashMap<>();
     for (EClass<L, D> eclass : classes()) {
       for (L node : eclass.nodes()) {
         counted++;
+        Integer elsewhere = owner.put(node, eclass.id());
+        if (elsewhere != null) {
+          throw new IllegalStateException("node " + node + " is in classes " + elsewhere
+              + " and " + eclass.id());
+        }
         if (!node.equals(canonicalize(node))) {
           throw new IllegalStateException("class " + eclass.id() + " holds a non-canonical node "
               + node);
@@ -189,8 +320,14 @@ public final class EGraph<L extends Language<L>, D> {
       }
     }
     if (counted != hashcons.size()) {
+      StringBuilder extra = new StringBuilder();
+      hashcons.forEach((node, id) -> {
+        if (!owner.containsKey(node)) {
+          extra.append(' ').append(node).append("->").append(unionFind.find(id));
+        }
+      });
       throw new IllegalStateException(counted + " nodes in classes, " + hashcons.size()
-          + " in the hashcons");
+          + " in the hashcons; not in any class:" + extra);
     }
   }
 }

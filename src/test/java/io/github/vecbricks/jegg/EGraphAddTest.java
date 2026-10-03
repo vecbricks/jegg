@@ -23,11 +23,11 @@ class EGraphAddTest {
   void anEqualNodeAddedTwiceIsOneClassAndTheInvariantHoldsAfterEveryAdd() {
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int x = g.add(new Toy.Var("x"));
-    g.checkHashconsInvariant();
+    g.checkInvariants();
     int one = g.add(new Toy.Num(1));
-    g.checkHashconsInvariant();
+    g.checkInvariants();
     int sum = g.add(new Toy.Add(IntList.of(x, one)));
-    g.checkHashconsInvariant();
+    g.checkInvariants();
     // The same node from a fresh array hashconses to the same class.
     assertEquals(sum, g.add(new Toy.Add(IntList.of(new int[] {x, one}))));
     assertEquals(3, g.numClasses());
@@ -38,7 +38,7 @@ class EGraphAddTest {
     assertEquals(List.of(new EClass.Parent<>(new Toy.Add(IntList.of(x, one)), sum)),
         g.classOf(x).parents());
     assertEquals(g.classOf(x).parents(), g.classOf(one).parents());
-    g.checkHashconsInvariant();
+    g.checkInvariants();
   }
 
   @Test
@@ -76,7 +76,7 @@ class EGraphAddTest {
     Toy.Tree product = Toy.Tree.mul(sum, again);
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int root = g.addTree(product, Toy.BRIDGE);
-    g.checkHashconsInvariant();
+    g.checkInvariants();
     assertEquals(4, g.numClasses());
     assertEquals(4, g.numNodes());
     Toy node = g.classOf(root).nodes().get(0);
