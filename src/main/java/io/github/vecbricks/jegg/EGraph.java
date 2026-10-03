@@ -137,6 +137,23 @@ public final class EGraph<L extends Language<L>, D> {
     return id;
   }
 
+  /**
+   * The class a client's tree is in, or -1 if the graph does not hold it, through
+   * {@code bridge}, adding nothing: a subtree missing anywhere means the whole is missing.
+   */
+  public <T> int lookupTree(T tree, TreeBridge<T, L> bridge) {
+    List<T> subtrees = bridge.childrenOf(tree);
+    int[] ids = new int[subtrees.size()];
+    for (int i = 0; i < ids.length; i++) {
+      ids[i] = lookupTree(subtrees.get(i), bridge);
+      if (ids[i] < 0) {
+        return -1;
+      }
+    }
+    OptionalInt found = lookup(bridge.node(tree, IntList.of(ids)));
+    return found.isPresent() ? found.getAsInt() : -1;
+  }
+
   /** The class with this root id. */
   public EClass<L, D> classOf(int id) {
     EClass<L, D> eclass = classes.get(unionFind.find(id));
