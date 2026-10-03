@@ -71,26 +71,27 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
     return new Var<>(name);
   }
 
-  /** A node pattern with this head over these children. */
+  /**
+   * A node pattern with this head over these children. The varargs array is read element by
+   * element and never handed on, which is what makes the {@code @SafeVarargs} true.
+   */
   @SafeVarargs
   static <L extends Language<L>> Pattern<L> node(Head<L> head, Pattern<L>... children) {
-    return new Node<>(head, copy(children));
+    List<Pattern<L>> list = new java.util.ArrayList<>(children.length);
+    for (Pattern<L> child : children) {
+      list.add(child);
+    }
+    return new Node<>(head, list);
   }
 
   /** A node pattern with {@code prototype}'s operator and payload over these children. */
   @SafeVarargs
   static <L extends Language<L>> Pattern<L> of(L prototype, Pattern<L>... children) {
-    return new Node<>(head(prototype), copy(children));
-  }
-
-  // Reads the varargs array element by element rather than handing it on, which is what keeps
-  // the two factories above safe under -Xlint:varargs.
-  private static <L extends Language<L>> List<Pattern<L>> copy(Pattern<L>[] children) {
     List<Pattern<L>> list = new java.util.ArrayList<>(children.length);
     for (Pattern<L> child : children) {
       list.add(child);
     }
-    return list;
+    return new Node<>(head(prototype), list);
   }
 
   /**

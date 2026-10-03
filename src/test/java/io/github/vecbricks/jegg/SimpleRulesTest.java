@@ -54,13 +54,13 @@ class SimpleRulesTest {
   static <L extends Language<L>, D> int saturate(EGraph<L, D> g, List<Rewrite<L, D>> rules,
       int limit) {
     for (int iteration = 1; iteration <= limit; iteration++) {
-      List<Matcher.Match>[] matches = new List[rules.size()];
-      for (int i = 0; i < rules.size(); i++) {
-        matches[i] = rules.get(i).search(g);
+      List<List<Matcher.Match>> matches = new ArrayList<>();
+      for (Rewrite<L, D> rule : rules) {
+        matches.add(rule.search(g));
       }
       int changed = 0;
       for (int i = 0; i < rules.size(); i++) {
-        for (Matcher.Match m : matches[i]) {
+        for (Matcher.Match m : matches.get(i)) {
           changed += rules.get(i).apply(g, m);
         }
       }
