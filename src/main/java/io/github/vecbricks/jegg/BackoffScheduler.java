@@ -29,7 +29,6 @@ import java.util.List;
 public final class BackoffScheduler<L extends Language<L>, D> implements Scheduler<L, D> {
 
   private static final class RuleStats {
-    int timesApplied;
     int bannedUntil;
     int timesBanned;
     int matchLimit;
@@ -87,7 +86,6 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
       s.bannedUntil = (int) Math.min(Integer.MAX_VALUE, iteration + ban);
       return List.of();
     }
-    s.timesApplied++;
     return matches;
   }
 

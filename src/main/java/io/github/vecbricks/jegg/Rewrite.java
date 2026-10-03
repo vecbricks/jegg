@@ -69,9 +69,8 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
     IntList added = rhs.apply(graph, match.eclass(), match.subst());
     int changed = 0;
     for (int i = 0; i < added.size(); i++) {
-      int before = graph.numClasses();
-      graph.merge(match.eclass(), added.get(i));
-      if (graph.numClasses() != before) {
+      if (graph.find(match.eclass()) != graph.find(added.get(i))) {
+        graph.merge(match.eclass(), added.get(i));
         changed++;
       }
     }

@@ -11,11 +11,13 @@ package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -46,7 +48,12 @@ class DeterminismTest {
       Process p = new ProcessBuilder(List.of(javaHome + "/bin/java", "-cp", classpath,
           DeterminismProbe.class.getName())).redirectOutput(out)
           .redirectError(ProcessBuilder.Redirect.INHERIT).start();
-      assertEquals(0, p.waitFor(), "the probe failed");
+      // A hung probe must fail the test, not stall the build.
+      if (!p.waitFor(2, TimeUnit.MINUTES)) {
+        p.destroyForcibly();
+        fail("the probe did not finish in two minutes");
+      }
+      assertEquals(0, p.exitValue(), "the probe failed");
       String rendered = Files.readString(out.toPath(), StandardCharsets.UTF_8);
       assertTrue(rendered.contains("stopped: NodeLimit"), rendered);
       if (first == null) {
