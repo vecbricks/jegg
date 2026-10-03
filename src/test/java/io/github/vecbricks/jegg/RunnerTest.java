@@ -56,6 +56,8 @@ class RunnerTest {
     assertTrue(report.size() >= 2 && report.size() <= 5, report.toString());
     assertEquals(0, report.iterations().get(report.size() - 1).unions());
     g.checkInvariants();
+    assertThrows(UnsupportedOperationException.class,
+        () -> report.iterations().get(0).matches().put("forged", 1));
   }
 
   @Test

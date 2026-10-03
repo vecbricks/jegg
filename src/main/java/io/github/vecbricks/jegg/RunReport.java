@@ -9,6 +9,7 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,7 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
   public record Iteration(int number, int classes, int nodes, Map<String, Integer> matches,
       int applied, int unions, int repaired) {
     public Iteration {
-      matches = new LinkedHashMap<>(matches);
+      matches = Collections.unmodifiableMap(new LinkedHashMap<>(matches));
     }
   }
 

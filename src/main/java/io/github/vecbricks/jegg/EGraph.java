@@ -48,6 +48,8 @@ public final class EGraph<L extends Language<L>, D> {
   private final Map<L, Integer> hashcons = new HashMap<>();
   // Indexed by id; an entry is null once its id is no longer a root.
   private final List<EClass<L, D>> classes = new ArrayList<>();
+  // How many entries of classes are not null, kept by add and merge so counting is free.
+  private int liveClasses;
   // Roots of classes a merge touched since the last rebuild; repaired in id order.
   private final List<Integer> worklist = new ArrayList<>();
   // Parent entries whose class's fact may have grown because a child's fact did (paper
@@ -102,6 +104,7 @@ public final class EGraph<L extends Language<L>, D> {
     int id = unionFind.makeSet();
     EClass<L, D> eclass = new EClass<>(id, null);
     classes.add(eclass);
+    liveClasses++;
     eclass.addNode(canonical);
     IntList children = canonical.children();
     for (int i = 0; i < children.size(); i++) {
@@ -140,7 +143,9 @@ public final class EGraph<L extends Language<L>, D> {
   /**
    * The class a client's tree is in, or -1 if the graph does not hold it, through
    * {@code bridge}, adding nothing: a subtree missing anywhere means the whole is missing. As in
-   * {@link #addTree}, a subtree object reached twice is looked up once.
+   * {@link #addTree}, a subtree object reached twice is looked up once. Like {@link #lookup} it
+   * reads the hashcons, so after a merge it is exact only once the graph is rebuilt: before,
+   * a tree whose children were merged can read as missing.
    */
   public <T> int lookupTree(T root, TreeBridge<T, L> bridge) {
     return lookupTree(root, bridge, new IdentityHashMap<>());
@@ -193,13 +198,7 @@ public final class EGraph<L extends Language<L>, D> {
 
   /** How many classes are live. */
   public int numClasses() {
-    int n = 0;
-    for (EClass<L, D> eclass : classes) {
-      if (eclass != null) {
-        n++;
-      }
-    }
-    return n;
+    return liveClasses;
   }
 
   /** How many distinct canonical e-nodes the graph holds, once rebuilt. */
@@ -241,6 +240,7 @@ public final class EGraph<L extends Language<L>, D> {
     kept.mutableParents().addAll(gone.mutableParents());
     kept.setData(joined);
     classes.set(other, null);
+    liveClasses--;
     worklist.add(root);
     modifyPending.add(root);
     return root;
@@ -430,6 +430,10 @@ public final class EGraph<L extends Language<L>, D> {
       });
       throw new IllegalStateException(counted + " nodes in classes, " + hashcons.size()
           + " in the hashcons; not in any class:" + extra);
+    }
+    if (classes().size() != liveClasses) {
+      throw new IllegalStateException(classes().size() + " live classes, " + liveClasses
+          + " counted");
     }
   }
 }

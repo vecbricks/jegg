@@ -31,8 +31,6 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
   private static final class RuleStats {
     int bannedUntil;
     int timesBanned;
-    int matchLimit;
-    int banLength;
   }
 
   private final int matchLimit;
@@ -54,10 +52,7 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
 
   private RuleStats statsOf(int ruleIndex) {
     while (stats.size() <= ruleIndex) {
-      RuleStats s = new RuleStats();
-      s.matchLimit = matchLimit;
-      s.banLength = banLength;
-      stats.add(s);
+      stats.add(new RuleStats());
     }
     return stats.get(ruleIndex);
   }
@@ -80,8 +75,8 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
       return List.of();
     }
     List<Matcher.Match> matches = rule.search(graph);
-    if (matches.size() > doubled(s.matchLimit, s.timesBanned)) {
-      long ban = doubled(s.banLength, s.timesBanned);
+    if (matches.size() > doubled(matchLimit, s.timesBanned)) {
+      long ban = doubled(banLength, s.timesBanned);
       s.timesBanned++;
       s.bannedUntil = (int) Math.min(Integer.MAX_VALUE, iteration + ban);
       return List.of();
