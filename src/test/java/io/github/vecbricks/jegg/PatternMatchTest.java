@@ -95,10 +95,12 @@ class PatternMatchTest {
             graph.data(s.idOf("x")) * graph.data(s.idOf("y"))))))
         .when((graph, eclass, s) -> graph.data(s.idOf("x")) != null
             && graph.data(s.idOf("y")) != null);
+    // Both products match; the condition, read at apply time, lets only the known one through.
     List<Matcher.Match> matches = fold.search(g);
-    assertEquals(1, matches.size());
-    assertEquals(g.find(known), matches.get(0).eclass());
-    fold.apply(g, matches.get(0));
+    assertEquals(2, matches.size());
+    for (Matcher.Match m : matches) {
+      assertEquals(m.eclass() == g.find(known), fold.apply(g, m) >= 0);
+    }
     g.rebuild();
     assertEquals(g.find(known), g.find(g.add(new Toy.Num(2))));
     assertTrue(g.find(unknown) != g.find(known));
