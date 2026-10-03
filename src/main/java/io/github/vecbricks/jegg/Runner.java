@@ -10,10 +10,12 @@
 package io.github.vecbricks.jegg;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Equality saturation (the paper's Figure 5b): each iteration searches every rule over the
@@ -40,6 +42,13 @@ public final class Runner<L extends Language<L>, D> {
       Scheduler<L, D> scheduler) {
     this.graph = Objects.requireNonNull(graph, "graph");
     this.rules = List.copyOf(rules);
+    // The report counts each rule's matches by its name, so two rules may not share one.
+    Set<String> names = new HashSet<>();
+    for (Rewrite<L, D> rule : this.rules) {
+      if (!names.add(rule.name())) {
+        throw new IllegalArgumentException("two rules are named " + rule.name());
+      }
+    }
     this.limits = Objects.requireNonNull(limits, "limits");
     this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
   }

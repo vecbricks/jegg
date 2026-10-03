@@ -12,6 +12,7 @@ package io.github.vecbricks.jegg;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -182,5 +183,14 @@ class RunnerTest {
     assertEquals(2, scheduler.timesBanned(0));
     assertTrue(scheduler.isBanned(3, 0));
     assertTrue(scheduler.isBanned(Integer.MAX_VALUE - 1, 0));
+  }
+
+  @Test
+  void twoRulesWithOneNameAreRefused() {
+    // The report keys match counts by name; a shared name would hide one rule's count.
+    List<Rewrite<Toy, Void>> rules = List.of(expansive().get(1),
+        Rewrite.of("commute-add", add(v("x"), v("y")), add(v("y"), v("x"))));
+    assertThrows(IllegalArgumentException.class,
+        () -> Runner.of(EGraph.<Toy>withoutAnalysis(), rules));
   }
 }
