@@ -26,10 +26,15 @@ Spark dependency and nothing in it is specific to Varka.
 
 ## Public surface
 
-`EGraph<L, A>`, `Language<L>`, `Analysis<L, D>`, `Pattern`, `Rewrite`,
-`Condition`, `Applier`, `Runner`, `RunLimits`, `Scheduler`, `Extractor`,
-`CostFunction`. Proof production, s-expression parsing and ILP extraction are
-deliberately out; `PLAN.md` 3.1 maps each egg component to its Java form.
+`EGraph<L, A>`, `Language<L>`, `TreeBridge<T, L>`, `Analysis<L, D>`,
+`Pattern`, `Subst`, `Rewrite`, `Condition`, `Applier`, `Runner`, `RunLimits`,
+`RunReport`, `Scheduler`, `Extractor`, `Selection`, `CostFunction`. Three
+things egg's API does not have and a compiler client needs are in from the
+start: e-nodes with payloads and a bridge from a client's own tree type,
+patterns that bind payloads as well as subterms, and extraction over several
+roots that keeps a shared subterm in one form (`PLAN.md` 3.2). Proof
+production, s-expression parsing and ILP extraction are deliberately out;
+`PLAN.md` 3.1 maps each egg component to its Java form.
 
 ## Building
 

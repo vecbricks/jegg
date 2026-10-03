@@ -3,7 +3,7 @@
 <!-- Written in vecbricks/varka on 5 September 2026 as sql/varka/plans/PLAN_EGRAPH_PORT.md,
      the record of the owner's decision to port egg as a product of its own; moved here on
      3 October 2026 when this repository was created and named. Varka keeps a pointer. The
-     sections follow Varka's task template where they apply; 3.3 registers size and effort
+     sections follow Varka's task template where they apply; 3.4 registers size and effort
      rather than op counts, and 6 measures the library rather than a kernel. -->
 
 *3 October 2026: the owner named the library `jegg` and the repository was created. Group id
@@ -97,7 +97,7 @@ is a library Varka merely uses.
 | repository | `github.com/vecbricks/jegg` (named 3 October 2026) |
 | artifact | `io.github.vecbricks:jegg`, versioned and published like any dependency |
 | package | `io.github.vecbricks.jegg`, not `org.apache.spark` |
-| public surface | `EGraph<L, A>`, `Language<L>`, `Analysis<L, D>`, `Pattern`, `Rewrite`, `Condition`, `Applier`, `Runner`, `RunLimits`, `Scheduler`, `Extractor`, `CostFunction` |
+| public surface | `EGraph<L, A>`, `Language<L>`, `TreeBridge<T, L>`, `Analysis<L, D>`, `Pattern`, `Subst`, `Rewrite`, `Condition`, `Applier`, `Runner`, `RunLimits`, `RunReport`, `Scheduler`, `Extractor`, `Selection`, `CostFunction` (3.2 added the bridge, the substitution's payloads, the report and the selection) |
 | Varka's side | nothing until item 11: then one dependency on a pinned version, and the client mapping |
 
 The egg-to-Java mapping, component by component:
@@ -105,16 +105,16 @@ The egg-to-Java mapping, component by component:
 | egg | Java 25 | note |
 |---|---|---|
 | `Id`, `UnionFind` | `int` ids; `int[] parent` with path compression | ids are never boxed on any hot path |
-| `Language` trait, `define_language!` | `interface Language<L>`: operator symbol, children as an immutable int list, `equals`/`hashCode` over both, `mapChildren`; a client's language is a sealed hierarchy of records implementing it | the one real trap: a record with an `int[]` component compares the array by reference, so children live in an immutable `IntList` (or the record overrides `equals`/`hashCode`), or hashconsing silently fails |
+| `Language` trait, `define_language!` | `interface Language<L>`: an e-node is an operator, a payload and its children as an immutable int list, `equals`/`hashCode` over all three, `mapChildren`; a client's language is a sealed hierarchy of records implementing it, and `TreeBridge<T, L>` adds a client's tree through a destructure function and builds one back through a construct function (3.2) | the one real trap: a record with an `int[]` component compares the array by reference, so children live in an immutable `IntList` (or the record overrides `equals`/`hashCode`), or hashconsing silently fails |
 | hashcons `H` | `HashMap<L, Integer>` first; an open-addressing map on the record hash later if measured | egg's canonicalise-then-lookup ports verbatim |
 | `EClass`: nodes, parents, data | node list kept sorted by operator (egg does, for binary search in matching), parent list of `(node, class)` pairs, analysis data | plus a classes-by-operator index for the matcher |
 | `add`, `merge`, `find`, `canonicalize` | paper Fig. 4, lines 1-27, line for line | `merge` only unions and enqueues; nothing is repaired in it |
 | `rebuild`, `repair` | paper Fig. 4, lines 27-53; analysis maintenance per Fig. 9 | the worklist dedup is the whole speedup; the phase split (read every match, then write, then rebuild once) is the equality-saturation loop of Fig. 5b |
 | `Analysis` trait | `interface Analysis<L, D> { D make(EGraph, L); D join(D, D); void modify(EGraph, int) }` | `join` must be a semilattice join and `modify` idempotent, or `rebuild` may not terminate (paper 4.1.1) |
-| `Pattern`, `Subst`, `ematch` | a pattern tree of operator nodes and variables; a naive recursive matcher first, egg's compiled backtracking machine (`machine.rs`) behind a measurement later | the largest piece; at 64-node graphs the naive matcher is likely enough (prediction 5) |
+| `Pattern`, `Subst`, `ematch` | a pattern tree of operator nodes and variables, where a node's payload is matched by a predicate or bound to a payload variable and `Subst` holds payload bindings beside class ids (3.2); a naive recursive matcher first, egg's compiled backtracking machine (`machine.rs`) behind a measurement later | the largest piece; at 64-node graphs the naive matcher is likely enough (prediction 5) |
 | `Rewrite`, `Applier`, `Condition` | a name, a left pattern, and a right-hand side that is a pattern or an `Applier` function; conditions read analysis data | dynamic rewrites are functions of `(EGraph, matched class, Subst)` |
 | `Runner`, `BackoffScheduler`, `StopReason` | an iteration loop with `RunLimits` (nodes, classes, iterations; no wall-clock limit by default) and per-rule backoff | the limit that makes extraction a function of the input |
-| `Extractor`, `CostFunction` | bottom-up fixed point over local costs, per paper 4.3 | the client's cost table is Varka's measured register |
+| `Extractor`, `CostFunction` | bottom-up fixed point over local costs, per paper 4.3, for one root; and `extractAll` over several roots, one node chosen per e-class across all of them with a shared node paid once, returning a `Selection` as a DAG (3.2), greedy since the ILP is out | the client's cost table is Varka's measured register; a hook scores a whole selection so the client can run its own prediction over the candidate |
 | `Explain`, `RecExpr` parsing, `LpExtractor`, `dot` | out | proofs are Herbie's need; Varka builds patterns from IR; no ILP dependency |
 
 **Determinism, fixed at three points.** Ids are assigned by insertion order;
@@ -125,7 +125,50 @@ reach an id assignment or a merge order is insertion-ordered
 (`LinkedHashMap`/`ArrayList`), and section 5 has a test that runs the same
 saturation in fresh JVMs and compares the serialised graphs.
 
-### 3.2 What is deliberately unchanged
+### 3.2 What Varka's client asks of the API, 3 October 2026
+
+Read against `SCOPE_MILESTONE_8.md` item 11, the IR and the cost model, on the owner's question of
+what API Varka would need. egg's shape covers most of it; four things are not in egg's API as it
+stands, and the tables above carry them.
+
+1. **A bridge between trees and e-nodes, with payloads.** Varka's IR records hold child nodes
+   where e-nodes hold child ids, and most nodes carry data beyond children: `IntArith` an op and
+   an overflow mode, `ConstDivide` a divisor and a bound, `GuardedRange` its bounds, `TruncDate`
+   a level, every leaf a lane. So an e-node is operator, payload and children, equal over all
+   three, and `TreeBridge` adds a client tree by a destructure function and builds one back by a
+   construct function. Without it every client writes a mirrored node type by hand.
+2. **Patterns that bind payloads, not only subterms.** egg's variables stand for subterms;
+   Varka's rules match `IntArith(ADD, ?mode, ?x, ?y)` for any mode and carry the mode to the
+   right-hand side, or match a trunc level or a divisor. A pattern node takes a payload
+   predicate or a payload variable, and `Subst` holds payload bindings beside class ids.
+3. **Extraction over several roots sharing a DAG, with a cost the client measures.** A
+   projection has many outputs sharing prefixes, and Varka's cost model prices groups of
+   outputs with that sharing (task 58). egg's extractor costs each root as a tree, so two
+   outputs sharing a prefix can be given different forms and the sharing lost. `extractAll`
+   chooses one node per e-class across all roots, pays a shared node once and returns a
+   `Selection` as a DAG, never re-expanded; it is greedy, since the ILP is out, and a hook
+   scores a whole selection so the client can run its byte and call-site prediction over the
+   candidate, because item 11 says costs stay measured and never modelled.
+4. **Analyses fit a semilattice; Varka's range analysis today does not.** `dayRange` as item 11
+   describes it is make, join and modify. `VarkaRangeAnalysis` as implemented is top-down: the
+   parent passes the kind, days or int, and a guard policy to the child, where an e-class
+   analysis is bottom-up. The way out is item 11's first design input, the physical form
+   explicit on the value, so a day and an int are different classes and the kind stops being
+   context; the guard policy becomes a condition read at the consumer's rule, which sees the
+   graph and the substitution. Nullability and encoding ride in the same data record. jegg
+   changes nothing for this; the client does.
+
+Two smaller points. Varka's literals are slots bound at run time, so there is no folding with
+values: the analysis Varka wants is batch invariance, and a folding rule produces a scalar
+expression over slots the emitter hoists, so the `math` suite's constant folding is a port test
+and not the Varka case. And the run must be cheap or cached: if saturation runs before the shape
+key is computed it runs on every compile, so either prediction 4's five milliseconds holds or
+Varka keys the shape by the input IR and caches the extracted form with it - the client's
+decision, under item 11. A `RunReport` (iterations, matches per rule, nodes and classes, the stop
+reason) is returned by the runner so a client's plan can record what a run did, as Varka's
+emit trace does.
+
+### 3.3 What is deliberately unchanged
 
 * Varka's IR, compiler and emitter: this plan builds a library and touches
   none of them. The client - `VarkaVectorIR` mirrored as a `Language` with
@@ -138,22 +181,22 @@ saturation in fresh JVMs and compares the serialised graphs.
 * Java's standard collections for the first version; specialised maps only
   where the JMH numbers in section 6 say so.
 
-### 3.3 Size and effort, registered by component
+### 3.4 Size and effort, registered by component
 
 | component | lines (estimate) | acceptance |
 |---|---|---|
 | ids, union-find | 100 | unit tests; path compression keeps `find` idempotent |
-| `Language`, `IntList`, e-node equality | 200 | equality and hashing over children; the array trap covered by a test |
+| `Language`, `IntList`, e-node equality, `TreeBridge` | 300 | equality and hashing over operator, payload and children; the array trap covered by a test; a tree added and built back is equal to itself |
 | hashcons, e-classes, `add`/`find`/`canonicalize` | 300 | hashcons invariant checked after every `add` (paper Def. 2.7) |
 | `merge`, worklist, `rebuild`, `repair` | 150 | congruence invariant after `rebuild` (Theorem 3.1) |
 | `Analysis` and its maintenance | 150 | analysis invariant after `rebuild` (paper 4.1) |
-| patterns, substitution, naive matcher | 250 | ported `simple` and `prop` tests |
+| patterns, substitution with payload variables, naive matcher | 300 | ported `simple` and `prop` tests; a payload bound and carried to the right-hand side |
 | `Rewrite`, `Condition`, `Applier` | 150 | conditional and dynamic rewrites from the `lambda` suite |
 | `Runner`, `RunLimits`, backoff scheduler | 250 | saturation detection; limits hit deterministically |
-| `Extractor`, `CostFunction` | 150 | brute-force comparison on small graphs |
+| `Extractor`, `CostFunction`, `extractAll` and `Selection` | 300 | brute-force comparison on small graphs; the shared prefix kept in one form over two roots (prediction 6) |
 | ported test suites (`math`, `lambda`, `prop`, `simple`) | 800-1200 | same right-hand sides land in the same classes as in egg |
 | JMH harness and results | 150 | section 6 |
-| **total** | **2500-3000** | |
+| **total** | **2800-3300** | |
 
 Weeks of one careful engineer, or several cheaper agents by component with
 the ported suites as the oracle; the components above are ordered so each
@@ -214,10 +257,14 @@ planned there.
   backoff scheduler must ban and re-admit the expansive rule the way egg's
   does (its iteration log is the fixture).
 * **A Varka-shaped smoke test**, no Varka dependency: a toy date language
-  with `AddDays`, `Lit`, `Col`, one folding rule for literal offsets, and a
-  cost function that reads a table, extracting `date_add(d, 3)` from
-  `date_add(date_add(d, 1), 2)`. The failure it catches is an API that
-  cannot express item 11's first use.
+  with `AddDays`, `Slot`, `Col`, `Year` and `Month` over a civil decomposition
+  node, one folding rule for slot offsets whose right-hand side is a scalar
+  expression over the slots, a cost function that reads a table, and two
+  roots, `year(date_add(d, s1))` and `month(date_add(d, s1))`, extracted
+  together: the decomposition is chosen once and shared, where extracting
+  each root alone could choose two forms. The failure it catches is an API
+  that cannot express item 11's first use, through the bridge, a payload
+  variable and `extractAll` at once.
 
 ## 6. The measurement
 
@@ -249,6 +296,11 @@ numbers is not attempted; the ratios the paper established are.
    negligible beside emission.
 5. The naive matcher is within 3x of the compiled machine at that size, so
    the machine can wait for a client that needs it.
+6. On the smoke test's two roots, `extractAll` keeps the shared decomposition
+   in one form and its selection costs less than the two single-root
+   extractions summed with the shared node paid twice; the greedy choice
+   matches a brute-force enumeration on every graph small enough to
+   enumerate.
 
 ## 7. Risks
 
@@ -284,18 +336,19 @@ Each commit green alone, with its tests:
 1. The repository: build, CI, publishing configuration, licence (Apache-2.0)
    and attribution to egg (MIT), this plan moved in as `PLAN.md` - done
    3 October 2026; then ids,
-   union-find, `IntList`, `Language`, hashcons, `add`/`find`/`canonicalize`;
-   the array-trap and hashcons-invariant tests.
+   union-find, `IntList`, `Language` with payloads, `TreeBridge`, hashcons,
+   `add`/`find`/`canonicalize`; the array-trap, round-trip and
+   hashcons-invariant tests.
 2. `merge`, the worklist, `rebuild`/`repair`; the congruence-invariant and
    deferred-against-eager tests.
 3. `Analysis` and its maintenance; the constant-folding analysis and the
    `math` suite.
-4. Patterns, substitution, the naive matcher; `Rewrite`, `Condition`,
-   `Applier`; the `simple` and `prop` suites.
-5. `Runner`, `RunLimits`, the backoff scheduler, the determinism fixes and
-   test; the limits-and-scheduling test.
-6. `Extractor` and `CostFunction`; the brute-force and tie-break tests; the
-   Varka-shaped smoke test.
+4. Patterns, substitution with payload variables, the naive matcher;
+   `Rewrite`, `Condition`, `Applier`; the `simple` and `prop` suites.
+5. `Runner`, `RunLimits`, `RunReport`, the backoff scheduler, the
+   determinism fixes and test; the limits-and-scheduling test.
+6. `Extractor` and `CostFunction`, then `extractAll` and `Selection`; the
+   brute-force and tie-break tests; the Varka-shaped smoke test.
 7. The `lambda` suite (dynamic and conditional rewrites end to end).
 8. The JMH harness, one regeneration on an idle machine, section 9.
 9. Optional, by prediction 5: the compiled matching machine behind a
