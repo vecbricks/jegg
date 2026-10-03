@@ -36,6 +36,11 @@ roots that keeps a shared subterm in one form (`PLAN.md` 3.2). Proof
 production, s-expression parsing and ILP extraction are deliberately out;
 `PLAN.md` 3.1 maps each egg component to its Java form.
 
+## Contributing
+
+An issue stating the problem or goal, then a plan in the issue, then the code as a pull
+request: `CONTRIBUTING.md` has the order and why.
+
 ## Building
 
 Java 25 and Maven:
