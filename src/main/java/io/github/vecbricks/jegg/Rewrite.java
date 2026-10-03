@@ -57,8 +57,15 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
   /**
    * Applies one match: the right-hand side's classes are unioned with the matched class. Returns
    * how many unions changed the graph (merged two classes that were different).
+   *
+   * <p>The condition is checked again here, as egg's {@code ConditionalApplier} checks it at
+   * apply time: the runner applies a match only after the matches before it in the iteration,
+   * whose merges may have made the condition false since the search.
    */
   public int apply(EGraph<L, D> graph, Matcher.Match match) {
+    if (!condition.holds(graph, match.eclass(), match.subst())) {
+      return 0;
+    }
     IntList added = rhs.apply(graph, match.eclass(), match.subst());
     int changed = 0;
     for (int i = 0; i < added.size(); i++) {

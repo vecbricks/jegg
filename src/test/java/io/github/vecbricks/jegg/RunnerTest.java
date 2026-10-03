@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -125,5 +126,61 @@ class RunnerTest {
     assertTrue(report.iterations().stream().anyMatch(it -> it.unions() > 0), report.toString());
     assertTrue(g.classOf(g.add(new Toy.Add(IntList.of(a, b)))).nodes()
         .contains(new Toy.Add(IntList.of(b, a))));
+  }
+
+  @Test
+  void anApplierThatOnlyAddsKeepsTheRunGoing() {
+    // "seed" adds a * a under a's class but returns nothing to union, so its iteration has no
+    // unions; the graph grew, though, and the next iteration's x * x => x has work to do.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    List<Rewrite<Toy, Void>> rules = List.of(
+        Rewrite.dynamic("seed", Pattern.of(new Toy.Var("a")), (graph, eclass, subst) -> {
+          graph.add(new Toy.Mul(IntList.of(eclass, eclass)));
+          return IntList.EMPTY;
+        }),
+        Rewrite.of("mul-self", Pattern.of(new Toy.Mul(IntList.EMPTY), v("x"), v("x")), v("x")));
+    RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT, Scheduler.simple()).run();
+    assertInstanceOf(StopReason.Saturated.class, report.stop(), report.toString());
+    assertTrue(report.size() >= 2, report.toString());
+    assertEquals(g.find(a), g.find(g.add(new Toy.Mul(IntList.of(a, a)))));
+    g.checkInvariants();
+  }
+
+  @Test
+  void aConditionIsCheckedAgainWhenItsMatchIsApplied() {
+    // "mark" holds only while x and y are apart, which is true when it is searched; "zero",
+    // applied before it in the same iteration, merges them, so "mark" must not fire.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int zero = g.add(new Toy.Num(0));
+    g.add(new Toy.Mul(IntList.of(a, zero)));
+    List<Rewrite<Toy, Void>> rules = List.of(
+        Rewrite.of("zero", Pattern.of(new Toy.Var("a")), Pattern.of(new Toy.Num(0))),
+        Rewrite.<Toy, Void>of("mark", Pattern.of(new Toy.Mul(IntList.EMPTY), v("x"), v("y")),
+            Pattern.of(new Toy.Var("marked")))
+            .when((graph, eclass, subst) -> graph.find(subst.idOf("x"))
+                != graph.find(subst.idOf("y"))));
+    RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT, Scheduler.simple()).run();
+    assertInstanceOf(StopReason.Saturated.class, report.stop(), report.toString());
+    assertEquals(g.find(a), g.find(zero));
+    assertFalse(g.lookup(new Toy.Var("marked")).isPresent(), report.toString());
+  }
+
+  @Test
+  void aBanThatWouldOverflowSaturatesInstead() {
+    // A ban of 2^30 iterations doubles to 2^31 on the second ban: past int, so it must hold at
+    // the longest ban rather than wrap negative and lift it.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    sumOfFive(g);
+    Rewrite<Toy, Void> commute = expansive().get(1);
+    BackoffScheduler<Toy, Void> scheduler = new BackoffScheduler<>(1, 1 << 30);
+    assertEquals(List.of(), scheduler.search(1, 0, commute, g));
+    assertTrue(scheduler.isBanned(2, 0));
+    assertFalse(scheduler.canStop(1));
+    assertEquals(List.of(), scheduler.search(2, 0, commute, g));
+    assertEquals(2, scheduler.timesBanned(0));
+    assertTrue(scheduler.isBanned(3, 0));
+    assertTrue(scheduler.isBanned(Integer.MAX_VALUE - 1, 0));
   }
 }

@@ -21,9 +21,9 @@ import java.util.Objects;
  * iteration changes nothing or a {@link RunLimits} limit is hit, and reports what it did.
  *
  * <p>Two things are fixed that egg leaves to chance. Rules are searched and applied in the
- * order they were given, and each rule's matches are sorted by (class id, substitution)
- * before anything is applied, so the order in which right-hand sides are added - and with it
- * every id the run assigns - is a function of the graph and the rules. A run bounded by nodes
+ * order they were given, and each rule's matches are applied in the matcher's order (class id,
+ * then node insertion), so the order in which right-hand sides are added - and with it every id
+ * the run assigns - is a function of the graph and the rules. A run bounded by nodes
  * and iterations, never by time, then ends in the same graph wherever it runs.
  *
  * @param <L> the language
@@ -66,13 +66,12 @@ public final class Runner<L extends Language<L>, D> {
       List<List<Matcher.Match>> matches = new ArrayList<>(rules.size());
       Map<String, Integer> counts = new LinkedHashMap<>();
       for (int i = 0; i < rules.size(); i++) {
-        List<Matcher.Match> found = new ArrayList<>(
-            scheduler.search(iteration, i, rules.get(i), graph));
-        found.sort((a, b) -> a.eclass() != b.eclass() ? Integer.compare(a.eclass(), b.eclass())
-            : a.subst().compareTo(b.subst()));
+        List<Matcher.Match> found = scheduler.search(iteration, i, rules.get(i), graph);
         matches.add(found);
         counts.put(rules.get(i).name(), found.size());
       }
+      int nodesBefore = graph.numNodes();
+      int classesBefore = graph.numClasses();
       int applied = 0;
       int unions = 0;
       for (int i = 0; i < rules.size(); i++) {
@@ -85,7 +84,11 @@ public final class Runner<L extends Language<L>, D> {
       iterations.add(new RunReport.Iteration(iteration, graph.numClasses(), graph.numNodes(),
           counts, applied, unions, repaired));
       stop = overLimit();
-      if (stop == null && unions == 0 && scheduler.canStop(iteration)) {
+      // As egg: saturated only if nothing was merged and nothing was added, since an applier
+      // may add nodes without returning them for a union.
+      boolean unchanged = unions == 0 && graph.numNodes() == nodesBefore
+          && graph.numClasses() == classesBefore;
+      if (stop == null && unchanged && scheduler.canStop(iteration)) {
         stop = new StopReason.Saturated();
       }
       if (stop == null && iteration >= limits.iterations()) {

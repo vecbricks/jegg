@@ -81,15 +81,23 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
       return List.of();
     }
     List<Matcher.Match> matches = rule.search(graph);
-    int threshold = s.matchLimit << s.timesBanned;
-    if (matches.size() > threshold) {
-      int ban = s.banLength << s.timesBanned;
+    if (matches.size() > doubled(s.matchLimit, s.timesBanned)) {
+      long ban = doubled(s.banLength, s.timesBanned);
       s.timesBanned++;
-      s.bannedUntil = iteration + ban;
+      s.bannedUntil = (int) Math.min(Integer.MAX_VALUE, iteration + ban);
       return List.of();
     }
     s.timesApplied++;
     return matches;
+  }
+
+  /**
+   * {@code value} doubled {@code times} times, saturating at {@link Integer#MAX_VALUE}: a plain
+   * {@code int} shift wraps after 31 bans (Java masks the shift count), where egg's
+   * {@code checked_shl} would panic.
+   */
+  private static int doubled(int value, int times) {
+    return times >= Integer.numberOfLeadingZeros(value) ? Integer.MAX_VALUE : value << times;
   }
 
   @Override
