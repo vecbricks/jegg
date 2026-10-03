@@ -48,23 +48,26 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
     return new Rewrite<>(name, lhs, rhs, condition.and(extra));
   }
 
-  /** The matches whose condition holds, in the matcher's order. */
+  /**
+   * The matches of the left-hand side, in the matcher's order. The condition is not read here
+   * but in {@link #apply}, as egg's {@code ConditionalApplier} reads it.
+   */
   public List<Matcher.Match> search(EGraph<L, D> graph) {
-    return Matcher.search(graph, lhs).stream()
-        .filter(m -> condition.holds(graph, m.eclass(), m.subst())).toList();
+    return Matcher.search(graph, lhs);
   }
 
   /**
-   * Applies one match: the right-hand side's classes are unioned with the matched class. Returns
-   * how many unions changed the graph (merged two classes that were different).
+   * Applies one match if its condition holds: the right-hand side's classes are unioned with
+   * the matched class. Returns how many unions changed the graph (merged two classes that were
+   * different), or -1 if the condition did not hold and nothing was applied.
    *
-   * <p>The condition is checked again here, as egg's {@code ConditionalApplier} checks it at
-   * apply time: the runner applies a match only after the matches before it in the iteration,
-   * whose merges may have made the condition false since the search.
+   * <p>The condition is read here, at apply time, not at search: the runner applies a match
+   * only after the matches before it in the iteration, whose merges may have made the
+   * condition false since the search.
    */
   public int apply(EGraph<L, D> graph, Matcher.Match match) {
     if (!condition.holds(graph, match.eclass(), match.subst())) {
-      return 0;
+      return -1;
     }
     IntList added = rhs.apply(graph, match.eclass(), match.subst());
     int changed = 0;

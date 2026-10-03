@@ -38,6 +38,14 @@ public interface Scheduler<L extends Language<L>, D> {
     return true;
   }
 
+  /**
+   * Forgets what earlier runs taught the scheduler. The runner calls it at the start of every
+   * run, whose iterations count from 1 again, so a run depends only on its graph and rules -
+   * not on an earlier run of the same runner, nor on another runner sharing the scheduler.
+   */
+  default void reset() {
+  }
+
   /** The scheduler that applies every match of every rule. */
   static <L extends Language<L>, D> Scheduler<L, D> simple() {
     return (iteration, ruleIndex, rule, graph) -> rule.search(graph);

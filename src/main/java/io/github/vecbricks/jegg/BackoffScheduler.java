@@ -99,30 +99,30 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
   }
 
   @Override
+  public void reset() {
+    stats.clear();
+  }
+
+  @Override
   public boolean canStop(int iteration) {
-    boolean anyBanned = false;
+    int minBan = Integer.MAX_VALUE;
     for (RuleStats s : stats) {
       if (s.bannedUntil > iteration) {
-        anyBanned = true;
-        break;
+        minBan = Math.min(minBan, s.bannedUntil - iteration);
       }
     }
-    if (anyBanned) {
-      // Release every ban rather than idle through it: the next iteration gives each banned
-      // rule its turn, and if nothing changes then, the run has saturated.
-      int minBan = Integer.MAX_VALUE;
-      for (RuleStats s : stats) {
-        if (s.bannedUntil > iteration) {
-          minBan = Math.min(minBan, s.bannedUntil - iteration);
-        }
-      }
-      for (RuleStats s : stats) {
-        if (s.bannedUntil > iteration) {
-          s.bannedUntil -= minBan;
-        }
-      }
-      return false;
+    if (minBan == Integer.MAX_VALUE) {
+      return true;
     }
-    return true;
+    // Rather than idle through the bans, shorten every one by the shortest, as egg does: the
+    // rules whose ban was shortest run in the next iteration, the others stay banned for what
+    // is left of theirs, and the run saturates only once an iteration with no rule banned
+    // changes nothing.
+    for (RuleStats s : stats) {
+      if (s.bannedUntil > iteration) {
+        s.bannedUntil -= minBan;
+      }
+    }
+    return false;
   }
 }

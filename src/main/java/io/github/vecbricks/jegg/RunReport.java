@@ -23,8 +23,9 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
 
   /**
    * One iteration: the graph's size after its rebuild, the matches each rule was given to
-   * apply, how many applications merged two classes that were different, and how many classes
-   * the rebuild repaired.
+   * apply, how many of them were applied (their condition held at apply time), how many
+   * applications merged two classes that were different, and how many classes the rebuild
+   * repaired.
    */
   public record Iteration(int number, int classes, int nodes, Map<String, Integer> matches,
       int applied, int unions, int repaired) {

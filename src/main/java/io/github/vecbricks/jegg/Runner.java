@@ -67,6 +67,7 @@ public final class Runner<L extends Language<L>, D> {
   public RunReport run() {
     List<RunReport.Iteration> iterations = new ArrayList<>();
     graph.rebuild();
+    scheduler.reset();
     StopReason stop = overLimit();
     int iteration = 0;
     while (stop == null) {
@@ -85,8 +86,11 @@ public final class Runner<L extends Language<L>, D> {
       int unions = 0;
       for (int i = 0; i < rules.size(); i++) {
         for (Matcher.Match m : matches.get(i)) {
-          unions += rules.get(i).apply(graph, m);
-          applied++;
+          int changed = rules.get(i).apply(graph, m);
+          if (changed >= 0) {
+            unions += changed;
+            applied++;
+          }
         }
       }
       int repaired = graph.rebuild();

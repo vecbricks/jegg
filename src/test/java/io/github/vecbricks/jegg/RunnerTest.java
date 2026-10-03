@@ -166,6 +166,7 @@ class RunnerTest {
     assertInstanceOf(StopReason.Saturated.class, report.stop(), report.toString());
     assertEquals(g.find(a), g.find(zero));
     assertFalse(g.lookup(new Toy.Var("marked")).isPresent(), report.toString());
+    assertEquals(1, report.iterations().get(0).applied(), "only zero was applied: " + report);
   }
 
   @Test
@@ -192,5 +193,28 @@ class RunnerTest {
         Rewrite.of("commute-add", add(v("x"), v("y")), add(v("y"), v("x"))));
     assertThrows(IllegalArgumentException.class,
         () -> Runner.of(EGraph.<Toy>withoutAnalysis(), rules));
+  }
+
+  @Test
+  void aRunStartsWithNoBansFromAnEarlierRun() {
+    // Runner A, on the five-summand sum, bans its rule 1, commutativity (four matches past a
+    // limit of three), for a hundred iterations, while associativity (three) changes the graph.
+    // Runner B shares the scheduler; its rule 1 is a different rule with a single match, which
+    // must not inherit A's ban by position: B's first iteration applies it.
+    BackoffScheduler<Toy, Void> scheduler = new BackoffScheduler<>(3, 100);
+    EGraph<Toy, Void> first = EGraph.withoutAnalysis();
+    sumOfFive(first);
+    new Runner<>(first, expansive(), RunLimits.DEFAULT.withIterations(1), scheduler).run();
+    assertEquals(1, scheduler.timesBanned(1));
+    EGraph<Toy, Void> second = EGraph.withoutAnalysis();
+    int a = second.add(new Toy.Var("a"));
+    int zero = second.add(new Toy.Num(0));
+    int sum = second.add(new Toy.Add(IntList.of(a, zero)));
+    List<Rewrite<Toy, Void>> rules = List.of(
+        Rewrite.of("unused", Pattern.of(new Toy.Num(7)), Pattern.of(new Toy.Num(7))),
+        Rewrite.of("add-0", add(v("x"), Pattern.of(new Toy.Num(0))), v("x")));
+    RunReport report = new Runner<>(second, rules, RunLimits.DEFAULT, scheduler).run();
+    assertEquals(1, report.iterations().get(0).matches().get("add-0"), report.toString());
+    assertEquals(second.find(a), second.find(sum));
   }
 }
