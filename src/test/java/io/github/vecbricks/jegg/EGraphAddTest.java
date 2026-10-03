@@ -89,6 +89,21 @@ class EGraphAddTest {
     assertEquals(4, g.numNodes());
   }
 
+  @Test
+  void aSharedSubtreeIsLookedUpOnceNotOncePerPath() {
+    // t = t' + t' forty levels deep, every level one object reached twice: 2^40 paths, so a
+    // lookup that walked each path would not return.
+    Toy.Tree t = Toy.Tree.var("x");
+    for (int i = 0; i < 40; i++) {
+      t = Toy.Tree.add(t, t);
+    }
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int root = g.addTree(t, Toy.BRIDGE);
+    assertEquals(41, g.numClasses());
+    assertEquals(root, g.lookupTree(t, Toy.BRIDGE));
+    assertEquals(-1, g.lookupTree(Toy.Tree.mul(t, t), Toy.BRIDGE));
+  }
+
   /** The tree of a graph with one node per class, through the bridge's build. */
   private static Toy.Tree rebuild(EGraph<Toy, Void> g, int id) {
     Toy node = g.classOf(id).nodes().get(0);

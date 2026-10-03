@@ -139,19 +139,31 @@ public final class EGraph<L extends Language<L>, D> {
 
   /**
    * The class a client's tree is in, or -1 if the graph does not hold it, through
-   * {@code bridge}, adding nothing: a subtree missing anywhere means the whole is missing.
+   * {@code bridge}, adding nothing: a subtree missing anywhere means the whole is missing. As in
+   * {@link #addTree}, a subtree object reached twice is looked up once.
    */
-  public <T> int lookupTree(T tree, TreeBridge<T, L> bridge) {
+  public <T> int lookupTree(T root, TreeBridge<T, L> bridge) {
+    return lookupTree(root, bridge, new IdentityHashMap<>());
+  }
+
+  private <T> int lookupTree(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen) {
+    Integer done = seen.get(tree);
+    if (done != null) {
+      return done < 0 ? -1 : unionFind.find(done);
+    }
     List<T> subtrees = bridge.childrenOf(tree);
     int[] ids = new int[subtrees.size()];
     for (int i = 0; i < ids.length; i++) {
-      ids[i] = lookupTree(subtrees.get(i), bridge);
+      ids[i] = lookupTree(subtrees.get(i), bridge, seen);
       if (ids[i] < 0) {
+        seen.put(tree, -1);
         return -1;
       }
     }
     OptionalInt found = lookup(bridge.node(tree, IntList.of(ids)));
-    return found.isPresent() ? found.getAsInt() : -1;
+    int id = found.isPresent() ? found.getAsInt() : -1;
+    seen.put(tree, id);
+    return id;
   }
 
   /** The class with this root id. */
