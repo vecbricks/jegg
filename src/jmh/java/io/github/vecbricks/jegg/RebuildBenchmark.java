@@ -19,10 +19,11 @@ import org.openjdk.jmh.annotations.State;
 
 /**
  * Deferred against eager rebuilding on the ported suites (PLAN.md 6, prediction 1): each run
- * is one saturation of a prop or lambda test, from a fresh graph, with one {@code rebuild} per
- * iteration or one after every merge. Single-shot, since a run is the unit. The three runs that
- * grow past a few thousand nodes (prop's fold, lambda's fib and repeat) are not here: eager
- * rebuilding takes minutes on them, so {@link Benchmarks} times them once each, eager under a
+ * is one saturation of a prop, lambda or math test, from a fresh graph, with one
+ * {@code rebuild} per iteration or one after every merge. Single-shot, since a run is the unit.
+ * The three runs that grow past a few thousand nodes (prop's fold, lambda's fib and repeat) are
+ * not here: eager rebuilding takes minutes on them, so {@link Benchmarks} times them once each,
+ * eager under a
  * cap.
  */
 @State(Scope.Thread)
@@ -32,7 +33,11 @@ public class RebuildBenchmark {
 
   @Param({"prove_contrapositive", "prove_chain", "lambda_under", "lambda_if_elim",
       "lambda_let_simple", "lambda_capture", "lambda_capture_free", "lambda_closure_not_seven",
-      "lambda_compose", "lambda_if_simple", "lambda_compose_many", "lambda_if"})
+      "lambda_compose", "lambda_if_simple", "lambda_compose_many", "lambda_if", "math_fail",
+      "math_simplify_add", "math_powers", "math_simplify_const", "math_simplify_root",
+      "math_simplify_factor", "math_diff_same", "math_diff_different", "math_diff_simple1",
+      "math_diff_simple2", "math_diff_ln", "diff_power_simple", "diff_power_harder", "integ_one",
+      "integ_sin", "integ_x", "integ_part1", "integ_part2", "integ_part3"})
   public String suite;
 
   @Param({"DEFERRED", "EAGER"})

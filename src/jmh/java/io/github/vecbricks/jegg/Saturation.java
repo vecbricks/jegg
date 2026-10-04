@@ -90,7 +90,7 @@ final class Saturation {
         timedOut);
   }
 
-  /** The runs of the ported suites, by name: the prop cases, then the lambda cases. */
+  /** The runs of the ported suites, by name: the prop cases, the lambda cases, the math cases. */
   static Map<String, Workload> suites() {
     Map<String, Workload> out = new LinkedHashMap<>();
     for (PropRulesTest.Case c : PropRulesTest.CASES) {
@@ -121,6 +121,24 @@ final class Saturation {
             graph -> goals.stream()
                 .allMatch(p -> !Matcher.matchIn(graph, p, root, Subst.EMPTY).isEmpty()),
             deadline);
+        boolean proved = o.stop().equals("Proved all goals");
+        if (!o.timedOut() && proved != c.proves()) {
+          throw new IllegalStateException(c.name() + " ended " + o.stop() + ", egg "
+              + (c.proves() ? "proves it" : "does not"));
+        }
+        return o;
+      });
+    }
+    for (MathTest.Case c : MathTest.CASES) {
+      out.put(c.name(), (mode, deadline) -> {
+        EGraph<MathTest.Math, Double> g = new EGraph<>(MathTest.CONSTANT_FOLD);
+        int root = g.addTree(Term.parse(c.start()), MathTest.BRIDGE);
+        for (String extra : c.extraTerms()) {
+          g.addTree(Term.parse(extra), MathTest.BRIDGE);
+        }
+        List<Pattern<MathTest.Math>> goals = c.goals().stream().map(MathTest::pattern).toList();
+        Outcome o = run(mode, g, MathTest.rules(), c.limits(), new BackoffScheduler<>(),
+            graph -> goals.stream().allMatch(p -> MathTest.proved(graph, root, p)), deadline);
         boolean proved = o.stop().equals("Proved all goals");
         if (!o.timedOut() && proved != c.proves()) {
           throw new IllegalStateException(c.name() + " ended " + o.stop() + ", egg "

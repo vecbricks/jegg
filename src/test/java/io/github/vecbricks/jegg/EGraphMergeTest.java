@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Random;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
@@ -174,5 +175,57 @@ class EGraphMergeTest {
     assertThrows(IllegalArgumentException.class, () -> g.add(new Toy.Add(IntList.of(a, 7))));
     assertThrows(IllegalArgumentException.class, () -> g.merge(a, 9));
     g.checkInvariants();
+  }
+
+  @Test
+  void pruningAClassKeepsTheInvariantsAndRefusesToEmptyIt() {
+    // 1 + 2 folds to 3: the class holds Num 3 and Add(1, 2). Pruning to the leaves drops the
+    // sum from the class, the hashcons and its children's parent lists; a later add of the same
+    // sum makes a fresh class that folds and merges back.
+    EGraph<Toy, Long> g = new EGraph<>(ConstantFoldTest.FOLD);
+    int one = g.add(new Toy.Num(1));
+    int two = g.add(new Toy.Num(2));
+    int sum = g.add(new Toy.Add(IntList.of(one, two)));
+    g.rebuild();
+    assertEquals(2, g.classOf(sum).nodes().size());
+    assertEquals(1, g.retainNodes(sum, node -> node.children().isEmpty()));
+    assertEquals(List.of(new Toy.Num(3)), g.classOf(sum).nodes());
+    assertEquals(OptionalInt.of(g.find(sum)), g.lookup(new Toy.Add(IntList.of(one, two))),
+        "a dropped node is still found, in its class, as egg's memo finds it");
+    assertTrue(g.classOf(one).parents().stream().anyMatch(p -> p.node() instanceof Toy.Add),
+        "the dropped node stays a parent of its children, as egg's does, for congruence");
+    g.checkInvariants();
+    g.checkAnalysisInvariant();
+    assertEquals(0, g.retainNodes(sum, node -> true));
+    assertThrows(IllegalArgumentException.class, () -> g.retainNodes(sum, node -> false));
+    long changes = g.changes();
+    int again = g.add(new Toy.Add(IntList.of(one, two)));
+    assertEquals(g.find(sum), g.find(again));
+    assertEquals(changes, g.changes(), "adding a dropped node again changes nothing");
+    assertEquals(List.of(new Toy.Num(3)), g.classOf(sum).nodes());
+    g.checkInvariants();
+  }
+
+  @Test
+  void aPrunedNodeStillMakesItsClassCongruentWhenAChildIsMerged() {
+    // 1 + 2 folds to 3 and is pruned from its class; a + b is a separate class. Merging a with 1
+    // and b with 2 makes a + b congruent with the pruned 1 + 2: the rebuild must union the two
+    // classes, as egg's does through the memo entry it leaves behind.
+    EGraph<Toy, Long> g = new EGraph<>(ConstantFoldTest.FOLD);
+    int one = g.add(new Toy.Num(1));
+    int two = g.add(new Toy.Num(2));
+    int sum = g.add(new Toy.Add(IntList.of(one, two)));
+    g.rebuild();
+    g.retainNodes(sum, node -> node.children().isEmpty());
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int ab = g.add(new Toy.Add(IntList.of(a, b)));
+    g.merge(a, one);
+    g.merge(b, two);
+    g.rebuild();
+    assertEquals(g.find(sum), g.find(ab), "a + b is 1 + 2, which is 3");
+    assertEquals(3L, g.data(ab));
+    g.checkInvariants();
+    g.checkAnalysisInvariant();
   }
 }
