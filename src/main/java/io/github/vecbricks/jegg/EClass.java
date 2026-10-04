@@ -45,12 +45,16 @@ public final class EClass<L extends Language<L>, D> {
     return id;
   }
 
-  /** The nodes, in insertion order, read-only. */
+  /**
+   * The nodes, in insertion order, as a read-only view of the live list: {@code add},
+   * {@code merge} and {@code rebuild} change it, so a caller that will change the graph while
+   * iterating - an applier, a condition - copies it first.
+   */
   public List<L> nodes() {
     return Collections.unmodifiableList(nodes);
   }
 
-  /** The parent entries, in insertion order, read-only. */
+  /** The parent entries, in insertion order, a read-only view of the live list, as above. */
   public List<Parent<L>> parents() {
     return Collections.unmodifiableList(parents);
   }

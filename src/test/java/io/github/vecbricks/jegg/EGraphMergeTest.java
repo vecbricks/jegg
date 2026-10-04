@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -146,4 +147,32 @@ class EGraphMergeTest {
     return g;
   }
 
+  @Test
+  void aJoinThatRefusesTheMergeLeavesTheGraphAsItWas() {
+    // Constant folding refuses two constants in one class; the merge must then have changed
+    // nothing: not the union-find, not the classes, not the counts.
+    EGraph<Toy, Long> g = new EGraph<>(ConstantFoldTest.FOLD);
+    int one = g.add(new Toy.Num(1));
+    int two = g.add(new Toy.Num(2));
+    long changes = g.changes();
+    assertThrows(IllegalStateException.class, () -> g.merge(one, two));
+    assertEquals(2, g.numClasses());
+    assertEquals(one, g.find(one));
+    assertEquals(two, g.find(two));
+    assertEquals(changes, g.changes());
+    assertFalse(g.isDirty());
+    g.checkInvariants();
+    g.checkAnalysisInvariant();
+  }
+
+  @Test
+  void anIdTheGraphNeverIssuedIsRefused() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    assertThrows(IllegalArgumentException.class, () -> g.find(a + 5));
+    assertThrows(IllegalArgumentException.class, () -> g.find(-1));
+    assertThrows(IllegalArgumentException.class, () -> g.add(new Toy.Add(IntList.of(a, 7))));
+    assertThrows(IllegalArgumentException.class, () -> g.merge(a, 9));
+    g.checkInvariants();
+  }
 }

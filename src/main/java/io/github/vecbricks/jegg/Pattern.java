@@ -9,7 +9,10 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -64,6 +67,44 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
 
     /** The e-node with this head over these children, payload variables read from the subst. */
     L build(Subst subst, IntList children);
+
+    /** The payload variable this head binds, if it binds one. */
+    default Optional<String> variable() {
+      return Optional.empty();
+    }
+  }
+
+  /** The subterm variables of this pattern, in first-occurrence order. */
+  default Set<String> subtermVariables() {
+    Set<String> out = new LinkedHashSet<>();
+    collect(this, out, true);
+    return out;
+  }
+
+  /** The payload variables of this pattern's heads, in first-occurrence order. */
+  default Set<String> payloadVariables() {
+    Set<String> out = new LinkedHashSet<>();
+    collect(this, out, false);
+    return out;
+  }
+
+  private static <L extends Language<L>> void collect(Pattern<L> p, Set<String> out,
+      boolean subterm) {
+    switch (p) {
+      case Var<L>(var name) -> {
+        if (subterm) {
+          out.add(name);
+        }
+      }
+      case Node<L>(var head, var children) -> {
+        if (!subterm) {
+          head.variable().ifPresent(out::add);
+        }
+        for (Pattern<L> child : children) {
+          collect(child, out, subterm);
+        }
+      }
+    }
   }
 
   /** A variable pattern. */
@@ -143,6 +184,11 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
       @Override
       public L build(Subst subst, IntList children) {
         return build.apply(subst.payload(variable), children);
+      }
+
+      @Override
+      public Optional<String> variable() {
+        return Optional.of(variable);
       }
 
       @Override

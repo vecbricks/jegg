@@ -100,8 +100,8 @@ class EGraphAddTest {
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int root = g.addTree(t, Toy.BRIDGE);
     assertEquals(41, g.numClasses());
-    assertEquals(root, g.lookupTree(t, Toy.BRIDGE));
-    assertEquals(-1, g.lookupTree(Toy.Tree.mul(t, t), Toy.BRIDGE));
+    assertEquals(OptionalInt.of(root), g.lookupTree(t, Toy.BRIDGE));
+    assertEquals(OptionalInt.empty(), g.lookupTree(Toy.Tree.mul(t, t), Toy.BRIDGE));
   }
 
   /** The tree of a graph with one node per class, through the bridge's build. */

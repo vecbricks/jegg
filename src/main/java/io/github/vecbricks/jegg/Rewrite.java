@@ -11,6 +11,7 @@ package io.github.vecbricks.jegg;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalInt;
 
 /**
  * A named rewrite: a left-hand pattern, a right-hand {@link Applier} and a {@link Condition}.
@@ -29,6 +30,23 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
     Objects.requireNonNull(lhs, "lhs");
     Objects.requireNonNull(rhs, "rhs");
     Objects.requireNonNull(condition, "condition");
+    // As egg's Rewrite::new: a pattern right-hand side may use only what the left binds, so a
+    // misspelt variable fails here and not in the middle of an apply phase, with the graph
+    // half-applied. A dynamic applier cannot be checked; its variables are its own business.
+    if (rhs instanceof Applier.PatternApplier<L, D>(var pattern)) {
+      for (String v : pattern.subtermVariables()) {
+        if (!lhs.subtermVariables().contains(v)) {
+          throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's ?" + v
+              + " is not bound by the left-hand side " + lhs);
+        }
+      }
+      for (String v : pattern.payloadVariables()) {
+        if (!lhs.payloadVariables().contains(v)) {
+          throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's payload"
+              + " variable ?" + v + " is not bound by the left-hand side " + lhs);
+        }
+      }
+    }
   }
 
   /** A rewrite from one pattern to another, unconditional. */
@@ -59,15 +77,15 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
   /**
    * Applies one match if its condition holds: the right-hand side's classes are unioned with
    * the matched class. Returns how many unions changed the graph (merged two classes that were
-   * different), or -1 if the condition did not hold and nothing was applied.
+   * different), or empty if the condition did not hold and nothing was applied.
    *
    * <p>The condition is read here, at apply time, not at search: the runner applies a match
    * only after the matches before it in the iteration, whose merges may have made the
    * condition false since the search.
    */
-  public int apply(EGraph<L, D> graph, Matcher.Match match) {
+  public OptionalInt apply(EGraph<L, D> graph, Matcher.Match match) {
     if (!condition.holds(graph, match.eclass(), match.subst())) {
-      return -1;
+      return OptionalInt.empty();
     }
     IntList added = rhs.apply(graph, match.eclass(), match.subst());
     int changed = 0;
@@ -77,7 +95,7 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
         changed++;
       }
     }
-    return changed;
+    return OptionalInt.of(changed);
   }
 
   @Override

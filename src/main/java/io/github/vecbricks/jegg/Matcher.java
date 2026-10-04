@@ -53,28 +53,28 @@ public final class Matcher {
       Pattern<L> pattern, int id, Subst subst) {
     int root = graph.find(id);
     switch (pattern) {
-      case Pattern.Var<L> v -> {
-        var bound = subst.id(v.name());
+      case Pattern.Var<L>(var name) -> {
+        var bound = subst.id(name);
         if (bound.isPresent()) {
           return graph.find(bound.getAsInt()) == root ? List.of(subst) : List.of();
         }
-        return List.of(subst.bind(v.name(), root));
+        return List.of(subst.bind(name, root));
       }
-      case Pattern.Node<L> p -> {
+      case Pattern.Node<L>(var head, var children) -> {
         Set<Subst> out = new LinkedHashSet<>();
         for (L node : graph.classOf(root).nodes()) {
-          if (node.children().size() != p.children().size()) {
+          if (node.children().size() != children.size()) {
             continue;
           }
-          Subst headBound = p.head().match(node, subst);
+          Subst headBound = head.match(node, subst);
           if (headBound == null) {
             continue;
           }
           List<Subst> partial = List.of(headBound);
-          for (int i = 0; i < p.children().size() && !partial.isEmpty(); i++) {
+          for (int i = 0; i < children.size() && !partial.isEmpty(); i++) {
             List<Subst> next = new ArrayList<>();
             for (Subst s : partial) {
-              next.addAll(matchIn(graph, p.children().get(i), node.children().get(i), s));
+              next.addAll(matchIn(graph, children.get(i), node.children().get(i), s));
             }
             partial = next;
           }
@@ -92,15 +92,15 @@ public final class Matcher {
   public static <L extends Language<L>, D> int instantiate(EGraph<L, D> graph,
       Pattern<L> pattern, Subst subst) {
     switch (pattern) {
-      case Pattern.Var<L> v -> {
-        return graph.find(subst.idOf(v.name()));
+      case Pattern.Var<L>(var name) -> {
+        return graph.find(subst.idOf(name));
       }
-      case Pattern.Node<L> p -> {
-        int[] ids = new int[p.children().size()];
+      case Pattern.Node<L>(var head, var children) -> {
+        int[] ids = new int[children.size()];
         for (int i = 0; i < ids.length; i++) {
-          ids[i] = instantiate(graph, p.children().get(i), subst);
+          ids[i] = instantiate(graph, children.get(i), subst);
         }
-        return graph.add(p.head().build(subst, IntList.of(ids)));
+        return graph.add(head.build(subst, IntList.of(ids)));
       }
     }
   }

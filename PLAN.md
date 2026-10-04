@@ -118,8 +118,8 @@ The egg-to-Java mapping, component by component:
 | `Explain`, `RecExpr` parsing, `LpExtractor`, `dot` | out | proofs are Herbie's need; Varka builds patterns from IR; no ILP dependency |
 
 **Determinism, fixed at three points.** Ids are assigned by insertion order;
-rewrites are searched in declared order and their matches sorted by (rule,
-canonical class id, substitution) before the write phase; the extractor
+rewrites are searched in declared order and their matches applied in the
+matcher's order (class id, then node insertion) before the write phase; the extractor
 breaks cost ties by the lowest node id. Every map whose iteration order can
 reach an id assignment or a merge order is insertion-ordered
 (`LinkedHashMap`/`ArrayList`), and section 5 has a test that runs the same

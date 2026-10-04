@@ -12,10 +12,12 @@ package io.github.vecbricks.jegg;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -95,10 +97,10 @@ public final class Runner<L extends Language<L>, D> {
     StopReason stop = overLimit();
     int iteration = 0;
     while (stop == null) {
-      // The sizes before the hooks: an iteration counts as changing nothing only if the hooks,
-      // the conditions and the appliers all left them as they were, as egg's does.
-      int nodesBefore = graph.numNodes();
-      int classesBefore = graph.numClasses();
+      // The graph's change count before the hooks: an iteration changed nothing only if the
+      // hooks, the conditions and the appliers all left it as it was. egg compares sizes, which
+      // an add and a merge in one iteration leave as they were; the count does not.
+      long changesBefore = graph.changes();
       stop = askHooks();
       if (stop != null) {
         break;
@@ -108,33 +110,41 @@ public final class Runner<L extends Language<L>, D> {
       // Read every match before writing any, so no rule sees this iteration's additions.
       List<List<Matcher.Match>> matches = new ArrayList<>(rules.size());
       Map<String, Integer> counts = new LinkedHashMap<>();
+      Set<String> banned = new LinkedHashSet<>();
       for (int i = 0; i < rules.size(); i++) {
         List<Matcher.Match> found = scheduler.search(iteration, i, rules.get(i), graph);
         matches.add(found);
         counts.put(rules.get(i).name(), found.size());
+        if (scheduler.isBanned(iteration, i)) {
+          banned.add(rules.get(i).name());
+        }
       }
       int applied = 0;
       int unions = 0;
       for (int i = 0; i < rules.size(); i++) {
         for (Matcher.Match m : matches.get(i)) {
-          int changed = rules.get(i).apply(graph, m);
-          if (changed >= 0) {
-            unions += changed;
+          OptionalInt changed = rules.get(i).apply(graph, m);
+          if (changed.isPresent()) {
+            unions += changed.getAsInt();
             applied++;
           }
+        }
+        // The limits are checked after each rule's matches, as egg checks them, so one
+        // iteration overshoots by at most one rule's additions, not every rule's. The stop
+        // reason is read after the rebuild, with the graph's settled size.
+        if (overLimit() != null) {
+          break;
         }
       }
       int repaired = graph.rebuild();
       iterations.add(new RunReport.Iteration(iteration, graph.numClasses(), graph.numNodes(),
-          counts, applied, unions, repaired));
+          counts, banned, applied, unions, repaired));
       stop = overLimit();
       // As egg: the scheduler is asked whenever no rule merged two classes, whether or not
       // nodes were added, so it may release its bans then (Scheduler.canStop says so); the
-      // iteration is saturation only if, besides, nothing was added.
+      // iteration is saturation only if, besides, nothing else changed.
       boolean canStop = unions == 0 && scheduler.canStop(iteration);
-      boolean unchanged = graph.numNodes() == nodesBefore
-          && graph.numClasses() == classesBefore;
-      if (stop == null && canStop && unchanged) {
+      if (stop == null && canStop && graph.changes() == changesBefore) {
         stop = new StopReason.Saturated();
       }
       if (stop == null && iteration >= limits.iterations()) {

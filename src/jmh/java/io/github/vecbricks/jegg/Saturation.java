@@ -61,7 +61,7 @@ final class Saturation {
       int unions = 0;
       for (int i = 0; i < rules.size() && !timedOut; i++) {
         for (Matcher.Match m : matches.get(i)) {
-          int changed = rules.get(i).apply(graph, m);
+          int changed = rules.get(i).apply(graph, m).orElse(0);
           if (changed > 0) {
             unions += changed;
             if (mode == Mode.EAGER) {
@@ -103,8 +103,8 @@ final class Saturation {
         Outcome o = run(mode, g, c.rules(), PropRulesTest.LIMITS, new BackoffScheduler<>(),
             graph -> false, deadline);
         for (Term goal : goals) {
-          int id = g.lookupTree(goal, PropRulesTest.BRIDGE);
-          if (id < 0 || g.find(id) != g.find(root)) {
+          java.util.OptionalInt id = g.lookupTree(goal, PropRulesTest.BRIDGE);
+          if (id.isEmpty() || g.find(id.getAsInt()) != g.find(root)) {
             throw new IllegalStateException(c.name() + " did not prove " + goal);
           }
         }

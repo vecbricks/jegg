@@ -50,6 +50,10 @@ public final class EGraph<L extends Language<L>, D> {
   private final List<EClass<L, D>> classes = new ArrayList<>();
   // How many entries of classes are not null, kept by add and merge so counting is free.
   private int liveClasses;
+  // How many times the graph changed: a class made by add, two roots joined by merge. The
+  // runner reads it to tell an iteration that changed nothing, which sizes cannot: an add and
+  // a merge in one iteration leave them as they were.
+  private long changes;
   // Roots of classes a merge touched since the last rebuild; repaired in id order.
   private final List<Integer> worklist = new ArrayList<>();
   // Parent entries whose class's fact may have grown because a child's fact did (paper
@@ -105,6 +109,7 @@ public final class EGraph<L extends Language<L>, D> {
     EClass<L, D> eclass = new EClass<>(id, null);
     classes.add(eclass);
     liveClasses++;
+    changes++;
     eclass.addNode(canonical);
     IntList children = canonical.children();
     for (int i = 0; i < children.size(); i++) {
@@ -141,14 +146,15 @@ public final class EGraph<L extends Language<L>, D> {
   }
 
   /**
-   * The class a client's tree is in, or -1 if the graph does not hold it, through
-   * {@code bridge}, adding nothing: a subtree missing anywhere means the whole is missing. As in
-   * {@link #addTree}, a subtree object reached twice is looked up once. Like {@link #lookup} it
-   * reads the hashcons, so after a merge it is exact only once the graph is rebuilt: before,
-   * a tree whose children were merged can read as missing.
+   * The class a client's tree is in, if the graph holds it, through {@code bridge}, adding
+   * nothing: a subtree missing anywhere means the whole is missing. As in {@link #addTree}, a
+   * subtree object reached twice is looked up once. Like {@link #lookup} it reads the hashcons,
+   * so after a merge it is exact only once the graph is rebuilt: before, a tree whose children
+   * were merged can read as missing.
    */
-  public <T> int lookupTree(T root, TreeBridge<T, L> bridge) {
-    return lookupTree(root, bridge, new IdentityHashMap<>());
+  public <T> OptionalInt lookupTree(T root, TreeBridge<T, L> bridge) {
+    int id = lookupTree(root, bridge, new IdentityHashMap<>());
+    return id < 0 ? OptionalInt.empty() : OptionalInt.of(id);
   }
 
   private <T> int lookupTree(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen) {
@@ -201,6 +207,15 @@ public final class EGraph<L extends Language<L>, D> {
     return liveClasses;
   }
 
+  /**
+   * How many times the graph has changed: a class made by {@link #add}, or two roots joined by
+   * {@link #merge}, including the merges a {@link #rebuild} makes. Two readings that agree mean
+   * nothing happened in between; sizes cannot say that, since an add and a merge cancel out.
+   */
+  public long changes() {
+    return changes;
+  }
+
   /** How many distinct canonical e-nodes the graph holds, once rebuilt. */
   public int numNodes() {
     return hashcons.size();
@@ -223,13 +238,20 @@ public final class EGraph<L extends Language<L>, D> {
     if (ra == rb) {
       return ra;
     }
-    int root = unionFind.union(ra, rb);
-    int other = root == ra ? rb : ra;
+    // The union-find keeps the smaller root. The joined fact is computed first: an analysis
+    // whose join refuses the merge (two constants in one class) must leave the graph as it was,
+    // not with the two classes joined in the union-find and nowhere else.
+    int root = Math.min(ra, rb);
+    int other = Math.max(ra, rb);
     EClass<L, D> kept = classes.get(root);
     EClass<L, D> gone = classes.get(other);
     // The joined fact: where it grew past what a side had, that side's parents are re-made,
     // since their facts were made from the smaller one (paper Figure 9).
     D joined = analysis.join(kept.data(), gone.data());
+    if (unionFind.union(ra, rb) != root) {
+      throw new IllegalStateException("the union-find did not keep the smaller root");
+    }
+    changes++;
     if (!Objects.equals(joined, kept.data())) {
       analysisPending.addAll(kept.mutableParents());
     }

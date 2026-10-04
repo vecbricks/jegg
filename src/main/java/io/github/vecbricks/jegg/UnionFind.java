@@ -39,8 +39,15 @@ public final class UnionFind {
     return size;
   }
 
-  /** The root of {@code id}'s set, with the path to it compressed. */
+  /**
+   * The root of {@code id}'s set, with the path to it compressed. An id this union-find never
+   * made - negative, or past {@link #size} - is refused: an unmade slot below the array's
+   * capacity would otherwise read as a member of set 0, silently.
+   */
   public int find(int id) {
+    if (id < 0 || id >= size) {
+      throw new IllegalArgumentException("no id " + id + " in a union-find of " + size);
+    }
     int root = id;
     while (parent[root] != root) {
       root = parent[root];
