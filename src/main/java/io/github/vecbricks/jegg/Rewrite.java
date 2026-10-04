@@ -83,6 +83,11 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
     return Matcher.search(graph, lhs);
   }
 
+  /** The first {@code limit} matches, and no search past them ({@link Matcher#search}). */
+  public List<Matcher.Match> search(EGraph<L, D> graph, int limit) {
+    return Matcher.search(graph, lhs, limit);
+  }
+
   /**
    * Applies one match if its condition holds: the right-hand side's classes are unioned with
    * the matched class. Returns how many unions changed the graph (merged two classes that were

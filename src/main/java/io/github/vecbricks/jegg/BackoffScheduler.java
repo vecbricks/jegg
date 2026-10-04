@@ -76,8 +76,12 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
     if (s.bannedUntil > iteration) {
       return List.of();
     }
-    List<Matcher.Match> matches = rule.search(graph);
-    if (matches.size() > doubled(matchLimit, s.timesBanned)) {
+    // As egg: searched for one match more than the threshold, so a rule with far more matches
+    // than it will be given costs one match past the threshold, not all of them.
+    int threshold = doubled(matchLimit, s.timesBanned);
+    List<Matcher.Match> matches = rule.search(graph,
+        threshold == Integer.MAX_VALUE ? threshold : threshold + 1);
+    if (matches.size() > threshold) {
       long ban = doubled(banLength, s.timesBanned);
       s.timesBanned++;
       s.bannedUntil = (int) Math.min(Integer.MAX_VALUE, iteration + ban);

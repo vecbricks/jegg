@@ -36,9 +36,26 @@ public final class Matcher {
   /** Every match of {@code pattern} anywhere in {@code graph}, in class order. */
   public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
       Pattern<L> pattern) {
+    return search(graph, pattern, Integer.MAX_VALUE);
+  }
+
+  /**
+   * The first {@code limit} matches of {@code pattern}, in class order - a prefix of what
+   * {@link #search(EGraph, Pattern)} returns - and the search stops there: egg's
+   * {@code search_with_limit}, which lets a scheduler find out that a rule has more matches
+   * than it will apply without paying for all of them.
+   */
+  public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
+      Pattern<L> pattern, int limit) {
     List<Match> matches = new ArrayList<>();
     for (EClass<L, D> eclass : graph.classes()) {
+      if (matches.size() >= limit) {
+        break;
+      }
       for (Subst subst : matchIn(graph, pattern, eclass.id(), Subst.EMPTY)) {
+        if (matches.size() >= limit) {
+          break;
+        }
         matches.add(new Match(eclass.id(), subst));
       }
     }
