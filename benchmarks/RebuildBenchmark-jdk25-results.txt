@@ -1,0 +1,72 @@
+================================================================================================
+Deferred against eager rebuilding, one saturation of each ported test
+================================================================================================
+
+OpenJDK 64-Bit Server VM 25.0.4.1+1-1-26.04.4-Ubuntu on Linux 7.0.0-34-generic
+AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M, 8 threads
+pinned to cpus 0,1,2,3,12,13,14,15; max clock 5157895 kHz, governor performance, energy preference performance, platform profile performance
+commit 198a02b, 2026-10-04T13:06:51.380236053+02:00
+load average before 0.61, after 1.00
+JMH 1.37; mvn -Pbench -q test-compile exec:exec -Dbench=rebuild
+  Single-shot time per saturation, ms: mode [SingleShotTime], forks 5, warmup 2 x null, measurement 3 x null, jvm args []
+
+Single-shot time per saturation, ms:
+Benchmark                    (mode)                   (suite)  Mode  Cnt   Score   Error  Units
+RebuildBenchmark.saturate  DEFERRED      prove_contrapositive    ss   15   1.965 ± 0.438  ms/op
+RebuildBenchmark.saturate  DEFERRED               prove_chain    ss   15   2.516 ± 0.381  ms/op
+RebuildBenchmark.saturate  DEFERRED              lambda_under    ss   15   2.344 ± 0.393  ms/op
+RebuildBenchmark.saturate  DEFERRED            lambda_if_elim    ss   15   3.743 ± 0.744  ms/op
+RebuildBenchmark.saturate  DEFERRED         lambda_let_simple    ss   15   3.368 ± 0.851  ms/op
+RebuildBenchmark.saturate  DEFERRED            lambda_capture    ss   15   2.109 ± 0.243  ms/op
+RebuildBenchmark.saturate  DEFERRED       lambda_capture_free    ss   15   2.853 ± 0.461  ms/op
+RebuildBenchmark.saturate  DEFERRED  lambda_closure_not_seven    ss   15   3.944 ± 0.677  ms/op
+RebuildBenchmark.saturate  DEFERRED            lambda_compose    ss   15   5.330 ± 1.459  ms/op
+RebuildBenchmark.saturate  DEFERRED          lambda_if_simple    ss   15   1.976 ± 0.317  ms/op
+RebuildBenchmark.saturate  DEFERRED       lambda_compose_many    ss   15  11.953 ± 2.681  ms/op
+RebuildBenchmark.saturate  DEFERRED                 lambda_if    ss   15   4.002 ± 0.433  ms/op
+RebuildBenchmark.saturate     EAGER      prove_contrapositive    ss   15   1.919 ± 0.330  ms/op
+RebuildBenchmark.saturate     EAGER               prove_chain    ss   15   2.796 ± 0.584  ms/op
+RebuildBenchmark.saturate     EAGER              lambda_under    ss   15   2.416 ± 0.330  ms/op
+RebuildBenchmark.saturate     EAGER            lambda_if_elim    ss   15   3.717 ± 0.608  ms/op
+RebuildBenchmark.saturate     EAGER         lambda_let_simple    ss   15   3.158 ± 0.487  ms/op
+RebuildBenchmark.saturate     EAGER            lambda_capture    ss   15   2.135 ± 0.320  ms/op
+RebuildBenchmark.saturate     EAGER       lambda_capture_free    ss   15   2.892 ± 0.540  ms/op
+RebuildBenchmark.saturate     EAGER  lambda_closure_not_seven    ss   15   4.703 ± 1.148  ms/op
+RebuildBenchmark.saturate     EAGER            lambda_compose    ss   15   6.432 ± 2.017  ms/op
+RebuildBenchmark.saturate     EAGER          lambda_if_simple    ss   15   1.897 ± 0.353  ms/op
+RebuildBenchmark.saturate     EAGER       lambda_compose_many    ss   15  15.809 ± 3.512  ms/op
+RebuildBenchmark.saturate     EAGER                 lambda_if    ss   15   4.379 ± 0.728  ms/op
+
+Classes repaired per run, one run each; the three large runs timed, their eager run capped at ten minutes:
+suite                           mode   iterations   repaired        nodes stop
+prove_contrapositive        DEFERRED            4          5           12 Saturated
+prove_contrapositive           EAGER            4          6           12 Saturated
+prove_chain                 DEFERRED            5         12           29 Saturated
+prove_chain                    EAGER            5         17           29 Saturated
+prove_fold                  DEFERRED           13       4536        31059 NodeLimit (0.6 s, one run)
+prove_fold                     EAGER           13      25706        31059 NodeLimit (260.7 s, one run)
+lambda_under                DEFERRED            2          4           10 Proved all goals
+lambda_under                   EAGER            2          4           10 Proved all goals
+lambda_if_elim              DEFERRED            4         11           19 Proved all goals
+lambda_if_elim                 EAGER            4         15           19 Proved all goals
+lambda_let_simple           DEFERRED            3         10           18 Proved all goals
+lambda_let_simple              EAGER            3         10           18 Proved all goals
+lambda_capture              DEFERRED            2          1            5 Saturated
+lambda_capture                 EAGER            2          1            5 Saturated
+lambda_capture_free         DEFERRED            4          6           12 Saturated
+lambda_capture_free            EAGER            4          3           12 Saturated
+lambda_closure_not_seven    DEFERRED            8         24           39 Saturated
+lambda_closure_not_seven       EAGER            8         30           39 Saturated
+lambda_compose              DEFERRED           14         50           78 Proved all goals
+lambda_compose                 EAGER           14         60           78 Proved all goals
+lambda_if_simple            DEFERRED            1          2            6 Proved all goals
+lambda_if_simple               EAGER            1          2            6 Proved all goals
+lambda_compose_many         DEFERRED           17        236          284 Proved all goals
+lambda_compose_many            EAGER           17        509          284 Proved all goals
+lambda_function_repeat      DEFERRED           58      12879        32636 Proved all goals (11.1 s, one run)
+lambda_function_repeat         EAGER           56      57758        35803 TimedOut (600.0 s, one run)
+lambda_if                   DEFERRED            8         26           42 Proved all goals
+lambda_if                      EAGER            8         28           42 Proved all goals
+lambda_fib                  DEFERRED           56       1513        14582 Proved all goals (27.4 s, one run)
+lambda_fib                     EAGER           53      26937        14640 TimedOut (600.1 s, one run)
+

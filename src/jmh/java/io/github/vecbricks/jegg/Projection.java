@@ -13,19 +13,19 @@ import java.util.List;
 
 /**
  * The Varka-shaped workload of PLAN.md 6, "absolute cost at Varka's size": a projection of 64
- * e-nodes over the toy date language of {@code DateSmokeTest} extended with integer arithmetic,
+ * e-nodes (the size the plan fixes, before any rewriting) over the toy date language of {@code DateSmokeTest} extended with integer arithmetic,
  * several outputs over shared shifted dates, and exactly twenty rules - the date rules, the
  * algebra of {@code +} and {@code *}, and a fused form a pair of fields can take. The term and
  * the rules are fixed here so the measurement is the same every time it is regenerated.
  */
-final class Varka64 {
+final class Projection {
 
-  private Varka64() {
+  private Projection() {
   }
 
-  sealed interface Varka extends Language<Varka> permits Varka.Leaf, Varka.SlotSum,
-      Varka.AddDays, Varka.Civil, Varka.Field, Varka.FieldOf, Varka.Months, Varka.Add,
-      Varka.Mul {
+  sealed interface Varka extends Language<Varka>
+      permits Varka.Leaf, Varka.SlotSum, Varka.AddDays, Varka.Civil, Varka.Field, Varka.FieldOf,
+      Varka.Months, Varka.Add, Varka.Mul {
 
     sealed interface Leaf extends Varka permits Col, Slot, Num {
       @Override

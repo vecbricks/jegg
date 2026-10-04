@@ -19,14 +19,14 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
- * The absolute cost at Varka's size (PLAN.md 6, prediction 4): the {@link Varka64} projection
+ * The absolute cost at Varka's size (PLAN.md 6, prediction 4): the 64-node {@link Projection}
  * added and saturated or run to its node limit, and the saturated graph extracted, over all the
  * roots at once and one root at a time. The mode (warm average, cold single shot) and the
  * profilers are set by {@link Benchmarks}.
  */
 @State(Scope.Thread)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
-public class Varka64Benchmark {
+public class ProjectionBenchmark {
 
   /**
    * Node limits a compiler with a budget might set. egg's default, 10,000, is not measured:
@@ -36,29 +36,29 @@ public class Varka64Benchmark {
   @Param({"200", "1000"})
   public int nodes;
 
-  private Varka64.Saturated saturated;
+  private Projection.Saturated saturated;
 
   @Setup(Level.Trial)
   public void saturateOnce() {
-    saturated = Varka64.saturate(nodes);
+    saturated = Projection.saturate(nodes);
   }
 
   /** The term added and run to saturation or the node limit, from an empty graph. */
   @Benchmark
   public RunReport saturate() {
-    return Varka64.saturate(nodes).report();
+    return Projection.saturate(nodes).report();
   }
 
   /** One node per class over all the roots, the shared decomposition paid once. */
   @Benchmark
-  public Selection<Varka64.Varka> extractAll() {
-    return new Extractor<>(saturated.graph(), Varka64.TABLE).extractAll(saturated.roots());
+  public Selection<Projection.Varka> extractAll() {
+    return new Extractor<>(saturated.graph(), Projection.TABLE).extractAll(saturated.roots());
   }
 
   /** The cheapest tree of each root, egg's extraction. */
   @Benchmark
   public void extractTrees(Blackhole hole) {
-    Extractor<Varka64.Varka, Void> ex = new Extractor<>(saturated.graph(), Varka64.TABLE);
+    Extractor<Projection.Varka, Void> ex = new Extractor<>(saturated.graph(), Projection.TABLE);
     IntList roots = saturated.roots();
     for (int i = 0; i < roots.size(); i++) {
       hole.consume(ex.extract(roots.get(i)));

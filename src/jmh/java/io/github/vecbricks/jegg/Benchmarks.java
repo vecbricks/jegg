@@ -73,8 +73,8 @@ public final class Benchmarks {
     if (which.equals("all") || which.equals("rebuild")) {
       rebuild(quick);
     }
-    if (which.equals("all") || which.equals("varka64")) {
-      varka64(quick);
+    if (which.equals("all") || which.equals("projection")) {
+      projection(quick);
     }
     if (which.equals("all") || which.equals("determinism")) {
       determinism(quick);
@@ -118,16 +118,16 @@ public final class Benchmarks {
   }
 
   /** The absolute cost at Varka's size: PLAN.md 6, prediction 4. */
-  private static void varka64(boolean quick) throws Exception {
-    Report report = new Report("Varka64Benchmark",
-        "A 64-node projection over the toy date language, 20 rules: saturation and extraction");
+  private static void projection(boolean quick) throws Exception {
+    Report report = new Report("ProjectionBenchmark",
+        "A projection of 64 nodes over the toy date language, 20 rules: saturation and extraction");
     StringBuilder shape = new StringBuilder();
     for (int limit : new int[] {200, 1_000}) {
-      shape.append(Varka64.shape(limit, Long.MAX_VALUE)).append('\n');
+      shape.append(Projection.shape(limit, Long.MAX_VALUE)).append('\n');
     }
     // egg's default limit, not measured: shown once, under a deadline, for where it goes.
     long cap = TimeUnit.SECONDS.toNanos(quick ? 5 : 120);
-    shape.append(Varka64.shape(10_000, System.nanoTime() + cap)).append('\n');
+    shape.append(Projection.shape(10_000, System.nanoTime() + cap)).append('\n');
     report.section("The runs the timings are of (the third stopped by a deadline hook if it"
         + " says so)", shape.toString());
     for (boolean compact : new boolean[] {false, true}) {
@@ -136,7 +136,7 @@ public final class Benchmarks {
           : new String[0];
       report.jmh("Warm, average time per operation in us, with bytes allocated (gc profiler), "
               + headers,
-          base(quick).include(Varka64Benchmark.class.getSimpleName())
+          base(quick).include(ProjectionBenchmark.class.getSimpleName())
               .mode(org.openjdk.jmh.annotations.Mode.AverageTime)
               .timeUnit(TimeUnit.MICROSECONDS)
               .warmupIterations(quick ? 1 : 5).warmupTime(TimeValue.seconds(1))
@@ -144,7 +144,7 @@ public final class Benchmarks {
               .forks(quick ? 1 : 5).jvmArgsAppend(jvmArgs)
               .addProfiler("gc").build());
       report.jmh("Cold, the first call in a fresh JVM, single shot in us, " + headers,
-          base(quick).include(Varka64Benchmark.class.getSimpleName())
+          base(quick).include(ProjectionBenchmark.class.getSimpleName())
               .mode(org.openjdk.jmh.annotations.Mode.SingleShotTime)
               .timeUnit(TimeUnit.MICROSECONDS)
               .warmupIterations(0).measurementIterations(1)

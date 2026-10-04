@@ -3,7 +3,7 @@
 The measurement harness of `PLAN.md` 6 lives under `src/jmh/java` and compiles with the tests
 on every build. It runs under the `bench` profile:
 
-    mvn -Pbench -q test-compile exec:exec -Dbench=<rebuild|varka64|determinism|all>
+    mvn -Pbench -q test-compile exec:exec -Dbench=<rebuild|projection|determinism|all>
 
 and writes one file per benchmark here, `<Name>-jdk<N>-results.txt`, with the header
 `CONTRIBUTING.md` asks for: the JVM and OS, the processor, the commit (marked `+dirty` when the
@@ -18,5 +18,5 @@ files.
 | file | what it measures | `PLAN.md` 6.1 |
 |---|---|---|
 | `RebuildBenchmark` | one saturation of each ported test, with `rebuild` once per iteration (deferred, the runner's way) against after every merge (eager); the classes repaired in each mode | prediction 1 |
-| `Varka64Benchmark` | a 64-node projection over the toy date language, 20 rules: saturation and extraction, warm and cold, bytes allocated, with and without compact object headers | prediction 4 |
+| `ProjectionBenchmark` | a projection of 64 nodes over the toy date language, 20 rules: saturation and extraction, warm and cold, bytes allocated, with and without compact object headers | prediction 4 |
 | `DeterminismRun` | `DeterminismProbe` in ten fresh JVMs, the renderings compared byte for byte | prediction 3 |
