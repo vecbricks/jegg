@@ -254,4 +254,67 @@ class ExtractorTest {
     assertThrows(IllegalStateException.class, () -> ex.extract(x));
     assertThrows(IllegalStateException.class, () -> ex.extractAll(IntList.of(x)));
   }
+
+  @Test
+  void aGreedyStartThatClosesACycleOfThreeFallsBackToTheTrees() {
+    // Three classes, each holding a leaf and a free node over the next class, the leaves 13,
+    // 12 and 11: the greedy choice, made class by class against the choices of the moment,
+    // switches each class to its free node in turn - each strictly cheaper then - and ends
+    // with a cycle of three that no term has. The start must see it and begin from the trees
+    // instead, and the selection must be a term: the free nodes down to the cheapest leaf, 11.
+    CostFunction<Toy> table = node -> switch (node) {
+      case Toy.Var v -> switch (v.name()) {
+        case "x" -> 13.0;
+        case "y" -> 12.0;
+        default -> 11.0;
+      };
+      default -> 0.0;
+    };
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("x"));
+    int b = g.add(new Toy.Var("y"));
+    int c = g.add(new Toy.Var("z"));
+    g.merge(a, g.add(new Toy.Add(IntList.of(b, b))));
+    g.merge(b, g.add(new Toy.Add(IntList.of(c, c))));
+    g.merge(c, g.add(new Toy.Add(IntList.of(a, a))));
+    g.rebuild();
+    Selection<Toy> sel = new Extractor<>(g, table).extractAll(IntList.of(a));
+    assertEquals(11.0, sel.cost(), 1e-9, sel.toString());
+    assertEquals(1, sel.terms().size(), "a term, not a cycle: " + sel);
+    assertEquals(7, sel.terms().get(0).treeSize(), sel.toString());
+  }
+
+  @Test
+  void aParentAddedBeforeAMergeIsStillOfferedTheSharedForm() {
+    // c = Div(u, v), cost 6, is the investment two roots can share: s = Add(c, q) and t = Mul(c,
+    // q), cost 1 each; each root also has a direct leaf of cost 5. Alone, each prefers its leaf
+    // (5 against 7); together, both through c cost 8 against 10. After q is merged into r's
+    // class, both entries in c's parent list still read their node as it was added, over q: a
+    // repair canonicalises the parents of the merged class, not c's. r is a root too, so it is
+    // selected throughout and a held root brings in c alone: c's stale entries are then the
+    // only route to the other root, which must be found through its canonical node, or the
+    // sharing is missed from both sides.
+    CostFunction<Toy> table = node -> switch (node) {
+      case Toy.Var v -> v.name().startsWith("direct") ? 5.0 : 0.0;
+      case Toy.Div d -> 6.0;
+      default -> 1.0;
+    };
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int u = g.add(new Toy.Var("u"));
+    int v = g.add(new Toy.Var("v"));
+    int c = g.add(new Toy.Div(true, IntList.of(u, v)));
+    int r = g.add(new Toy.Var("r"));
+    int q = g.add(new Toy.Var("q"));
+    int s = g.add(new Toy.Add(IntList.of(c, q)));
+    g.merge(s, g.add(new Toy.Var("directS")));
+    int t = g.add(new Toy.Mul(IntList.of(c, q)));
+    g.merge(t, g.add(new Toy.Var("directT")));
+    g.merge(q, r);
+    g.rebuild();
+    assertTrue(g.classOf(c).parents().stream().allMatch(p -> p.node().children().get(1) == q),
+        "the stale entries this test is about");
+    Selection<Toy> sel = new Extractor<>(g, table).extractAll(IntList.of(s, t, r));
+    assertEquals(8.0, sel.cost(), 1e-9, sel.toString());
+    assertEquals(new Toy.Mul(IntList.of(c, g.find(r))), sel.node(g.find(t)));
+  }
 }

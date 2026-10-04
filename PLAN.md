@@ -114,7 +114,7 @@ The egg-to-Java mapping, component by component:
 | `Pattern`, `Subst`, `ematch` | a pattern tree of operator nodes and variables, where a node's payload is matched by a predicate or bound to a payload variable and `Subst` holds payload bindings beside class ids (3.2); a naive recursive matcher first, egg's compiled backtracking machine (`machine.rs`) behind a measurement later | the largest piece; at 64-node graphs the naive matcher is likely enough (prediction 5) |
 | `Rewrite`, `Applier`, `Condition` | a name, a left pattern, and a right-hand side that is a pattern or an `Applier` function; conditions read analysis data and the graph, at apply time, and may add nodes (egg's `ConditionEqual`) | dynamic rewrites are functions of `(EGraph, matched class, Subst)` |
 | `Runner`, `BackoffScheduler`, `StopReason` | an iteration loop with `RunLimits` (nodes, classes, iterations; no wall-clock limit by default) and per-rule backoff | the limit that makes extraction a function of the input |
-| `Extractor`, `CostFunction` | bottom-up fixed point over local costs, per paper 4.3, for one root; and `extractAll` over several roots, one node chosen per e-class across all of them with a shared node paid once, returning a `Selection` as a DAG (3.2): a greedy start, then a descent over the union of the roots that tries each class's other nodes and keeps a change, alone or with the other classes settled around it, when the selection scores lower; a heuristic, since the ILP is out | the client's cost table is Varka's measured register; a hook scores a whole selection so the client can run its own prediction over the candidate |
+| `Extractor`, `CostFunction` | bottom-up fixed point over local costs, per paper 4.3, for one root; and `extractAll` over several roots, one node chosen per e-class across all of them with a shared node paid once, returning a `Selection` as a DAG (3.2): a greedy start, then a descent over the union of the roots that tries each class's other nodes and keeps a change when the selection scores lower - a change that brings new classes in is held while their selected parents are offered the nodes that use them, and kept if the whole scores lower; evaluated incrementally, so a candidate costs what it changes; a heuristic, since the ILP is out, checked against an exact oracle on extraction-gym's small graphs | the client's cost table is Varka's measured register; a hook scores a whole selection so the client can run its own prediction over the candidate |
 | `Explain`, `RecExpr` parsing, `LpExtractor`, `dot` | out | proofs are Herbie's need; Varka builds patterns from IR; no ILP dependency |
 
 **Determinism, fixed at three points.** Ids are assigned by insertion order;
@@ -411,6 +411,17 @@ Cold, the first call in a fresh JVM (single shot, 5 forks): `saturate`
 `saturate` and 16 to 18% on `extractAll`, and the times move by under
 4%, within the error bars.
 
+**Regenerated after #12 and #23** (`ProjectionBenchmark-jdk25-results.txt`, commit
+09e2465, 4 October 2026; the numbers above are the file as #22 committed it, at
+59b63be in the history). #23 changed the graph a limit stop leaves - the rules
+after a passed limit are no longer applied - so the projection now ends at 221
+nodes under the 200 limit and 1,028 under 1,000, and `saturate` takes 0.27 and
+6.0 ms warm. #12's descent takes `extractAll` from 41.8 and 85.6 ms to 0.13 and
+1.66 ms, and from 58.8 MB allocated to 157 KB, with the same selections (182.0
+at the 200 limit on the changed graph, by the old descent too; 173.0 at 1,000).
+Prediction 4's extraction half now holds, and `extractAll` no longer dominates
+the compile: at the 200 limit it is half the saturation.
+
 **Determinism** (`DeterminismRun-jdk25-results.txt`, commit 74d5f8a):
 `DeterminismProbe` in ten fresh JVMs rendered byte-identical graphs, 47 classes, sha-256 41b54b4d62eb3396, 46 ms per JVM including its start.
 
@@ -436,11 +447,13 @@ Cold, the first call in a fresh JVM (single shot, 5 forks): `saturate`
    12.3 ms, so the 5 ms holds for a tight budget and fails for a
    loose one; egg's default limit is out of the question at these rules.
    Extracting the cheapest tree per root takes 24 to 211 us,
-   under 1 ms; `extractAll`, the DAG over all roots with sharing, takes
-   41.8 to 85.6 ms, 40 to 85 times over, and dominates the whole
-   compile. The cost is the descent's: every candidate rebuilds the selection
-   from scratch and a held move runs a nested descent (#12). Cold, in a fresh
-   JVM, everything is two to eighty times slower still, the JIT's share.
+   under 1 ms; `extractAll`, the DAG over all roots with sharing, took
+   41.8 to 85.6 ms, 40 to 85 times over, and dominated the whole
+   compile. The cost was the descent's: every candidate rebuilt the selection
+   from scratch and a held move ran a nested descent. #12 made the descent
+   incremental and the holding targeted, and the file regenerated on 4 October
+   (above) reads 0.13 to 1.66 ms, so this half holds since then. Cold, in a
+   fresh JVM, everything is two to eighty times slower still, the JIT's share.
 5. **The naive matcher within 3x of the compiled machine: not measurable.**
    There is no machine (#7). A JFR profile of the deferred `lambda_function_repeat` run (`RepeatProfile-jdk25-results.txt`) puts at least 32% of its samples in the matcher and at least 26% in `rebuild`, with 39% in node equality whose callers the stack depth cut off; the matcher is the number #7 reads, and it says the naive matcher is a third of the run or more, not the whole of it.
 6. **`extractAll` keeps the shared decomposition and costs less than the two
