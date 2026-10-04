@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 
 /**
  * An e-graph: a union-find over e-class ids, a hashcons from canonical e-nodes to the class each
@@ -144,18 +145,7 @@ public final class EGraph<L extends Language<L>, D> {
   }
 
   private <T> int addTree(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen) {
-    Integer done = seen.get(tree);
-    if (done != null) {
-      return unionFind.find(done);
-    }
-    List<T> subtrees = bridge.childrenOf(tree);
-    int[] ids = new int[subtrees.size()];
-    for (int i = 0; i < ids.length; i++) {
-      ids[i] = addTree(subtrees.get(i), bridge, seen);
-    }
-    int id = add(bridge.node(tree, IntList.of(ids)));
-    seen.put(tree, id);
-    return id;
+    return walk(tree, bridge, seen, this::add);
   }
 
   /**
@@ -166,27 +156,37 @@ public final class EGraph<L extends Language<L>, D> {
    * were merged can read as missing.
    */
   public <T> OptionalInt lookupTree(T root, TreeBridge<T, L> bridge) {
-    int id = lookupTree(root, bridge, new IdentityHashMap<>());
-    return id < 0 ? OptionalInt.empty() : OptionalInt.of(id);
+    int id = walk(root, bridge, new IdentityHashMap<>(), node -> lookup(node).orElse(MISSING));
+    return id == MISSING ? OptionalInt.empty() : OptionalInt.of(id);
   }
 
-  private <T> int lookupTree(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen) {
+  /** What a walk's step answers for a node the graph does not hold, and the walk then too. */
+  private static final int MISSING = -1;
+
+  /**
+   * The one walk of a client's tree behind {@link #addTree} and {@link #lookupTree}: bottom-up,
+   * each subtree object visited once ({@code seen} is by identity), and {@code step} applied to
+   * the node built over the children's classes. A step answering {@link #MISSING} ends the whole
+   * walk with it, so a miss needs no memo: nothing reads one before the walk returns.
+   */
+  private <T> int walk(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen,
+      ToIntFunction<L> step) {
     Integer done = seen.get(tree);
     if (done != null) {
-      return done < 0 ? -1 : unionFind.find(done);
+      return unionFind.find(done);
     }
     List<T> subtrees = bridge.childrenOf(tree);
     int[] ids = new int[subtrees.size()];
     for (int i = 0; i < ids.length; i++) {
-      ids[i] = lookupTree(subtrees.get(i), bridge, seen);
-      if (ids[i] < 0) {
-        seen.put(tree, -1);
-        return -1;
+      ids[i] = walk(subtrees.get(i), bridge, seen, step);
+      if (ids[i] == MISSING) {
+        return MISSING;
       }
     }
-    OptionalInt found = lookup(bridge.node(tree, IntList.of(ids)));
-    int id = found.isPresent() ? found.getAsInt() : -1;
-    seen.put(tree, id);
+    int id = step.applyAsInt(bridge.node(tree, IntList.of(ids)));
+    if (id != MISSING) {
+      seen.put(tree, id);
+    }
     return id;
   }
 
