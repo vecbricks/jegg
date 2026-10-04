@@ -13,7 +13,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** A reader for the small JSON the tests need: objects, arrays, strings, numbers, booleans, null. */
+/**
+ * A reader for the small JSON the tests need: objects, arrays, strings, numbers, booleans and
+ * null. */
 final class Json {
 
   private final String s;

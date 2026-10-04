@@ -208,7 +208,8 @@ class PatternMatchTest {
     int b = g.add(new Toy.Var("b"));
     int c = g.add(new Toy.Var("c"));
     int same = g.add(new Toy.Div(true, IntList.of(a, g.add(new Toy.Div(true, IntList.of(b, c))))));
-    int mixed = g.add(new Toy.Div(true, IntList.of(a, g.add(new Toy.Div(false, IntList.of(b, c))))));
+    int mixed = g.add(new Toy.Div(true,
+        IntList.of(a, g.add(new Toy.Div(false, IntList.of(b, c))))));
     Pattern<Toy> nested = Pattern.node(div, X, Pattern.node(div, Y, Pattern.var("z")));
     List<Matcher.Match> matches = Matcher.search(g, nested);
     assertEquals(1, matches.size(), matches.toString());
