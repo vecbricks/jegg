@@ -23,6 +23,8 @@ says how they are regenerated, pinned to the fast cores on an idle machine, as V
 the code to a new reader; how it came to be this way is in the issues, the plan and git.
 
 Java 25, Maven, `mvn -B verify` must be clean under `-Xlint:all -Werror`.
+It also writes JaCoCo's coverage report of `src/main` to `target/site/jacoco/` and prints the line
+and branch totals, with the least covered classes, at the end; the report is not committed.
 Two of egg's ported tests (`lambda_fib`, `lambda_function_repeat`), which egg runs only in release
 builds, take most of a run's time and are tagged `slow`; `mvn -Dsurefire.excludedGroups=slow verify`
 skips them locally, while CI runs everything.
