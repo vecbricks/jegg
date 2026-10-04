@@ -148,7 +148,7 @@ public final class Extractor<L extends Language<L>, D> {
 
   /** {@link #extractAll(IntList, ToDoubleFunction)} minimising the selection's summed cost. */
   public Selection<L> extractAll(IntList roots) {
-    return extractAll(roots, Selection::cost);
+    return extractAll(roots, null);
   }
 
   /**
@@ -160,16 +160,19 @@ public final class Extractor<L extends Language<L>, D> {
    * and its children's chosen DAGs, as a set of classes - costs least: the best DAG for the
    * class alone, which is not the best for the union of the roots. The descent then tries, for
    * each class the selection covers in id order, each of its other nodes, and keeps it if the
-   * selection scores lower; a change that scores higher by itself is held while a descent over
-   * the other classes settles them, and kept with what they settled if the whole scores lower.
-   * The second move is the one sharing needs: a decomposition one root takes costs more until
-   * the other roots take it too. It repeats until a pass keeps nothing. Deterministic (class
-   * order, node order, strict improvement) and bounded, as every kept change lowers the score;
-   * the exact problem is the ILP the plan leaves out.
+   * selection scores lower. A change that scores higher by itself but brings new classes into
+   * the selection - an investment others could share - is held while the selected parents of
+   * those classes are offered their nodes that use them, and kept with what they took if the
+   * whole scores lower: the move sharing needs, since a decomposition one root takes costs more
+   * until the others take it too. The descent repeats until a pass keeps nothing. Deterministic
+   * (class order, node order, strict improvement) and bounded, as every kept change lowers the
+   * score; the exact problem is the ILP the plan leaves out.
    *
    * <p>The selection's cost sums {@link CostFunction#nodeCost}; an overridden
    * {@link CostFunction#cost}, such as {@link CostFunction#astDepth}'s, is a tree's cost and is
-   * not used here. A cost that is not a sum over nodes belongs in {@code score}.
+   * not used here. A cost that is not a sum over nodes belongs in {@code score}, which is then
+   * applied to each candidate selection; the default sum is kept incrementally and costs each
+   * candidate only what it changes.
    */
   public Selection<L> extractAll(IntList roots, ToDoubleFunction<Selection<L>> score) {
     checkUnchanged();
@@ -179,71 +182,33 @@ public final class Extractor<L extends Language<L>, D> {
         throw new IllegalStateException("root " + roots.get(i) + " has no finite-cost term");
       }
     }
-    Map<Integer, L> assigned = greedy();
-    Selection<L> start = select(canonical, assigned);
-    if (start == null) {
+    Descent descent = new Descent(canonical, score);
+    if (!descent.start(greedy())) {
       // The greedy choices, each made against its children's choices at the time, can close
       // a cycle once a child changes; the tree choice, with costs non-negative, cannot, so it
       // is the start instead.
-      assigned = new HashMap<>();
-      for (Map.Entry<Integer, Best<L>> e : best.entrySet()) {
-        assigned.put(e.getKey(), e.getValue().node());
-      }
-      start = select(canonical, assigned);
+      Map<Integer, L> trees = new HashMap<>();
+      best.forEach((id, b) -> trees.put(id, b.node()));
+      descent.start(trees);
     }
-    return descend(canonical, assigned, start, score, NONE);
+    descent.run();
+    return descent.selection();
   }
 
-  private static final int NONE = -1;
-
   /**
-   * The descent from {@code start}, changing {@code assigned} in place; {@code pinned} is a
-   * class held fixed, or {@link #NONE} at the top level, which alone tries the held move.
+   * The greedy start of {@link #extractAll} as a selection, before any descent: what the tests
+   * compare the descent against.
    */
-  private Selection<L> descend(IntList roots, Map<Integer, L> assigned, Selection<L> start,
-      ToDoubleFunction<Selection<L>> score, int pinned) {
-    Selection<L> current = start;
-    double currentScore = score.applyAsDouble(current);
-    boolean kept = true;
-    while (kept) {
-      kept = false;
-      for (Integer id = current.firstClass(); id != null; id = current.classAfter(id)) {
-        if (id == pinned) {
-          continue;
-        }
-        for (L node : graph.classOf(id).nodes()) {
-          L old = assigned.get(id);
-          if (node.equals(old) || !priced(node)) {
-            continue;
-          }
-          assigned.put(id, node);
-          Selection<L> candidate = select(roots, assigned);
-          if (candidate == null) {
-            assigned.put(id, old);
-            continue;
-          }
-          double candidateScore = score.applyAsDouble(candidate);
-          if (candidateScore >= currentScore && pinned == NONE) {
-            Map<Integer, L> held = new HashMap<>(assigned);
-            Selection<L> settled = descend(roots, held, candidate, score, id);
-            double settledScore = score.applyAsDouble(settled);
-            if (settledScore < currentScore) {
-              assigned.putAll(held);
-              candidate = settled;
-              candidateScore = settledScore;
-            }
-          }
-          if (candidateScore < currentScore) {
-            current = candidate;
-            currentScore = candidateScore;
-            kept = true;
-          } else {
-            assigned.put(id, old);
-          }
-        }
-      }
+  Selection<L> greedyStart(IntList roots) {
+    checkUnchanged();
+    IntList canonical = roots.map(graph::find);
+    Descent descent = new Descent(canonical, null);
+    if (!descent.start(greedy())) {
+      Map<Integer, L> trees = new HashMap<>();
+      best.forEach((id, b) -> trees.put(id, b.node()));
+      descent.start(trees);
     }
-    return current;
+    return descent.selection();
   }
 
   /** Whether every child of the node has a finite-cost term, so the node can be chosen. */
@@ -258,43 +223,266 @@ public final class Extractor<L extends Language<L>, D> {
   }
 
   /**
-   * The selection the assignment gives the roots: the classes reached from them through the
-   * assigned nodes, or null if those nodes close a cycle.
+   * The state of one extraction over several roots: the node assigned to each class, how many
+   * selected parents (and roots) refer to each class - it is selected while that is positive -
+   * and the running sum of the selected nodes' costs. A change of one class's node releases the
+   * old node's children and acquires the new node's, a cascade over the classes whose count
+   * reaches zero or leaves it, through an undo log; so a candidate costs what it touches, and a
+   * rejected one is reverted in the same cost.
    */
-  private Selection<L> select(IntList roots, Map<Integer, L> assigned) {
-    TreeMap<Integer, L> chosen = new TreeMap<>();
-    BitSet onPath = new BitSet();
-    for (int i = 0; i < roots.size(); i++) {
-      if (!reach(roots.get(i), assigned, chosen, onPath)) {
-        return null;
-      }
-    }
-    double total = 0.0;
-    for (L node : chosen.values()) {
-      total += nodeCost(node);
-    }
-    return new Selection<>(chosen, roots, total);
-  }
+  private final class Descent {
+    private static final double EPSILON = 1e-9;
 
-  private boolean reach(int id, Map<Integer, L> assigned, TreeMap<Integer, L> chosen,
-      BitSet onPath) {
-    if (onPath.get(id)) {
-      return false;
+    private final IntList roots;
+    private final ToDoubleFunction<Selection<L>> score;
+    private final Object[] assigned;
+    private final int[] refs;
+    private double cost;
+    // The undo log: a class whose count changed and its old count, and a class whose node
+    // changed and its old node, in order.
+    private int[] logIds = new int[64];
+    private int[] logRefs = new int[64];
+    private int logSize;
+    private final List<Object[]> nodeLog = new ArrayList<>();
+    // The classes a change newly brought into the selection, when asked to collect them.
+    private final List<Integer> added = new ArrayList<>();
+    private boolean collecting;
+    // For the cycle walk: the classes seen in the current walk.
+    private final int[] seen;
+    private int walk;
+
+    Descent(IntList roots, ToDoubleFunction<Selection<L>> score) {
+      this.roots = roots;
+      this.score = score;
+      int size = 0;
+      for (EClass<L, D> c : graph.classes()) {
+        size = Math.max(size, c.id() + 1);
+      }
+      assigned = new Object[size];
+      refs = new int[size];
+      seen = new int[size];
     }
-    if (chosen.containsKey(id)) {
+
+    @SuppressWarnings("unchecked")
+    private L node(int id) {
+      return (L) assigned[id];
+    }
+
+    /** Takes an assignment and selects from the roots; false, and nothing kept, on a cycle. */
+    boolean start(Map<Integer, L> assignment) {
+      java.util.Arrays.fill(assigned, null);
+      java.util.Arrays.fill(refs, 0);
+      cost = 0.0;
+      logSize = 0;
+      nodeLog.clear();
+      for (Map.Entry<Integer, Best<L>> e : best.entrySet()) {
+        assigned[e.getKey()] = e.getValue().node();
+      }
+      assignment.forEach((id, n) -> assigned[id] = n);
+      for (int i = 0; i < roots.size(); i++) {
+        if (reaches(node(roots.get(i)), roots.get(i), true)) {
+          return false;
+        }
+      }
+      for (int i = 0; i < roots.size(); i++) {
+        acquire(roots.get(i));
+      }
+      logSize = 0;
       return true;
     }
-    L node = assigned.get(id);
-    onPath.set(id);
-    IntList children = node.children();
-    for (int i = 0; i < children.size(); i++) {
-      if (!reach(graph.find(children.get(i)), assigned, chosen, onPath)) {
-        return false;
+
+    /**
+     * Whether {@code target} is reached from {@code from}'s children through the assigned
+     * nodes; with {@code anyCycle}, whether any cycle is reached, as the start must know.
+     */
+    private boolean reaches(L from, int target, boolean anyCycle) {
+      walk++;
+      return reachesFrom(from, target, anyCycle);
+    }
+
+    private boolean reachesFrom(L from, int target, boolean anyCycle) {
+      IntList children = from.children();
+      for (int i = 0; i < children.size(); i++) {
+        int child = graph.find(children.get(i));
+        if (child == target) {
+          return true;
+        }
+        if (seen[child] == walk) {
+          continue;
+        }
+        seen[child] = walk;
+        if (anyCycle ? reachesFrom(node(child), child, true) || reachesFrom(node(child), target,
+            true) : reachesFrom(node(child), target, false)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    private void acquire(int id) {
+      logRef(id);
+      if (++refs[id] == 1) {
+        L n = node(id);
+        cost += nodeCost(n);
+        if (collecting) {
+          added.add(id);
+        }
+        IntList children = n.children();
+        for (int i = 0; i < children.size(); i++) {
+          acquire(graph.find(children.get(i)));
+        }
       }
     }
-    onPath.clear(id);
-    chosen.put(id, node);
-    return true;
+
+    private void release(int id) {
+      logRef(id);
+      if (--refs[id] == 0) {
+        L n = node(id);
+        cost -= nodeCost(n);
+        IntList children = n.children();
+        for (int i = 0; i < children.size(); i++) {
+          release(graph.find(children.get(i)));
+        }
+      }
+    }
+
+    private void logRef(int id) {
+      if (logSize == logIds.length) {
+        logIds = java.util.Arrays.copyOf(logIds, logSize * 2);
+        logRefs = java.util.Arrays.copyOf(logRefs, logSize * 2);
+      }
+      logIds[logSize] = id;
+      logRefs[logSize] = refs[id];
+      logSize++;
+    }
+
+    /** A mark to undo to: the log's size and the cost, with the node log's size. */
+    private long mark() {
+      return ((long) logSize << 32) | nodeLog.size();
+    }
+
+    private void undo(long mark, double costBefore) {
+      int toRefs = (int) (mark >>> 32);
+      int toNodes = (int) mark;
+      while (logSize > toRefs) {
+        logSize--;
+        refs[logIds[logSize]] = logRefs[logSize];
+      }
+      while (nodeLog.size() > toNodes) {
+        Object[] e = nodeLog.remove(nodeLog.size() - 1);
+        assigned[(Integer) e[0]] = e[1];
+      }
+      cost = costBefore;
+    }
+
+    /**
+     * Changes the selected class {@code id} to {@code n}, if that closes no cycle; true if it
+     * did. The classes newly selected are collected into {@code added} when asked.
+     */
+    private boolean change(int id, L n, boolean collect) {
+      if (reaches(n, id, false)) {
+        return false;
+      }
+      L old = node(id);
+      nodeLog.add(new Object[] {id, old});
+      cost += nodeCost(n) - nodeCost(old);
+      IntList oldChildren = old.children();
+      for (int i = 0; i < oldChildren.size(); i++) {
+        release(graph.find(oldChildren.get(i)));
+      }
+      assigned[id] = n;
+      collecting = collect;
+      added.clear();
+      IntList children = n.children();
+      for (int i = 0; i < children.size(); i++) {
+        acquire(graph.find(children.get(i)));
+      }
+      collecting = false;
+      return true;
+    }
+
+    /** The score of the state: the running sum, or the client's score of its selection. */
+    private double evaluate() {
+      return score == null ? cost : score.applyAsDouble(selection());
+    }
+
+    void run() {
+      boolean kept = true;
+      while (kept) {
+        kept = false;
+        for (EClass<L, D> eclass : graph.classes()) {
+          int id = eclass.id();
+          if (refs[id] == 0) {
+            continue;
+          }
+          for (L n : eclass.nodes()) {
+            if (refs[id] == 0 || n.equals(node(id)) || !priced(n)) {
+              continue;
+            }
+            double before = evaluate();
+            long mark = mark();
+            double costBefore = cost;
+            if (!change(id, n, true)) {
+              continue;
+            }
+            if (evaluate() < before - EPSILON) {
+              kept = true;
+              continue;
+            }
+            // Held: the change brought classes in; the selected parents of those classes are
+            // offered their nodes that use them, each kept if it lowers the score, and the
+            // whole kept if the total fell.
+            if (!added.isEmpty() && offerToParents(id, List.copyOf(added))
+                && evaluate() < before - EPSILON) {
+              kept = true;
+              continue;
+            }
+            undo(mark, costBefore);
+          }
+        }
+      }
+    }
+
+    /**
+     * For each class newly selected, each selected parent of it other than {@code held} is
+     * offered the parent's nodes that have it as a child; true if any was taken.
+     */
+    private boolean offerToParents(int held, List<Integer> newClasses) {
+      boolean took = false;
+      for (int newClass : newClasses) {
+        for (EClass.Parent<L> parent : List.copyOf(graph.classOf(newClass).parents())) {
+          int pc = graph.find(parent.classId());
+          L pn = parent.node();
+          if (pc == held || refs[pc] == 0 || pn.equals(node(pc)) || !priced(pn)
+              || !graph.classOf(pc).nodes().contains(pn)) {
+            continue;
+          }
+          double before = evaluate();
+          long mark = mark();
+          double costBefore = cost;
+          if (change(pc, pn, false) && evaluate() < before - EPSILON) {
+            took = true;
+          } else {
+            undo(mark, costBefore);
+          }
+        }
+      }
+      return took;
+    }
+
+    /** The selection the state holds: the classes referred to, with their nodes, in id order. */
+    Selection<L> selection() {
+      TreeMap<Integer, L> chosen = new TreeMap<>();
+      double total = 0.0;
+      for (int id = 0; id < refs.length; id++) {
+        if (refs[id] > 0) {
+          L n = node(id);
+          chosen.put(id, n);
+          total += nodeCost(n);
+        }
+      }
+      return new Selection<>(chosen, roots, total);
+    }
   }
 
   // The greedy start: a fixed point in which a class's choice is the node whose DAG costs

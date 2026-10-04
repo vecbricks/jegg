@@ -59,16 +59,6 @@ public final class Selection<L extends Language<L>> {
     return cost;
   }
 
-  /** The lowest class the selection covers. */
-  Integer firstClass() {
-    return chosen.isEmpty() ? null : chosen.firstKey();
-  }
-
-  /** The next class the selection covers after {@code eclass}, or null. */
-  Integer classAfter(int eclass) {
-    return chosen.higherKey(eclass);
-  }
-
   /** How many classes the selection covers. */
   public int size() {
     return chosen.size();
