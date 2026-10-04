@@ -31,8 +31,9 @@ import org.junit.jupiter.api.Test;
  */
 class LambdaTest {
 
-  sealed interface Lambda extends Language<Lambda> permits Lambda.Leaf, Lambda.Var, Lambda.Add, Lambda.Eq, Lambda.App, Lambda.Lam, Lambda.Let, Lambda.Fix,
-      Lambda.If {
+  sealed interface Lambda extends Language<Lambda>
+      permits Lambda.Leaf, Lambda.Var, Lambda.Add, Lambda.Eq, Lambda.App, Lambda.Lam, Lambda.Let,
+      Lambda.Fix, Lambda.If {
 
     /** A leaf: no children, and its payload is its head. */
     sealed interface Leaf extends Lambda permits Bool, Num, Sym {
