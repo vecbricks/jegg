@@ -411,6 +411,17 @@ Cold, the first call in a fresh JVM (single shot, 5 forks): `saturate`
 `saturate` and 16 to 18% on `extractAll`, and the times move by under
 4%, within the error bars.
 
+**Regenerated after #12 and #23** (`ProjectionBenchmark-jdk25-results.txt`, commit
+09e2465, 4 October 2026; the numbers above are the file as #22 committed it, at
+59b63be in the history). #23 changed the graph a limit stop leaves - the rules
+after a passed limit are no longer applied - so the projection now ends at 221
+nodes under the 200 limit and 1,028 under 1,000, and `saturate` takes 0.27 and
+6.0 ms warm. #12's descent takes `extractAll` from 41.8 and 85.6 ms to 0.13 and
+1.66 ms, and from 58.8 MB allocated to 157 KB, with the same selections (182.0
+at the 200 limit on the changed graph, by the old descent too; 173.0 at 1,000).
+Prediction 4's extraction half now holds, and `extractAll` no longer dominates
+the compile: at the 200 limit it is half the saturation.
+
 **Determinism** (`DeterminismRun-jdk25-results.txt`, commit 74d5f8a):
 `DeterminismProbe` in ten fresh JVMs rendered byte-identical graphs, 47 classes, sha-256 41b54b4d62eb3396, 46 ms per JVM including its start.
 
@@ -436,11 +447,13 @@ Cold, the first call in a fresh JVM (single shot, 5 forks): `saturate`
    12.3 ms, so the 5 ms holds for a tight budget and fails for a
    loose one; egg's default limit is out of the question at these rules.
    Extracting the cheapest tree per root takes 24 to 211 us,
-   under 1 ms; `extractAll`, the DAG over all roots with sharing, takes
-   41.8 to 85.6 ms, 40 to 85 times over, and dominates the whole
-   compile. The cost is the descent's: every candidate rebuilds the selection
-   from scratch and a held move runs a nested descent (#12). Cold, in a fresh
-   JVM, everything is two to eighty times slower still, the JIT's share.
+   under 1 ms; `extractAll`, the DAG over all roots with sharing, took
+   41.8 to 85.6 ms, 40 to 85 times over, and dominated the whole
+   compile. The cost was the descent's: every candidate rebuilt the selection
+   from scratch and a held move ran a nested descent. #12 made the descent
+   incremental and the holding targeted, and the file regenerated on 4 October
+   (above) reads 0.13 to 1.66 ms, so this half holds since then. Cold, in a
+   fresh JVM, everything is two to eighty times slower still, the JIT's share.
 5. **The naive matcher within 3x of the compiled machine: not measurable.**
    There is no machine (#7). A JFR profile of the deferred `lambda_function_repeat` run (`RepeatProfile-jdk25-results.txt`) puts at least 32% of its samples in the matcher and at least 26% in `rebuild`, with 39% in node equality whose callers the stack depth cut off; the matcher is the number #7 reads, and it says the naive matcher is a third of the run or more, not the whole of it.
 6. **`extractAll` keeps the shared decomposition and costs less than the two
