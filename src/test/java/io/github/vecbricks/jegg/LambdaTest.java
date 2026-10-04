@@ -386,8 +386,126 @@ class LambdaTest {
    * the iteration a hook stops as one more, so a run stopped by its goals counts one iteration
    * more there than in jegg's report.
    */
-  private record Egg(int iterations, int nodes, int classes) {
+  record Egg(int iterations, int nodes, int classes) {
   }
+
+  /**
+   * One of egg's {@code test_fn!} tests: its name, limits, start term and goals, and whether
+   * egg proves it ({@code should_panic} tests do not). The cases are data so the measurement
+   * harness (PLAN.md 6) can run the same suite.
+   */
+  record Case(String name, RunLimits limits, Egg egg, boolean proves, String start,
+      List<String> goals) {
+    Case(String name, Egg egg, boolean proves, String start, String... goals) {
+      this(name, RunLimits.DEFAULT, egg, proves, start, List.of(goals));
+    }
+
+    Case withLimits(RunLimits limits) {
+      return new Case(name, limits, egg, proves, start, goals);
+    }
+  }
+
+  static final Case LAMBDA_UNDER = new Case("lambda_under", new Egg(3, 10, 7), true, """
+      (lam x (+ 4
+                (app (lam y (var y))
+                     4)))""", "(lam x 8)");
+
+  static final Case LAMBDA_IF_ELIM = new Case("lambda_if_elim", new Egg(5, 19, 8), true, """
+      (if (= (var a) (var b))
+          (+ (var a) (var a))
+          (+ (var a) (var b)))""", "(+ (var a) (var b))");
+
+  static final Case LAMBDA_LET_SIMPLE = new Case("lambda_let_simple", new Egg(4, 18, 8), true,
+      """
+      (let x 0
+      (let y 1
+      (+ (var x) (var y))))""", "1");
+
+  static final Case LAMBDA_CAPTURE = new Case("lambda_capture", new Egg(2, 5, 4), false,
+      "(let x 1 (lam x (var x)))", "(lam x 1)");
+
+  static final Case LAMBDA_CAPTURE_FREE = new Case("lambda_capture_free", new Egg(4, 12, 9),
+      false, "(let y (+ (var x) (var x)) (lam x (var y)))", "(lam x (+ (var x) (var x)))");
+
+  static final Case LAMBDA_CLOSURE_NOT_SEVEN = new Case("lambda_closure_not_seven",
+      new Egg(8, 39, 15), false, """
+      (let five 5
+      (let add-five (lam x (+ (var x) (var five)))
+      (let five 6
+      (app (var add-five) 1))))""", "7");
+
+  static final Case LAMBDA_COMPOSE = new Case("lambda_compose", new Egg(15, 78, 31), true, """
+      (let compose (lam f (lam g (lam x (app (var f)
+                                         (app (var g) (var x))))))
+      (let add1 (lam y (+ (var y) 1))
+      (app (app (var compose) (var add1)) (var add1))))""",
+      """
+      (lam ?x (+ 1
+                 (app (lam ?y (+ 1 (var ?y)))
+                      (var ?x))))""",
+      "(lam ?x (+ (var ?x) 2))");
+
+  static final Case LAMBDA_IF_SIMPLE = new Case("lambda_if_simple", new Egg(2, 6, 4), true,
+      "(if (= 1 1) 7 9)", "7");
+
+  static final Case LAMBDA_COMPOSE_MANY = new Case("lambda_compose_many", new Egg(18, 284, 61),
+      true, """
+      (let compose (lam f (lam g (lam x (app (var f)
+                                         (app (var g) (var x))))))
+      (let add1 (lam y (+ (var y) 1))
+      (app (app (var compose) (var add1))
+           (app (app (var compose) (var add1))
+                (app (app (var compose) (var add1))
+                     (app (app (var compose) (var add1))
+                          (app (app (var compose) (var add1))
+                               (app (app (var compose) (var add1))
+                                    (var add1)))))))))""",
+      "(lam ?x (+ (var ?x) 7))");
+
+  /** egg runs this in release builds only, with a 20 s time limit jegg does not have. */
+  static final Case LAMBDA_FUNCTION_REPEAT = new Case("lambda_function_repeat",
+      new Egg(59, 32636, 6825), true, """
+      (let compose (lam f (lam g (lam x (app (var f)
+                                         (app (var g) (var x))))))
+      (let repeat (fix repeat (lam fun (lam n
+          (if (= (var n) 0)
+              (lam i (var i))
+              (app (app (var compose) (var fun))
+                   (app (app (var repeat)
+                             (var fun))
+                        (+ (var n) -1)))))))
+      (let add1 (lam y (+ (var y) 1))
+      (app (app (var repeat)
+                (var add1))
+           2))))""", "(lam ?x (+ (var ?x) 2))")
+      .withLimits(RunLimits.DEFAULT.withIterations(60).withNodes(150_000));
+
+  static final Case LAMBDA_IF = new Case("lambda_if", new Egg(9, 42, 15), true, """
+      (let zeroone (lam x
+          (if (= (var x) 0)
+              0
+              1))
+          (+ (app (var zeroone) 0)
+          (app (var zeroone) 10)))""", "1");
+
+  /** egg runs this in release builds only. */
+  static final Case LAMBDA_FIB = new Case("lambda_fib", new Egg(57, 14582, 4996), true, """
+      (let fib (fix fib (lam n
+          (if (= (var n) 0)
+              0
+          (if (= (var n) 1)
+              1
+          (+ (app (var fib)
+                  (+ (var n) -1))
+              (app (var fib)
+                  (+ (var n) -2)))))))
+          (app (var fib) 4))""", "3")
+      .withLimits(RunLimits.DEFAULT.withIterations(60).withNodes(500_000));
+
+  /** egg's twelve tests, in egg's order. */
+  static final List<Case> CASES = List.of(LAMBDA_UNDER, LAMBDA_IF_ELIM, LAMBDA_LET_SIMPLE,
+      LAMBDA_CAPTURE, LAMBDA_CAPTURE_FREE, LAMBDA_CLOSURE_NOT_SEVEN, LAMBDA_COMPOSE,
+      LAMBDA_IF_SIMPLE, LAMBDA_COMPOSE_MANY, LAMBDA_FUNCTION_REPEAT, LAMBDA_IF, LAMBDA_FIB);
 
   /**
    * The run ends where egg's does, at the same size, which names the divergence if not. The
@@ -402,154 +520,98 @@ class LambdaTest {
     assertEquals(egg.classes(), r.graph().numClasses(), why);
   }
 
+  /** egg's {@code test_fn!}: the goals proved, or for a {@code should_panic} test, not. */
+  private static void check(Case c) {
+    Run r = run(c.limits(), c.start(), c.goals().toArray(String[]::new));
+    if (c.proves()) {
+      r.checkGoals();
+      assertEquals(new StopReason.Other(PROVED), r.report().stop(), r.report().toString());
+    } else {
+      // egg's should_panic(expected = "Could not prove goal 0"): the run saturates instead.
+      assertFalse(r.proves(0), "goal 0 proved, which egg says it must not be\n" + r.report());
+      assertEquals(new StopReason.Saturated(), r.report().stop(), r.report().toString());
+      r.graph().checkInvariants();
+    }
+    sameAsEgg(r, c.egg());
+  }
+
   private static void proves(RunLimits limits, Egg egg, String start, String... goals) {
-    Run r = run(limits, start, goals);
-    r.checkGoals();
-    assertEquals(new StopReason.Other(PROVED), r.report().stop(), r.report().toString());
-    sameAsEgg(r, egg);
+    check(new Case("inline", limits, egg, true, start, List.of(goals)));
   }
-
-  /** egg's {@code should_panic(expected = "Could not prove goal 0")}: egg saturates them. */
-  private static void doesNotProve(RunLimits limits, Egg egg, String start, String goal) {
-    Run r = run(limits, start, goal);
-    assertFalse(r.proves(0), "goal 0 proved, which egg says it must not be\n" + r.report());
-    assertEquals(new StopReason.Saturated(), r.report().stop(), r.report().toString());
-    sameAsEgg(r, egg);
-    r.graph().checkInvariants();
-  }
-
-  private static final RunLimits DEFAULT = RunLimits.DEFAULT;
 
   @Test
   void lambdaUnder() {
-    proves(DEFAULT, new Egg(3, 10, 7), """
-        (lam x (+ 4
-                  (app (lam y (var y))
-                       4)))""", "(lam x 8)");
+    check(LAMBDA_UNDER);
   }
 
   @Test
   void lambdaIfElim() {
-    proves(DEFAULT, new Egg(5, 19, 8), """
-        (if (= (var a) (var b))
-            (+ (var a) (var a))
-            (+ (var a) (var b)))""", "(+ (var a) (var b))");
+    check(LAMBDA_IF_ELIM);
   }
 
   @Test
   void lambdaLetSimple() {
-    proves(DEFAULT, new Egg(4, 18, 8), """
-        (let x 0
-        (let y 1
-        (+ (var x) (var y))))""", "1");
+    check(LAMBDA_LET_SIMPLE);
   }
 
   @Test
   void lambdaCapture() {
-    doesNotProve(DEFAULT, new Egg(2, 5, 4), "(let x 1 (lam x (var x)))", "(lam x 1)");
+    check(LAMBDA_CAPTURE);
   }
 
   @Test
   void lambdaCaptureFree() {
-    doesNotProve(DEFAULT, new Egg(4, 12, 9), "(let y (+ (var x) (var x)) (lam x (var y)))",
-        "(lam x (+ (var x) (var x)))");
+    check(LAMBDA_CAPTURE_FREE);
   }
 
   @Test
   void lambdaClosureNotSeven() {
-    doesNotProve(DEFAULT, new Egg(8, 39, 15), """
-        (let five 5
-        (let add-five (lam x (+ (var x) (var five)))
-        (let five 6
-        (app (var add-five) 1))))""", "7");
+    check(LAMBDA_CLOSURE_NOT_SEVEN);
   }
 
   @Test
   void lambdaCompose() {
-    proves(DEFAULT, new Egg(15, 78, 31), """
-        (let compose (lam f (lam g (lam x (app (var f)
-                                           (app (var g) (var x))))))
-        (let add1 (lam y (+ (var y) 1))
-        (app (app (var compose) (var add1)) (var add1))))""",
-        """
-        (lam ?x (+ 1
-                   (app (lam ?y (+ 1 (var ?y)))
-                        (var ?x))))""",
-        "(lam ?x (+ (var ?x) 2))");
+    check(LAMBDA_COMPOSE);
   }
 
   @Test
   void lambdaIfSimple() {
-    proves(DEFAULT, new Egg(2, 6, 4), "(if (= 1 1) 7 9)", "7");
+    check(LAMBDA_IF_SIMPLE);
   }
 
   @Test
   void lambdaComposeMany() {
-    proves(DEFAULT, new Egg(18, 284, 61), """
-        (let compose (lam f (lam g (lam x (app (var f)
-                                           (app (var g) (var x))))))
-        (let add1 (lam y (+ (var y) 1))
-        (app (app (var compose) (var add1))
-             (app (app (var compose) (var add1))
-                  (app (app (var compose) (var add1))
-                       (app (app (var compose) (var add1))
-                            (app (app (var compose) (var add1))
-                                 (app (app (var compose) (var add1))
-                                      (var add1)))))))))""",
-        "(lam ?x (+ (var ?x) 7))");
+    check(LAMBDA_COMPOSE_MANY);
   }
 
   @Test
   @Tag("slow")
   void lambdaFunctionRepeat() {
-    // egg runs this in release builds only, with a 20 s time limit jegg does not have; here it
-    // is tagged slow (see CONTRIBUTING.md), as is fib below.
-    proves(DEFAULT.withIterations(60).withNodes(150_000), new Egg(59, 32636, 6825), """
-        (let compose (lam f (lam g (lam x (app (var f)
-                                           (app (var g) (var x))))))
-        (let repeat (fix repeat (lam fun (lam n
-            (if (= (var n) 0)
-                (lam i (var i))
-                (app (app (var compose) (var fun))
-                     (app (app (var repeat)
-                               (var fun))
-                          (+ (var n) -1)))))))
-        (let add1 (lam y (+ (var y) 1))
-        (app (app (var repeat)
-                  (var add1))
-             2))))""", "(lam ?x (+ (var ?x) 2))");
+    // Tagged slow, as is fib below (see CONTRIBUTING.md).
+    check(LAMBDA_FUNCTION_REPEAT);
   }
 
   @Test
   void lambdaIf() {
-    proves(DEFAULT, new Egg(9, 42, 15), """
-        (let zeroone (lam x
-            (if (= (var x) 0)
-                0
-                1))
-            (+ (app (var zeroone) 0)
-            (app (var zeroone) 10)))""", "1");
+    check(LAMBDA_IF);
   }
 
   @Test
   @Tag("slow")
   void lambdaFib() {
-    proves(DEFAULT.withIterations(60).withNodes(500_000), new Egg(57, 14582, 4996), """
-        (let fib (fix fib (lam n
-            (if (= (var n) 0)
-                0
-            (if (= (var n) 1)
-                1
-            (+ (app (var fib)
-                    (+ (var n) -1))
-                (app (var fib)
-                    (+ (var n) -2)))))))
-            (app (var fib) 4))""", "3");
+    check(LAMBDA_FIB);
+  }
+
+  @Test
+  void theCasesAreEggsTwelveInEggsOrder() {
+    assertEquals(12, CASES.size());
+    assertEquals("lambda_under", CASES.get(0).name());
+    assertEquals("lambda_fib", CASES.get(11).name());
   }
 
   @Test
   void theAnalysisInvariantHoldsAfterARun() {
-    Run r = run(DEFAULT, """
+    Run r = run(RunLimits.DEFAULT, """
         (let x 0
         (let y 1
         (+ (var x) (var y))))""", "1");
@@ -573,6 +635,6 @@ class LambdaTest {
   void aGoalThatHoldsBeforeTheFirstIterationStopsAtOnce() {
     // 1 + 2 folds to 3 as it is added, so the hook stops the run with no iteration run; egg
     // would record that as one.
-    proves(DEFAULT, new Egg(1, 4, 3), "(+ 1 2)", "3");
+    proves(RunLimits.DEFAULT, new Egg(1, 4, 3), "(+ 1 2)", "3");
   }
 }

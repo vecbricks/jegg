@@ -64,7 +64,8 @@
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
-    <!-- The measurement harness of PLAN.md 6 lives under src/jmh and is wired when it lands. -->
+    <!-- The measurement harness of PLAN.md 6, under src/jmh/java: compiled with the tests on
+         every build, run under the bench profile (see benchmarks/README.md). -->
     <dependency>
       <groupId>org.openjdk.jmh</groupId>
       <artifactId>jmh-core</artifactId>
@@ -91,6 +92,21 @@
             <arg>-Werror</arg>
           </compilerArgs>
         </configuration>
+        <executions>
+          <!-- The tests compile with JMH's annotation processor, which since JDK 23 runs only
+               when asked (-proc:full); the processing lint is off there, as the processor
+               claims no JUnit annotation. -->
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <compilerArgs>
+                <arg>-Xlint:all,-processing</arg>
+                <arg>-Werror</arg>
+                <arg>-proc:full</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -99,6 +115,25 @@
         <configuration>
           <excludedGroups>${surefire.excludedGroups}</excludedGroups>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.1</version>
+        <executions>
+          <execution>
+            <id>add-benchmark-sources</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>src/jmh/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -116,6 +151,36 @@
   </build>
 
   <profiles>
+    <!-- The measurement: mvn -Pbench -q test-compile exec:exec -Dbench=<name>, which runs the
+         JMH harness in a JVM with the test classpath (JMH forks read java.class.path, which
+         exec:java would not set) and writes benchmarks/<Name>-jdk25-results.txt. -->
+    <profile>
+      <id>bench</id>
+      <properties>
+        <bench>all</bench>
+        <bench.quick>false</bench.quick>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.6.3</version>
+            <configuration>
+              <executable>java</executable>
+              <classpathScope>test</classpathScope>
+              <arguments>
+                <argument>-classpath</argument>
+                <classpath/>
+                <argument>-Dbench=${bench}</argument>
+                <argument>-Dbench.quick=${bench.quick}</argument>
+                <argument>io.github.vecbricks.jegg.Benchmarks</argument>
+              </arguments>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
     <!-- Publishing, configured from the first commit (PLAN.md 7, risk 7): sources and javadoc
          jars, signatures, and the Central portal. Releases are cut from tags; Varka pins a
          released version and never a snapshot. -->
