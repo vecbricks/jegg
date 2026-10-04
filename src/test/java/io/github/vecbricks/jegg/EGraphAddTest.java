@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -113,12 +114,34 @@ class EGraphAddTest {
   }
 
   @Test
-  void aMissingSubtreeReachedTwiceIsLookedUpOnce() {
-    // The sum's two operands are the same missing object: the second reach reads the memo.
+  void aMissingSubtreeEndsTheLookupAtOnce() {
+    // The product's first operand is missing: the walk ends there, and the second operand is
+    // never visited, as a counting bridge shows.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     g.add(new Toy.Var("x"));
     Toy.Tree missing = Toy.Tree.add(Toy.Tree.var("x"), Toy.Tree.num(5));
-    assertEquals(OptionalInt.empty(), g.lookupTree(Toy.Tree.mul(missing, missing), Toy.BRIDGE));
+    Toy.Tree other = Toy.Tree.var("other");
+    List<Toy.Tree> visited = new java.util.ArrayList<>();
+    TreeBridge<Toy.Tree, Toy> counting = new TreeBridge<>() {
+      @Override
+      public List<Toy.Tree> childrenOf(Toy.Tree t) {
+        visited.add(t);
+        return Toy.BRIDGE.childrenOf(t);
+      }
+
+      @Override
+      public Toy node(Toy.Tree t, IntList children) {
+        return Toy.BRIDGE.node(t, children);
+      }
+
+      @Override
+      public Toy.Tree build(Toy node, List<Toy.Tree> children) {
+        return Toy.BRIDGE.build(node, children);
+      }
+    };
+    assertEquals(OptionalInt.empty(), g.lookupTree(Toy.Tree.mul(missing, other), counting));
+    assertTrue(visited.contains(missing));
+    assertFalse(visited.contains(other), "the walk ended at the miss");
     assertEquals(OptionalInt.empty(), g.lookupTree(Toy.Tree.num(5), Toy.BRIDGE));
     assertSame(Analysis.class, g.analysis().getClass().getInterfaces()[0]);
   }
