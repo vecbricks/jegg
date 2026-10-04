@@ -27,4 +27,8 @@ public sealed interface StopReason {
   /** The graph grew past the class limit. */
   record ClassLimit(int classes) implements StopReason {
   }
+
+  /** A {@link Runner.Hook} stopped the run, for the reason it gave (egg's {@code Other}). */
+  record Other(String reason) implements StopReason {
+  }
 }

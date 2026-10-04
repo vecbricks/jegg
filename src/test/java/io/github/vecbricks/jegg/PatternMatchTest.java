@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -106,5 +107,63 @@ class PatternMatchTest {
     assertTrue(g.find(unknown) != g.find(known));
     g.checkInvariants();
     g.checkAnalysisInvariant();
+  }
+
+  @Test
+  void conditionEqualInstantiatesBothPatternsAndComparesTheirClasses() {
+    // x + 0 and x are merged; (?x + 0) and ?x then land in one class, and
+    // (?x * 2) and ?x do not, but are added to the graph by the asking, as egg's are.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int x = g.add(new Toy.Var("x"));
+    int zero = g.add(new Toy.Num(0));
+    g.merge(x, g.add(new Toy.Add(IntList.of(x, zero))));
+    g.rebuild();
+    Subst s = Subst.EMPTY.bind("x", x);
+    Condition<Toy, Void> plusZero = Condition.equal(add(X, Pattern.of(new Toy.Num(0))), X);
+    Condition<Toy, Void> timesTwo = Condition.equal(mul(X, Pattern.of(new Toy.Num(2))), X);
+    assertTrue(plusZero.holds(g, x, s));
+    int before = g.numNodes();
+    assertFalse(timesTwo.holds(g, x, s));
+    g.rebuild();
+    assertTrue(g.numNodes() > before, "the instantiated terms are in the graph");
+    assertTrue(g.lookup(new Toy.Mul(IntList.of(x, g.add(new Toy.Num(2))))).isPresent());
+  }
+
+  @Test
+  void conditionEqualReadsBothRootsAfterBothSidesAreAdded() {
+    // An analysis whose modify hook, on a sum, merges the sum with both its summands: adding
+    // the right side (?x + 0) merges x's class under the smaller root of 0, so x's root read
+    // before that addition would be stale, and the condition would read false though x, 0 and
+    // the sum are now one class.
+    Analysis<Toy, Boolean> joining = new Analysis<>() {
+      @Override
+      public Boolean make(EGraph<Toy, Boolean> g, Toy node) {
+        return node instanceof Toy.Add;
+      }
+
+      @Override
+      public Boolean join(Boolean a, Boolean b) {
+        return a || b;
+      }
+
+      @Override
+      public void modify(EGraph<Toy, Boolean> g, int id) {
+        if (g.data(id)) {
+          for (Toy node : List.copyOf(g.classOf(id).nodes())) {
+            if (node instanceof Toy.Add sum) {
+              g.merge(id, sum.children().get(0));
+              g.merge(id, sum.children().get(1));
+            }
+          }
+        }
+      }
+    };
+    EGraph<Toy, Boolean> g = new EGraph<>(joining);
+    int zero = g.add(new Toy.Num(0));
+    int x = g.add(new Toy.Var("x"));
+    assertTrue(g.find(x) > g.find(zero), "x's root is the one a merge would replace");
+    Condition<Toy, Boolean> equal = Condition.equal(X, add(X, Pattern.of(new Toy.Num(0))));
+    assertTrue(equal.holds(g, x, Subst.EMPTY.bind("x", x)));
+    assertEquals(g.find(x), g.find(zero));
   }
 }

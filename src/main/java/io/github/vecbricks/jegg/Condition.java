@@ -11,7 +11,11 @@ package io.github.vecbricks.jegg;
 
 /**
  * A rewrite's side condition: whether a match may be applied, read from the graph - the facts
- * of the bound classes, their nodes - and the substitution.
+ * of the bound classes, their nodes - and the substitution. It is evaluated at apply time, in
+ * the iteration's write phase and just before its match is applied, never during the search:
+ * a condition may add nodes to the graph, as {@link #equal} does, though never merge, and its
+ * additions count against saturation like a right-hand side's. A scheduler must not evaluate
+ * conditions while searching.
  *
  * @param <L> the language
  * @param <D> the analysis fact
@@ -24,6 +28,22 @@ public interface Condition<L extends Language<L>, D> {
   /** The condition that always holds. */
   static <L extends Language<L>, D> Condition<L, D> always() {
     return (graph, eclass, subst) -> true;
+  }
+
+  /**
+   * egg's {@code ConditionEqual}: both patterns instantiated under the match's substitution land
+   * in one class. Instantiating adds what the graph lacks, as egg's does; since conditions are
+   * read at apply time, that is an addition like a right-hand side's, and the graph is not
+   * rebuilt in between, so an equality only congruence would show is not seen.
+   */
+  static <L extends Language<L>, D> Condition<L, D> equal(Pattern<L> a, Pattern<L> b) {
+    return (graph, eclass, subst) -> {
+      // Both instantiated before either root is read: adding the second may run the analysis's
+      // modify hook, which may merge the first's class under another root.
+      int x = Matcher.instantiate(graph, a, subst);
+      int y = Matcher.instantiate(graph, b, subst);
+      return graph.find(x) == graph.find(y);
+    };
   }
 
   /** Both conditions. */
