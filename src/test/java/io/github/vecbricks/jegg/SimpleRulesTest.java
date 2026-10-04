@@ -61,7 +61,7 @@ class SimpleRulesTest {
       int changed = 0;
       for (int i = 0; i < rules.size(); i++) {
         for (Matcher.Match m : matches.get(i)) {
-          changed += Math.max(0, rules.get(i).apply(g, m));
+          changed += rules.get(i).apply(g, m).orElse(0);
         }
       }
       g.rebuild();

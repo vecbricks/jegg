@@ -27,7 +27,7 @@ public interface Condition<L extends Language<L>, D> {
 
   /** The condition that always holds. */
   static <L extends Language<L>, D> Condition<L, D> always() {
-    return (graph, eclass, subst) -> true;
+    return (_, _, _) -> true;
   }
 
   /**

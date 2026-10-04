@@ -26,6 +26,17 @@ public interface Applier<L extends Language<L>, D> {
 
   /** The applier that instantiates {@code rhs} under the match's substitution. */
   static <L extends Language<L>, D> Applier<L, D> pattern(Pattern<L> rhs) {
-    return (graph, eclass, subst) -> IntList.of(Matcher.instantiate(graph, rhs, subst));
+    return new PatternApplier<>(rhs);
+  }
+
+  /**
+   * A right-hand side that is a pattern, kept as one so a {@link Rewrite} can check its
+   * variables against the left-hand side's when it is made.
+   */
+  record PatternApplier<L extends Language<L>, D>(Pattern<L> rhs) implements Applier<L, D> {
+    @Override
+    public IntList apply(EGraph<L, D> graph, int eclass, Subst subst) {
+      return IntList.of(Matcher.instantiate(graph, rhs, subst));
+    }
   }
 }

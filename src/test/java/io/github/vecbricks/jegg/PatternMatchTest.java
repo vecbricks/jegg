@@ -11,6 +11,7 @@ package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -100,7 +101,7 @@ class PatternMatchTest {
     List<Matcher.Match> matches = fold.search(g);
     assertEquals(2, matches.size());
     for (Matcher.Match m : matches) {
-      assertEquals(m.eclass() == g.find(known), fold.apply(g, m) >= 0);
+      assertEquals(m.eclass() == g.find(known), fold.apply(g, m).isPresent());
     }
     g.rebuild();
     assertEquals(g.find(known), g.find(g.add(new Toy.Num(2))));
@@ -165,5 +166,35 @@ class PatternMatchTest {
     Condition<Toy, Boolean> equal = Condition.equal(X, add(X, Pattern.of(new Toy.Num(0))));
     assertTrue(equal.holds(g, x, Subst.EMPTY.bind("x", x)));
     assertEquals(g.find(x), g.find(zero));
+  }
+
+  @Test
+  void aRightHandSideMayUseOnlyWhatTheLeftBinds() {
+    // (+ ?a ?b) => (+ ?b ?c): ?c is a typo, caught when the rewrite is made, not mid-run.
+    assertThrows(IllegalArgumentException.class,
+        () -> Rewrite.of("typo", add(X, Y), add(Y, Pattern.var("c"))));
+    // A payload variable the left does not bind, likewise.
+    Pattern.Head<Toy> div = Pattern.binding(Toy.Div.class, "c", Toy.Div::checked,
+        (c, kids) -> new Toy.Div((Boolean) c, kids));
+    assertThrows(IllegalArgumentException.class,
+        () -> Rewrite.of("payload", add(X, Y), Pattern.node(div, X, Y)));
+    // Bound on both sides, fine; and a dynamic applier is not checked.
+    Rewrite.of("swap", Pattern.node(div, X, Y), Pattern.node(div, Y, X));
+    Rewrite.<Toy, Void>dynamic("free", add(X, Y), (_, _, s) -> IntList.of(s.idOf("x")));
+    // A client's head that binds ?c without declaring it: the payload check stands aside rather
+    // than refuse a right-hand side that is in fact bound.
+    Pattern.Head<Toy> undeclared = new Pattern.Head<>() {
+      @Override
+      public Subst match(Toy node, Subst subst) {
+        return node instanceof Toy.Div d ? subst.bindPayload("c", d.checked()) : null;
+      }
+
+      @Override
+      public Toy build(Subst subst, IntList children) {
+        return new Toy.Div((Boolean) subst.payload("c"), children);
+      }
+    };
+    Rewrite.of("client", Pattern.node(undeclared, X, Y), Pattern.node(div, Y, X));
+    assertTrue(Pattern.node(undeclared, X, Y).payloadVariables().isEmpty());
   }
 }

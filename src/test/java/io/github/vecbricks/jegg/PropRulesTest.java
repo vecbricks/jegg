@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -156,8 +157,8 @@ class PropRulesTest {
     int root = g.addTree(Term.parse(c.start()), BRIDGE);
     RunReport report = new Runner<>(g, c.rules(), LIMITS, new BackoffScheduler<>()).run();
     for (String goal : c.goals()) {
-      int id = g.lookupTree(Term.parse(goal), BRIDGE);
-      assertTrue(id >= 0 && g.find(id) == g.find(root),
+      OptionalInt id = g.lookupTree(Term.parse(goal), BRIDGE);
+      assertTrue(id.isPresent() && g.find(id.getAsInt()) == g.find(root),
           goal + " is not in the class of " + c.start() + "\n" + report);
     }
     g.checkInvariants();
@@ -185,7 +186,7 @@ class PropRulesTest {
     assertEquals(2, t.kids().size());
     EGraph<Prop, Void> g = EGraph.withoutAnalysis();
     int id = g.addTree(t, BRIDGE);
-    assertEquals(id, g.lookupTree(t, BRIDGE));
-    assertEquals(-1, g.lookupTree(Term.parse("(| x y)"), BRIDGE));
+    assertEquals(OptionalInt.of(id), g.lookupTree(t, BRIDGE));
+    assertEquals(OptionalInt.empty(), g.lookupTree(Term.parse("(| x y)"), BRIDGE));
   }
 }

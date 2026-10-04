@@ -9,7 +9,10 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -64,6 +67,60 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
 
     /** The e-node with this head over these children, payload variables read from the subst. */
     L build(Subst subst, IntList children);
+
+    /**
+     * The payload variables this head binds in {@link #match}, declared, or empty if the head
+     * does not say. {@link Rewrite} checks a right-hand side's payload variables against the
+     * left's only when every head on both sides declares, so a head that binds without saying
+     * so is never wrongly refused, only unchecked. jegg's own heads declare.
+     */
+    default Optional<Set<String>> variables() {
+      return Optional.empty();
+    }
+  }
+
+  /** The subterm variables of this pattern, in first-occurrence order. */
+  default Set<String> subtermVariables() {
+    Set<String> out = new LinkedHashSet<>();
+    switch (this) {
+      case Var<L>(var name) -> out.add(name);
+      case Node<L>(var head, var children) -> {
+        for (Pattern<L> child : children) {
+          out.addAll(child.subtermVariables());
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The payload variables of this pattern's heads, in first-occurrence order, or empty if a
+   * head does not declare its variables ({@link Head#variables}).
+   */
+  default Optional<Set<String>> payloadVariables() {
+    Set<String> out = new LinkedHashSet<>();
+    return collectPayload(this, out) ? Optional.of(out) : Optional.empty();
+  }
+
+  private static <L extends Language<L>> boolean collectPayload(Pattern<L> p, Set<String> out) {
+    switch (p) {
+      case Var<L> _ -> {
+        return true;
+      }
+      case Node<L>(var head, var children) -> {
+        Optional<Set<String>> declared = head.variables();
+        if (declared.isEmpty()) {
+          return false;
+        }
+        out.addAll(declared.get());
+        for (Pattern<L> child : children) {
+          if (!collectPayload(child, out)) {
+            return false;
+          }
+        }
+        return true;
+      }
+    }
   }
 
   /** A variable pattern. */
@@ -113,6 +170,11 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
       }
 
       @Override
+      public Optional<Set<String>> variables() {
+        return Optional.of(Set.of());
+      }
+
+      @Override
       public String toString() {
         return key.toString();
       }
@@ -143,6 +205,11 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
       @Override
       public L build(Subst subst, IntList children) {
         return build.apply(subst.payload(variable), children);
+      }
+
+      @Override
+      public Optional<Set<String>> variables() {
+        return Optional.of(Set.of(variable));
       }
 
       @Override

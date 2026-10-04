@@ -106,7 +106,13 @@ class RunnerTest {
     List<Integer> commute = report.iterations().stream()
         .map(it -> it.matches().get("commute-add")).toList();
     assertEquals(0, commute.get(0), "banned in the iteration its matches passed the limit");
+    assertTrue(report.iterations().get(0).banned().contains("commute-add"),
+        "the report says why the count is zero: " + report);
     assertTrue(scheduler.timesBanned(1) >= 1);
+    assertFalse(scheduler.isBanned(1, 1_000_000), "a rule never searched is not banned");
+    assertEquals(0, scheduler.timesBanned(1_000_000));
+    assertFalse(scheduler.isBanned(1, -1));
+    assertEquals(0, scheduler.timesBanned(-1));
     assertTrue(commute.stream().anyMatch(n -> n > 0), "never readmitted: " + report);
     assertTrue(commute.stream().filter(n -> n == 0).count() >= 2, report.toString());
   }
@@ -312,6 +318,102 @@ class RunnerTest {
     assertEquals(1, report.iterations().get(0).matches().get("commute-add"), report.toString());
     assertEquals(0, report.iterations().get(0).unions(), report.toString());
     assertInstanceOf(StopReason.Saturated.class, report.stop(), report.toString());
+    g.checkInvariants();
+  }
+
+  @Test
+  void anAddAndAMergeThatLeaveTheSizesAsTheyWereAreNotSaturation() {
+    // a and b apart, f(a) and f(b) one class: "join" merges a and b through the graph (so the
+    // rebuild drops a node), "seed" adds a leaf c, and the sizes are as they were - 3 classes,
+    // 4 nodes - while the graph changed. Reading sizes, the run would stop here; c -> d would
+    // never fire.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    g.merge(g.add(new Toy.Mul(IntList.of(a, a))), g.add(new Toy.Mul(IntList.of(b, b))));
+    g.rebuild();
+    assertEquals(3, g.numClasses());
+    assertEquals(4, g.numNodes());
+    List<Rewrite<Toy, Void>> rules = List.of(
+        Rewrite.dynamic("join", Pattern.of(new Toy.Var("a")), (graph, _, _) -> {
+          graph.merge(a, b);
+          return IntList.EMPTY;
+        }),
+        Rewrite.dynamic("seed", Pattern.of(new Toy.Var("b")), (graph, _, _) -> {
+          graph.add(new Toy.Var("c"));
+          return IntList.EMPTY;
+        }),
+        Rewrite.of("c-to-d", Pattern.of(new Toy.Var("c")), Pattern.of(new Toy.Var("d"))));
+    RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT, Scheduler.simple()).run();
+    RunReport.Iteration first = report.iterations().get(0);
+    assertEquals(3, first.classes(), report.toString());
+    assertEquals(4, first.nodes(), report.toString());
+    assertTrue(report.size() >= 2, "stopped after an iteration that changed the graph:\n" + report);
+    assertTrue(g.lookup(new Toy.Var("d")).isPresent(), "c -> d never fired:\n" + report);
+    assertInstanceOf(StopReason.Saturated.class, report.stop());
+  }
+
+  @Test
+  void theNodeLimitIsCheckedAfterEachRuleNotOnlyAfterTheIteration() {
+    // Associativity over eight summands passes a node limit of 20 in its first iteration; the
+    // rule after it, which would add a marker, must then not be applied in that iteration, as
+    // egg checks its limits between rules. Checked only after the iteration, the marker would
+    // be there.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int acc = g.add(new Toy.Var("a"));
+    for (String name : List.of("b", "c", "d", "e", "f", "g", "h")) {
+      acc = g.add(new Toy.Add(IntList.of(acc, g.add(new Toy.Var(name)))));
+    }
+    List<Rewrite<Toy, Void>> rules = List.of(expansive().get(0),
+        Rewrite.dynamic("mark", Pattern.of(new Toy.Var("a")), (graph, _, _) -> {
+          graph.add(new Toy.Var("marker"));
+          return IntList.EMPTY;
+        }));
+    RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT.withNodes(20),
+        Scheduler.simple()).run();
+    assertInstanceOf(StopReason.NodeLimit.class, report.stop(), report.toString());
+    assertEquals(1, report.size(), report.toString());
+    assertTrue(g.numNodes() > 20);
+    assertTrue(g.lookup(new Toy.Var("marker")).isEmpty(), "the rule after the limit was applied:\n"
+        + report);
+    assertEquals(new StopReason.NodeLimit(g.numNodes()), report.stop(), "the settled size");
+    assertEquals(java.util.Set.of("mark"), report.iterations().get(0).skipped());
+    g.checkInvariants();
+  }
+
+  @Test
+  void aLimitPassedStopsTheRunEvenIfTheRebuildBringsTheSizeBackUnderIt() {
+    // "blow" adds eight sums a + b_i and merges the b_i, so before the rebuild the graph has 17
+    // nodes, past the limit of 10, and after it 10, as the sums collapse to one. The rule after
+    // it was skipped on the limit's account, so the run must stop and say so, not go on as if
+    // nothing had happened; the reason carries the size that passed.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int[] bs = new int[8];
+    for (int i = 0; i < bs.length; i++) {
+      bs[i] = g.add(new Toy.Var("b" + i));
+    }
+    List<Rewrite<Toy, Void>> rules = List.of(
+        Rewrite.dynamic("blow", Pattern.of(new Toy.Var("a")), (graph, _, _) -> {
+          for (int b : bs) {
+            graph.add(new Toy.Add(IntList.of(a, b)));
+          }
+          for (int b : bs) {
+            graph.merge(bs[0], b);
+          }
+          return IntList.EMPTY;
+        }),
+        Rewrite.dynamic("mark", Pattern.of(new Toy.Var("a")), (graph, _, _) -> {
+          graph.add(new Toy.Var("marker"));
+          return IntList.EMPTY;
+        }));
+    RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT.withNodes(10),
+        Scheduler.simple()).run();
+    assertEquals(10, g.numNodes(), report.toString());
+    assertEquals(1, report.size(), report.toString());
+    assertEquals(new StopReason.NodeLimit(17), report.stop(), report.toString());
+    assertEquals(java.util.Set.of("mark"), report.iterations().get(0).skipped());
+    assertTrue(g.lookup(new Toy.Var("marker")).isEmpty());
     g.checkInvariants();
   }
 }

@@ -41,6 +41,11 @@ public interface Scheduler<L extends Language<L>, D> {
     return true;
   }
 
+  /** Whether the rule is held back this iteration, for the report; false unless held. */
+  default boolean isBanned(int iteration, int ruleIndex) {
+    return false;
+  }
+
   /**
    * Forgets what earlier runs taught the scheduler. The runner calls it at the start of every
    * run, whose iterations count from 1 again, so a run depends only on its graph and rules -
@@ -51,6 +56,6 @@ public interface Scheduler<L extends Language<L>, D> {
 
   /** The scheduler that applies every match of every rule. */
   static <L extends Language<L>, D> Scheduler<L, D> simple() {
-    return (iteration, ruleIndex, rule, graph) -> rule.search(graph);
+    return (_, _, rule, graph) -> rule.search(graph);
   }
 }

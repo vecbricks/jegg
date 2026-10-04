@@ -21,7 +21,7 @@ import java.util.OptionalInt;
  * payload value. A substitution is immutable; binding returns a new one, which is what lets
  * the matcher backtrack by discarding it.
  */
-public final class Subst implements Comparable<Subst> {
+public final class Subst {
 
   /** The substitution that binds nothing. */
   public static final Subst EMPTY = new Subst(new LinkedHashMap<>(), new LinkedHashMap<>());
@@ -94,12 +94,6 @@ public final class Subst implements Comparable<Subst> {
   @Override
   public int hashCode() {
     return Objects.hash(ids, payloads);
-  }
-
-  /** Substitutions sort by their rendering, so a list of matches has one order everywhere. */
-  @Override
-  public int compareTo(Subst other) {
-    return toString().compareTo(other.toString());
   }
 
   @Override
