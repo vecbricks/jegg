@@ -54,6 +54,9 @@ import org.openjdk.jmh.runner.options.TimeValue;
 public final class Benchmarks {
 
   private static final String BANNER = "=".repeat(96);
+  // The commit, read once before anything is written: a results file this run writes is an
+  // untracked file, which would otherwise mark the next file in the same run dirty.
+  private static String commit;
 
   private Benchmarks() {
   }
@@ -65,6 +68,7 @@ public final class Benchmarks {
     if (Machine.relaunchPinned(args)) {
       return;
     }
+    commit = Report.commit();
     // One load check for every benchmark named: a run of its own would trip the next one's.
     double load = Report.load();
     if (!quick && !Boolean.getBoolean("bench.force") && load > 1.0) {
@@ -313,7 +317,7 @@ public final class Benchmarks {
       header.append(processor()).append(", ")
           .append(Runtime.getRuntime().availableProcessors()).append(" threads\n");
       header.append(Machine.describe()).append('\n');
-      header.append("commit ").append(commit()).append(", ")
+      header.append("commit ").append(commit).append(", ")
           .append(ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
           .append('\n');
       header.append(String.format("load average before %.2f, after %.2f%n", loadBefore,
@@ -355,7 +359,7 @@ public final class Benchmarks {
     }
 
     /** The commit, marked dirty if the tree has uncommitted changes: such a file is not final. */
-    private static String commit() throws IOException, InterruptedException {
+    static String commit() throws IOException, InterruptedException {
       String head = git("rev-parse", "--short", "HEAD");
       if (head == null) {
         return "unknown";
