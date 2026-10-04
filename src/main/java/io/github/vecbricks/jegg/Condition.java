@@ -26,6 +26,17 @@ public interface Condition<L extends Language<L>, D> {
     return (graph, eclass, subst) -> true;
   }
 
+  /**
+   * egg's {@code ConditionEqual}: both patterns instantiated under the match's substitution land
+   * in one class. Instantiating adds what the graph lacks, as egg's does; since conditions are
+   * read at apply time, that is an addition like a right-hand side's, and the graph is not
+   * rebuilt in between, so an equality only congruence would show is not seen.
+   */
+  static <L extends Language<L>, D> Condition<L, D> equal(Pattern<L> a, Pattern<L> b) {
+    return (graph, eclass, subst) -> graph.find(Matcher.instantiate(graph, a, subst))
+        == graph.find(Matcher.instantiate(graph, b, subst));
+  }
+
   /** Both conditions. */
   default Condition<L, D> and(Condition<L, D> other) {
     return (graph, eclass, subst) -> holds(graph, eclass, subst) && other.holds(graph, eclass,

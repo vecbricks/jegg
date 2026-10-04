@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -106,5 +107,25 @@ class PatternMatchTest {
     assertTrue(g.find(unknown) != g.find(known));
     g.checkInvariants();
     g.checkAnalysisInvariant();
+  }
+
+  @Test
+  void conditionEqualInstantiatesBothPatternsAndComparesTheirClasses() {
+    // x + 0 and x are merged; (?x + 0) and ?x then land in one class, and
+    // (?x * 2) and ?x do not, but are added to the graph by the asking, as egg's are.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int x = g.add(new Toy.Var("x"));
+    int zero = g.add(new Toy.Num(0));
+    g.merge(x, g.add(new Toy.Add(IntList.of(x, zero))));
+    g.rebuild();
+    Subst s = Subst.EMPTY.bind("x", x);
+    Condition<Toy, Void> plusZero = Condition.equal(add(X, Pattern.of(new Toy.Num(0))), X);
+    Condition<Toy, Void> timesTwo = Condition.equal(mul(X, Pattern.of(new Toy.Num(2))), X);
+    assertTrue(plusZero.holds(g, x, s));
+    int before = g.numNodes();
+    assertFalse(timesTwo.holds(g, x, s));
+    g.rebuild();
+    assertTrue(g.numNodes() > before, "the instantiated terms are in the graph");
+    assertTrue(g.lookup(new Toy.Mul(IntList.of(x, g.add(new Toy.Num(2))))).isPresent());
   }
 }

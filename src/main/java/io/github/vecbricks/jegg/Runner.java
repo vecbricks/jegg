@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -37,6 +38,20 @@ public final class Runner<L extends Language<L>, D> {
   private final List<Rewrite<L, D>> rules;
   private final RunLimits limits;
   private final Scheduler<L, D> scheduler;
+  private final List<Hook<L, D>> hooks = new ArrayList<>();
+
+  /**
+   * Run before each iteration, on the rebuilt graph (egg's {@code with_hook}): a reason to stop
+   * ends the run with {@link StopReason.Other}, an empty one lets the iteration go ahead. A test
+   * stops once its goals are proved; a client might stop on a budget of its own.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   */
+  @FunctionalInterface
+  public interface Hook<L extends Language<L>, D> {
+    Optional<String> beforeIteration(EGraph<L, D> graph);
+  }
 
   public Runner(EGraph<L, D> graph, List<Rewrite<L, D>> rules, RunLimits limits,
       Scheduler<L, D> scheduler) {
@@ -63,6 +78,12 @@ public final class Runner<L extends Language<L>, D> {
     return graph;
   }
 
+  /** Adds a hook, run before each iteration in the order added; returns this runner. */
+  public Runner<L, D> withHook(Hook<L, D> hook) {
+    hooks.add(Objects.requireNonNull(hook, "hook"));
+    return this;
+  }
+
   /** Runs to saturation or a limit and returns the report. */
   public RunReport run() {
     List<RunReport.Iteration> iterations = new ArrayList<>();
@@ -71,6 +92,10 @@ public final class Runner<L extends Language<L>, D> {
     StopReason stop = overLimit();
     int iteration = 0;
     while (stop == null) {
+      stop = askHooks();
+      if (stop != null) {
+        break;
+      }
       iteration++;
       // Read every match before writing any, so no rule sees this iteration's additions.
       List<List<Matcher.Match>> matches = new ArrayList<>(rules.size());
@@ -97,11 +122,12 @@ public final class Runner<L extends Language<L>, D> {
       iterations.add(new RunReport.Iteration(iteration, graph.numClasses(), graph.numNodes(),
           counts, applied, unions, repaired));
       stop = overLimit();
-      // As egg: saturated only if nothing was merged and nothing was added, since an applier
-      // may add nodes without returning them for a union.
-      boolean unchanged = unions == 0 && graph.numNodes() == nodesBefore
+      // As egg: the scheduler is asked whenever nothing was merged, so it may release its bans
+      // even when a condition or an applier added nodes without a union; saturated only if,
+      // besides, nothing was added.
+      boolean unchanged = graph.numNodes() == nodesBefore
           && graph.numClasses() == classesBefore;
-      if (stop == null && unchanged && scheduler.canStop(iteration)) {
+      if (stop == null && unions == 0 && scheduler.canStop(iteration) && unchanged) {
         stop = new StopReason.Saturated();
       }
       if (stop == null && iteration >= limits.iterations()) {
@@ -109,6 +135,16 @@ public final class Runner<L extends Language<L>, D> {
       }
     }
     return new RunReport(iterations, stop);
+  }
+
+  private StopReason askHooks() {
+    for (Hook<L, D> hook : hooks) {
+      Optional<String> reason = hook.beforeIteration(graph);
+      if (reason.isPresent()) {
+        return new StopReason.Other(reason.get());
+      }
+    }
+    return null;
   }
 
   private StopReason overLimit() {

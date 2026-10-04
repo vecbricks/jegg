@@ -65,54 +65,6 @@ class PropRulesTest {
     }
   }
 
-  /** The tests' term type: a tiny s-expression tree, bridged to {@link Prop}. */
-  record Term(String op, List<Term> kids) {
-    static Term parse(String s) {
-      return new Parser(s).term();
-    }
-
-    private static final class Parser {
-      private final String s;
-      private int i = 0;
-
-      Parser(String s) {
-        this.s = s;
-      }
-
-      Term term() {
-        skip();
-        if (s.charAt(i) == '(') {
-          i++;
-          skip();
-          String op = atom();
-          List<Term> kids = new java.util.ArrayList<>();
-          skip();
-          while (s.charAt(i) != ')') {
-            kids.add(term());
-            skip();
-          }
-          i++;
-          return new Term(op, kids);
-        }
-        return new Term(atom(), List.of());
-      }
-
-      private String atom() {
-        int start = i;
-        while (i < s.length() && " ()".indexOf(s.charAt(i)) < 0) {
-          i++;
-        }
-        return s.substring(start, i);
-      }
-
-      private void skip() {
-        while (i < s.length() && s.charAt(i) == ' ') {
-          i++;
-        }
-      }
-    }
-  }
-
   static final TreeBridge<Term, Prop> BRIDGE = new TreeBridge<>() {
     @Override
     public List<Term> childrenOf(Term t) {
