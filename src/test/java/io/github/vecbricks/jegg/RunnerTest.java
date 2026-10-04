@@ -440,4 +440,25 @@ class RunnerTest {
     assertThrows(IllegalArgumentException.class, () -> new BackoffScheduler<Toy, Void>(0, 5));
     assertThrows(IllegalArgumentException.class, () -> new BackoffScheduler<Toy, Void>(5, 0));
   }
+
+  @Test
+  void aBannedRuleIsSearchedOnlyPastItsThreshold() {
+    // Commutativity on the five-summand sum has four matches, one per sum. With a match limit
+    // of two the scheduler bans it after a search for three matches, which asks three nodes
+    // where the full search asks four, as egg's search_with_limit does.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    sumOfFive(g);
+    Toy.CountingHead full = new Toy.CountingHead();
+    Rewrite<Toy, Void> commute = Rewrite.of("commute", Pattern.node(full, v("a"), v("b")),
+        add(v("b"), v("a")));
+    assertEquals(4, commute.search(g).size());
+    assertEquals(4, full.asked);
+    Toy.CountingHead limited = new Toy.CountingHead();
+    Rewrite<Toy, Void> commuteLimited = Rewrite.of("commute",
+        Pattern.node(limited, v("a"), v("b")), add(v("b"), v("a")));
+    BackoffScheduler<Toy, Void> scheduler = new BackoffScheduler<>(2, 5);
+    assertEquals(List.of(), scheduler.search(1, 0, commuteLimited, g));
+    assertEquals(1, scheduler.timesBanned(0));
+    assertEquals(3, limited.asked);
+  }
 }

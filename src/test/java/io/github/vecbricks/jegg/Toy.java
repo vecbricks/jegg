@@ -117,4 +117,26 @@ sealed interface Toy extends Language<Toy> permits Toy.Num, Toy.Var, Toy.Add, To
       };
     }
   };
+
+  /** A head for {@code +} that counts the nodes it is asked to match: how far a search went. */
+  final class CountingHead implements Pattern.Head<Toy> {
+    private final Pattern.Head<Toy> head = Pattern.head(new Add(IntList.EMPTY));
+    int asked;
+
+    @Override
+    public Subst match(Toy node, Subst subst) {
+      asked++;
+      return head.match(node, subst);
+    }
+
+    @Override
+    public Toy build(Subst subst, IntList children) {
+      return head.build(subst, children);
+    }
+
+    @Override
+    public java.util.Optional<java.util.Set<String>> variables() {
+      return head.variables();
+    }
+  }
 }

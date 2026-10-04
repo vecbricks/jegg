@@ -36,9 +36,28 @@ public final class Matcher {
   /** Every match of {@code pattern} anywhere in {@code graph}, in class order. */
   public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
       Pattern<L> pattern) {
+    return search(graph, pattern, Integer.MAX_VALUE);
+  }
+
+  /**
+   * The first {@code limit} matches of {@code pattern}, in class order - a prefix of what
+   * {@link #search(EGraph, Pattern)} returns - and the search stops within the node at which the
+   * limit is reached: egg's {@code search_with_limit}, which lets a scheduler find out that a
+   * rule has more matches than it will apply without paying for all of them. The limit must be
+   * positive.
+   */
+  public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
+      Pattern<L> pattern, int limit) {
+    if (limit < 1) {
+      throw new IllegalArgumentException("the limit must be positive, not " + limit);
+    }
     List<Match> matches = new ArrayList<>();
     for (EClass<L, D> eclass : graph.classes()) {
-      for (Subst subst : matchIn(graph, pattern, eclass.id(), Subst.EMPTY)) {
+      if (matches.size() >= limit) {
+        break;
+      }
+      for (Subst subst : matchIn(graph, pattern, eclass.id(), Subst.EMPTY,
+          limit - matches.size())) {
         matches.add(new Match(eclass.id(), subst));
       }
     }
@@ -51,6 +70,18 @@ public final class Matcher {
    */
   public static <L extends Language<L>, D> List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
+    return matchIn(graph, pattern, id, subst, Integer.MAX_VALUE);
+  }
+
+  /**
+   * The first {@code limit} substitutions of {@link #matchIn(EGraph, Pattern, int, Subst)}, in
+   * its order, the class's nodes left unvisited once the limit is reached. The cut is made
+   * between a node's substitutions and the next node's: a node's own are all computed, since a
+   * cut inside the walk of its children could lose some of them to deduplication and leave the
+   * prefix short.
+   */
+  private static <L extends Language<L>, D> List<Subst> matchIn(EGraph<L, D> graph,
+      Pattern<L> pattern, int id, Subst subst, int limit) {
     int root = graph.find(id);
     switch (pattern) {
       case Pattern.Var<L>(var name) -> {
@@ -63,6 +94,9 @@ public final class Matcher {
       case Pattern.Node<L>(var head, var children) -> {
         Set<Subst> out = new LinkedHashSet<>();
         for (L node : graph.classOf(root).nodes()) {
+          if (out.size() >= limit) {
+            break;
+          }
           if (node.children().size() != children.size()) {
             continue;
           }
@@ -80,7 +114,8 @@ public final class Matcher {
           }
           out.addAll(partial);
         }
-        return new ArrayList<>(out);
+        List<Subst> list = new ArrayList<>(out);
+        return list.size() > limit ? list.subList(0, limit) : list;
       }
     }
   }

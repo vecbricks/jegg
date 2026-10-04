@@ -84,6 +84,14 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
   }
 
   /**
+   * The first {@code limit} matches, the search stopped within the node that reached the limit
+   * ({@link Matcher#search(EGraph, Pattern, int)}).
+   */
+  public List<Matcher.Match> search(EGraph<L, D> graph, int limit) {
+    return Matcher.search(graph, lhs, limit);
+  }
+
+  /**
    * Applies one match if its condition holds: the right-hand side's classes are unioned with
    * the matched class. Returns how many unions changed the graph (merged two classes that were
    * different), or empty if the condition did not hold and nothing was applied.
