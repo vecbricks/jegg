@@ -10,6 +10,8 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -38,5 +40,17 @@ class IntListTest {
     assertSame(list, list.map(x -> x));
     assertEquals(IntList.of(5, 6), list.map(x -> x + 1));
     assertSame(IntList.EMPTY, IntList.of());
+  }
+
+  @Test
+  void theEmptyListAndTheArrayCopy() {
+    assertTrue(IntList.EMPTY.isEmpty());
+    assertFalse(IntList.of(1).isEmpty());
+    IntList l = IntList.of(1, 2);
+    int[] copy = l.toArray();
+    copy[0] = 9;
+    assertEquals(1, l.get(0), "toArray gives a copy");
+    assertEquals(l, l);
+    assertNotEquals(l, "1, 2");
   }
 }

@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -109,5 +110,16 @@ class EGraphAddTest {
     Toy node = g.classOf(id).nodes().get(0);
     List<Toy.Tree> kids = node.children().stream().mapToObj(c -> rebuild(g, c)).toList();
     return Toy.BRIDGE.build(node, kids);
+  }
+
+  @Test
+  void aMissingSubtreeReachedTwiceIsLookedUpOnce() {
+    // The sum's two operands are the same missing object: the second reach reads the memo.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    g.add(new Toy.Var("x"));
+    Toy.Tree missing = Toy.Tree.add(Toy.Tree.var("x"), Toy.Tree.num(5));
+    assertEquals(OptionalInt.empty(), g.lookupTree(Toy.Tree.mul(missing, missing), Toy.BRIDGE));
+    assertEquals(OptionalInt.empty(), g.lookupTree(Toy.Tree.num(5), Toy.BRIDGE));
+    assertSame(Analysis.class, g.analysis().getClass().getInterfaces()[0]);
   }
 }
