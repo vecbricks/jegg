@@ -34,7 +34,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
 
 /**
  * The measurement of PLAN.md 6, run as {@code mvn -Pbench -q test-compile exec:exec
- * -Dbench=<name>}: each benchmark through JMH's API, its results written under
+ * -Dbench=<name>[,<name>]}: each named benchmark through JMH's API, its results written under
  * {@code benchmarks/} as {@code <Name>-jdk<N>-results.txt} with the provenance header
  * CONTRIBUTING.md asks for - the JVM, the OS, the processor, the commit, the date, the load
  * average before and after, and the JMH settings. {@code -Dbench.quick=true} runs a short
@@ -59,24 +59,26 @@ public final class Benchmarks {
   }
 
   public static void main(String[] args) throws Exception {
-    String which = System.getProperty("bench", "all");
+    java.util.Set<String> which = java.util.Set.of(System.getProperty("bench", "all")
+        .split(","));
     boolean quick = Boolean.getBoolean("bench.quick");
     if (Machine.relaunchPinned(args)) {
       return;
     }
+    // One load check for every benchmark named: a run of its own would trip the next one's.
     double load = Report.load();
     if (!quick && !Boolean.getBoolean("bench.force") && load > 1.0) {
       System.err.printf("load average is %.2f: the machine is not idle. Wait, or pass"
           + " -Dbench.force=true.%n", load);
       System.exit(1);
     }
-    if (which.equals("all") || which.equals("rebuild")) {
+    if (which.contains("all") || which.contains("rebuild")) {
       rebuild(quick);
     }
-    if (which.equals("all") || which.equals("projection")) {
+    if (which.contains("all") || which.contains("projection")) {
       projection(quick);
     }
-    if (which.equals("all") || which.equals("determinism")) {
+    if (which.contains("all") || which.contains("determinism")) {
       determinism(quick);
     }
   }

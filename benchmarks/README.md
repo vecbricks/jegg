@@ -3,7 +3,7 @@
 The measurement harness of `PLAN.md` 6 lives under `src/jmh/java` and compiles with the tests
 on every build. It runs under the `bench` profile:
 
-    mvn -Pbench -q test-compile exec:exec -Dbench=<rebuild|projection|determinism|all>
+    mvn -Pbench -q test-compile exec:exec -Dbench=<rebuild|projection|determinism|all>[,<name>]
 
 and writes one file per benchmark here, `<Name>-jdk<N>-results.txt`, with the header
 `CONTRIBUTING.md` asks for: the JVM and OS, the processor, the commit (marked `+dirty` when the
