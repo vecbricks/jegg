@@ -238,20 +238,20 @@ public final class EGraph<L extends Language<L>, D> {
     if (ra == rb) {
       return ra;
     }
-    // The union-find keeps the smaller root. The joined fact is computed first: an analysis
-    // whose join refuses the merge (two constants in one class) must leave the graph as it was,
-    // not with the two classes joined in the union-find and nowhere else.
-    int root = Math.min(ra, rb);
-    int other = Math.max(ra, rb);
+    // The joined fact first, before anything is changed: an analysis whose join refuses the
+    // merge (two constants in one class) must leave the graph as it was, not with the two
+    // classes joined in the union-find and nowhere else. A join is symmetric, so it needs no
+    // knowledge of which root the union-find will keep. This holds for a merge called here; a
+    // join refusing inside rebuild, whose repairs merge congruent classes, leaves the rebuild
+    // half done, as egg's panic would - a fact an analysis must not let two forms disagree on.
+    D joined = analysis.join(classes.get(ra).data(), classes.get(rb).data());
+    int root = unionFind.union(ra, rb);
+    int other = root == ra ? rb : ra;
     EClass<L, D> kept = classes.get(root);
     EClass<L, D> gone = classes.get(other);
-    // The joined fact: where it grew past what a side had, that side's parents are re-made,
-    // since their facts were made from the smaller one (paper Figure 9).
-    D joined = analysis.join(kept.data(), gone.data());
-    if (unionFind.union(ra, rb) != root) {
-      throw new IllegalStateException("the union-find did not keep the smaller root");
-    }
     changes++;
+    // Where the joined fact grew past what a side had, that side's parents are re-made, since
+    // their facts were made from the smaller one (paper Figure 9).
     if (!Objects.equals(joined, kept.data())) {
       analysisPending.addAll(kept.mutableParents());
     }

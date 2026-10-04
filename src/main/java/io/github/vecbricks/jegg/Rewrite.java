@@ -11,7 +11,9 @@ package io.github.vecbricks.jegg;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * A named rewrite: a left-hand pattern, a right-hand {@link Applier} and a {@link Condition}.
@@ -34,16 +36,23 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
     // misspelt variable fails here and not in the middle of an apply phase, with the graph
     // half-applied. A dynamic applier cannot be checked; its variables are its own business.
     if (rhs instanceof Applier.PatternApplier<L, D>(var pattern)) {
+      Set<String> bound = lhs.subtermVariables();
       for (String v : pattern.subtermVariables()) {
-        if (!lhs.subtermVariables().contains(v)) {
+        if (!bound.contains(v)) {
           throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's ?" + v
               + " is not bound by the left-hand side " + lhs);
         }
       }
-      for (String v : pattern.payloadVariables()) {
-        if (!lhs.payloadVariables().contains(v)) {
-          throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's payload"
-              + " variable ?" + v + " is not bound by the left-hand side " + lhs);
+      // Payload variables only when every head on both sides declares what it binds
+      // (Pattern.Head.variables): a head that does not say is unchecked, never wrongly refused.
+      Optional<Set<String>> boundPayloads = lhs.payloadVariables();
+      Optional<Set<String>> usedPayloads = pattern.payloadVariables();
+      if (boundPayloads.isPresent() && usedPayloads.isPresent()) {
+        for (String v : usedPayloads.get()) {
+          if (!boundPayloads.get().contains(v)) {
+            throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's"
+                + " payload variable ?" + v + " is not bound by the left-hand side " + lhs);
+          }
         }
       }
     }

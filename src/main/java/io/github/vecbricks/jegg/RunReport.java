@@ -26,15 +26,17 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
 
   /**
    * One iteration: the graph's size after its rebuild, the matches each rule was given to
-   * apply, the rules the scheduler held back (whose matches read zero for that reason), how
+   * apply, the rules the scheduler held back (whose matches read zero for that reason), the
+   * rules whose matches were not applied because a limit was passed before their turn, how
    * many matches were applied (their condition held at apply time), how many applications
    * merged two classes that were different, and how many classes the rebuild repaired.
    */
   public record Iteration(int number, int classes, int nodes, Map<String, Integer> matches,
-      Set<String> banned, int applied, int unions, int repaired) {
+      Set<String> banned, Set<String> skipped, int applied, int unions, int repaired) {
     public Iteration {
       matches = Collections.unmodifiableMap(new LinkedHashMap<>(matches));
       banned = Collections.unmodifiableSet(new LinkedHashSet<>(banned));
+      skipped = Collections.unmodifiableSet(new LinkedHashSet<>(skipped));
     }
   }
 
@@ -55,7 +57,8 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
           .append(" classes, ").append(it.nodes()).append(" nodes, ").append(it.applied())
           .append(" applied, ").append(it.unions()).append(" unions, ").append(it.repaired())
           .append(" repaired; matches ").append(it.matches())
-          .append(it.banned().isEmpty() ? "" : ", banned " + it.banned()).append('\n');
+          .append(it.banned().isEmpty() ? "" : ", banned " + it.banned())
+          .append(it.skipped().isEmpty() ? "" : ", skipped " + it.skipped()).append('\n');
     }
     return b.append("stopped: ").append(stop).toString();
   }

@@ -111,6 +111,8 @@ class RunnerTest {
     assertTrue(scheduler.timesBanned(1) >= 1);
     assertFalse(scheduler.isBanned(1, 1_000_000), "a rule never searched is not banned");
     assertEquals(0, scheduler.timesBanned(1_000_000));
+    assertFalse(scheduler.isBanned(1, -1));
+    assertEquals(0, scheduler.timesBanned(-1));
     assertTrue(commute.stream().anyMatch(n -> n > 0), "never readmitted: " + report);
     assertTrue(commute.stream().filter(n -> n == 0).count() >= 2, report.toString());
   }
@@ -375,6 +377,43 @@ class RunnerTest {
     assertTrue(g.lookup(new Toy.Var("marker")).isEmpty(), "the rule after the limit was applied:\n"
         + report);
     assertEquals(new StopReason.NodeLimit(g.numNodes()), report.stop(), "the settled size");
+    assertEquals(java.util.Set.of("mark"), report.iterations().get(0).skipped());
+    g.checkInvariants();
+  }
+
+  @Test
+  void aLimitPassedStopsTheRunEvenIfTheRebuildBringsTheSizeBackUnderIt() {
+    // "blow" adds eight sums a + b_i and merges the b_i, so before the rebuild the graph has 17
+    // nodes, past the limit of 10, and after it 10, as the sums collapse to one. The rule after
+    // it was skipped on the limit's account, so the run must stop and say so, not go on as if
+    // nothing had happened; the reason carries the size that passed.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int[] bs = new int[8];
+    for (int i = 0; i < bs.length; i++) {
+      bs[i] = g.add(new Toy.Var("b" + i));
+    }
+    List<Rewrite<Toy, Void>> rules = List.of(
+        Rewrite.dynamic("blow", Pattern.of(new Toy.Var("a")), (graph, _, _) -> {
+          for (int b : bs) {
+            graph.add(new Toy.Add(IntList.of(a, b)));
+          }
+          for (int b : bs) {
+            graph.merge(bs[0], b);
+          }
+          return IntList.EMPTY;
+        }),
+        Rewrite.dynamic("mark", Pattern.of(new Toy.Var("a")), (graph, _, _) -> {
+          graph.add(new Toy.Var("marker"));
+          return IntList.EMPTY;
+        }));
+    RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT.withNodes(10),
+        Scheduler.simple()).run();
+    assertEquals(10, g.numNodes(), report.toString());
+    assertEquals(1, report.size(), report.toString());
+    assertEquals(new StopReason.NodeLimit(17), report.stop(), report.toString());
+    assertEquals(java.util.Set.of("mark"), report.iterations().get(0).skipped());
+    assertTrue(g.lookup(new Toy.Var("marker")).isEmpty());
     g.checkInvariants();
   }
 }

@@ -181,5 +181,20 @@ class PatternMatchTest {
     // Bound on both sides, fine; and a dynamic applier is not checked.
     Rewrite.of("swap", Pattern.node(div, X, Y), Pattern.node(div, Y, X));
     Rewrite.<Toy, Void>dynamic("free", add(X, Y), (_, _, s) -> IntList.of(s.idOf("x")));
+    // A client's head that binds ?c without declaring it: the payload check stands aside rather
+    // than refuse a right-hand side that is in fact bound.
+    Pattern.Head<Toy> undeclared = new Pattern.Head<>() {
+      @Override
+      public Subst match(Toy node, Subst subst) {
+        return node instanceof Toy.Div d ? subst.bindPayload("c", d.checked()) : null;
+      }
+
+      @Override
+      public Toy build(Subst subst, IntList children) {
+        return new Toy.Div((Boolean) subst.payload("c"), children);
+      }
+    };
+    Rewrite.of("client", Pattern.node(undeclared, X, Y), Pattern.node(div, Y, X));
+    assertTrue(Pattern.node(undeclared, X, Y).payloadVariables().isEmpty());
   }
 }

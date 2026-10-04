@@ -121,7 +121,13 @@ public final class Runner<L extends Language<L>, D> {
       }
       int applied = 0;
       int unions = 0;
+      StopReason passed = null;
+      Set<String> skipped = new LinkedHashSet<>();
       for (int i = 0; i < rules.size(); i++) {
+        if (passed != null) {
+          skipped.add(rules.get(i).name());
+          continue;
+        }
         for (Matcher.Match m : matches.get(i)) {
           OptionalInt changed = rules.get(i).apply(graph, m);
           if (changed.isPresent()) {
@@ -130,16 +136,20 @@ public final class Runner<L extends Language<L>, D> {
           }
         }
         // The limits are checked after each rule's matches, as egg checks them, so one
-        // iteration overshoots by at most one rule's additions, not every rule's. The stop
-        // reason is read after the rebuild, with the graph's settled size.
-        if (overLimit() != null) {
-          break;
-        }
+        // iteration overshoots by at most one rule's additions, not every rule's; the rules
+        // after are skipped, and the report names them.
+        passed = overLimit();
       }
       int repaired = graph.rebuild();
       iterations.add(new RunReport.Iteration(iteration, graph.numClasses(), graph.numNodes(),
-          counts, banned, applied, unions, repaired));
+          counts, banned, skipped, applied, unions, repaired));
+      // A limit passed stops the run even if the rebuild's merges brought the size back under
+      // it, as egg's does: rules were skipped on its account. The reason carries the settled
+      // size when that still shows it, else the size that passed.
       stop = overLimit();
+      if (stop == null) {
+        stop = passed;
+      }
       // As egg: the scheduler is asked whenever no rule merged two classes, whether or not
       // nodes were added, so it may release its bans then (Scheduler.canStop says so); the
       // iteration is saturation only if, besides, nothing else changed.

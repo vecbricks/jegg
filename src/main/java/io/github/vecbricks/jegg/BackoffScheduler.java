@@ -60,12 +60,13 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
   /** Whether the rule is banned at this iteration; a rule never searched is not. */
   @Override
   public boolean isBanned(int iteration, int ruleIndex) {
-    return ruleIndex < stats.size() && stats.get(ruleIndex).bannedUntil > iteration;
+    return ruleIndex >= 0 && ruleIndex < stats.size()
+        && stats.get(ruleIndex).bannedUntil > iteration;
   }
 
   /** How many times the rule has been banned so far; a rule never searched, none. */
   public int timesBanned(int ruleIndex) {
-    return ruleIndex < stats.size() ? stats.get(ruleIndex).timesBanned : 0;
+    return ruleIndex >= 0 && ruleIndex < stats.size() ? stats.get(ruleIndex).timesBanned : 0;
   }
 
   @Override
