@@ -18,7 +18,8 @@ and stays the record; an issue's plan is the plan of one change against it, and 
 `PLAN.md` where the change moves it.
 
 Measurements are committed under `benchmarks/` with a provenance header (commit, JDK, machine,
-load), and every number a document quotes traces to one of those files. Code comments explain
+load), and every number a document quotes traces to one of those files; `benchmarks/README.md`
+says how they are regenerated, pinned to the fast cores on an idle machine, as Varka's are. Code comments explain
 the code to a new reader; how it came to be this way is in the issues, the plan and git.
 
 Java 25, Maven, `mvn -B verify` must be clean under `-Xlint:all -Werror`.
