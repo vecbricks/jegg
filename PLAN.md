@@ -360,7 +360,128 @@ second physical representation exists to choose between.
 
 ## 9. Outcome
 
-<!-- Filled in when the measurement lands: the numbers with the committed file
-     they trace to, 6.1's predictions scored one by one, what moved that the
-     plan did not list, and what the port leaves for later - which goes to
-     item 11 or the milestone's debt register, never to a code comment. -->
+Measured on 4 October 2026, with the harness of section 6 (`src/jmh/java`, run under
+the `bench` profile, see `benchmarks/README.md`): JDK 25.0.4 on an AMD Ryzen AI 9
+HX PRO 370, the runs pinned to its four Zen 5 cores, an idle machine. Every
+number below is in a file under `benchmarks/`, which names the commit it was
+measured from. Cross-language comparison with egg was not attempted, as section
+6 says; egg's own times for two of the lambda runs, observed while porting the
+suite (#19), are quoted at the end as context only.
+
+### 9.1 The numbers
+
+**Deferred against eager rebuilding** (`RebuildBenchmark-jdk25-results.txt`,
+commit 198a02b). One saturation of each ported prop and lambda test, with
+`rebuild` once per iteration (deferred, the runner's way) against after every
+merge (eager, the paper's comparison). On the twelve runs below 300 nodes the
+two modes are within each other's error, except `lambda_compose_many` (284
+nodes), where deferred is 1.3x faster (12.0 against 15.8 ms). On the three runs
+past ten thousand nodes the paper's shape appears: `prove_fold` (31,059 nodes)
+takes 0.6 s deferred and 260.7 s eager, 430x, repairing 4,536 classes against
+25,706; `lambda_fib` (14,582 nodes) takes 27.4 s deferred and did not finish
+eager within a ten-minute cap, over 22x; `lambda_function_repeat` (32,636
+nodes) takes 11.1 s deferred and did not finish eager either, over 54x. The
+repaired-class count moves the same way as the time but by far less (5.7x on
+`prove_fold` against 430x), because every `rebuild` also re-canonicalises every
+class and sweeps the whole hashcons, so an eager run pays a whole-graph pass
+per merge (#15).
+
+**The absolute cost at Varka's size** (`ProjectionBenchmark-jdk25-results.txt`,
+commit 70e7016). A projection of 64 e-nodes over the toy date language
+with integer arithmetic, 20 outputs, 20 rules (`Projection`, asserted by
+`ProjectionTest`), run to a node limit a compiler might set. The limits
+overshoot, since the runner checks them between iterations (#14): a limit of
+200 ends after 2 iterations at 278 nodes and 107 classes, a limit of 1,000
+after 4 at 1,909 nodes and 805 classes. egg's default of 10,000 is not
+measured: under these rules the run to it takes 30 s, 23
+iterations to 10,197 nodes.
+
+| operation, warm (average, 5 forks x 10 s) | limit 200 | limit 1,000 |
+|---|---|---|
+| `saturate`: add the term, run to the limit | 0.29 ms | 12.3 ms |
+| `extractAll` over the 20 roots, the DAG with sharing | 41.8 ms | 85.6 ms |
+| `extract`, the cheapest tree of each of the 20 roots | 24 us | 211 us |
+| bytes allocated by `saturate` | 1.5 MB | 27.2 MB |
+| bytes allocated by `extractAll` | 58.8 MB | 122.9 MB |
+
+Cold, the first call in a fresh JVM (single shot, 5 forks): `saturate`
+5.0 ms at the 200 limit and 38.3 ms at 1,000; `extractAll`
+89 and 191 ms; the trees 2.0 and 6.3 ms. With
+`-XX:+UseCompactObjectHeaders` the bytes allocated fall by 13 to 14% on
+`saturate` and 16 to 18% on `extractAll`, and the times move by under
+4%, within the error bars.
+
+**Determinism** (`DeterminismRun-jdk25-results.txt`, commit 74d5f8a):
+`DeterminismProbe` in ten fresh JVMs rendered byte-identical graphs, 47 classes, sha-256 41b54b4d62eb3396, 46 ms per JVM including its start.
+
+### 9.2 The predictions of 6.1, scored
+
+1. **Deferred at least 5x faster than eager on the largest ported tests, near
+   1x on the smallest, the repair count tracking the time: holds.** 430x and
+   over 22x and 54x on the three large runs; within error on the small ones.
+   The repair count tracks the direction, not the size, of the gap, for the
+   reason above.
+2. **Every ported egg test passes with the right-hand side in the expected
+   class, none needing a semantic change: holds for the suites ported.**
+   `simple`, `prop` (3 of 3) and `lambda` (12 of 12, each run ending at egg's
+   own iteration, node and class counts) pass with egg's rules unchanged. The
+   one library change the port forced went toward egg, not away from it: the
+   runner asks its scheduler whether it can stop in every iteration that
+   merged nothing, as egg's does (#19). The `math` suite is not ported (#18),
+   so the prediction is scored on three suites of the four.
+3. **The determinism test passes across ten fresh JVMs: holds.**
+4. **A 64-node graph with 20 rules saturates or hits its limit in under 5 ms
+   and extracts in under 1 ms: half holds, half fails.** Saturation to a
+   200-node limit takes 0.29 ms warm, and to a 1,000-node limit
+   12.3 ms, so the 5 ms holds for a tight budget and fails for a
+   loose one; egg's default limit is out of the question at these rules.
+   Extracting the cheapest tree per root takes 24 to 211 us,
+   under 1 ms; `extractAll`, the DAG over all roots with sharing, takes
+   41.8 to 85.6 ms, 40 to 85 times over, and dominates the whole
+   compile. The cost is the descent's: every candidate rebuilds the selection
+   from scratch and a held move runs a nested descent (#12). Cold, in a fresh
+   JVM, everything is two to eighty times slower still, the JIT's share.
+5. **The naive matcher within 3x of the compiled machine: not measurable.**
+   There is no machine (#7). A JFR profile of the deferred `lambda_function_repeat` run (`RepeatProfile-jdk25-results.txt`) puts at least 32% of its samples in the matcher and at least 26% in `rebuild`, with 39% in node equality whose callers the stack depth cut off; the matcher is the number #7 reads, and it says the naive matcher is a third of the run or more, not the whole of it.
+6. **`extractAll` keeps the shared decomposition and costs less than the two
+   single-root extractions summed; the greedy choice matches enumeration on
+   every graph small enough to enumerate: holds, with a change.** On the
+   smoke test the selection costs 33 against 42 (#11). The greedy choice
+   alone does not reach it: it stops at 41, and the descent that follows it
+   does, so the "greedy choice" of the prediction is a greedy start and a
+   descent. Against enumeration, 100 of 100 random graphs of up to six
+   classes, though graphs that small rarely have the shape the descent exists
+   for (#12).
+
+### 9.3 What moved that the plan did not list
+
+- **Extraction with sharing needed more than a greedy choice.** A class's
+  best DAG for itself is not the best for the union of the roots; the
+  coordinate descent with a held move (#4, #11) is the heuristic, and the
+  literature's exact methods, beam search and real benchmark graphs are
+  #12's plan.
+- **The runner differed from egg in when it asks the scheduler**, found only
+  by comparing ban logs on `lambda_function_repeat` (#19); the hook API and
+  `ConditionEqual` came with that suite.
+- **The rebuild sweeps the whole graph every time**, which the deferred-eager
+  numbers above show and #15 plans away; the node limits overshoot by an
+  iteration (#14).
+- **`extractAll` is the compile-time cost**, not saturation, at a compiler's
+  budget; prediction 4 was written with egg's tree extraction in mind.
+- **The process**: an issue, then a plan in it, then a pull request
+  (`CONTRIBUTING.md`, #3), set after the first steps had gone code-first; two
+  code reviews per step found what the plan's tests did not.
+
+### 9.4 What the port leaves for later
+
+The open issues: the compiled matcher if a measurement asks (#7); the backoff
+search stopping at its threshold (#9); a stronger and cheaper descent (#12);
+unboxed ids and value-class readiness (#13); the correctness findings of the
+whole-repository review (#14); a rebuild proportional to its work (#15); the
+`math` suite (#18). For Varka, item 11's work as section 3.2 left it: the
+dependency on a pinned version and the client mapping.
+
+As context only, not a measurement: egg's own release build runs `lambda_fib`
+in 0.18 s and `lambda_function_repeat` in 0.36 s where jegg takes 27 and 11 s;
+the review of #19 put about half of the latter in `rebuild` and half in the
+matcher.
