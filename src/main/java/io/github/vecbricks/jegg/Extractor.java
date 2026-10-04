@@ -486,7 +486,10 @@ public final class Extractor<L extends Language<L>, D> {
             continue;
           }
           int pc = in.getAsInt();
-          if (pc == held || refs[pc] == 0 || pn.equals(node(pc)) || !priced(pn)) {
+          // lookup finds a node pruned from its class too (EGraph.retainNodes); only a node the
+          // class lists may be chosen for it.
+          if (pc == held || refs[pc] == 0 || pn.equals(node(pc)) || !priced(pn)
+              || !graph.classOf(pc).nodes().contains(pn)) {
             continue;
           }
           long mark = mark();

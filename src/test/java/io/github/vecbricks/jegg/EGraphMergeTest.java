@@ -180,8 +180,9 @@ class EGraphMergeTest {
   @Test
   void pruningAClassKeepsTheInvariantsAndRefusesToEmptyIt() {
     // 1 + 2 folds to 3: the class holds Num 3 and Add(1, 2). Pruning to the leaves drops the
-    // sum from the class, the hashcons and its children's parent lists; a later add of the same
-    // sum makes a fresh class that folds and merges back.
+    // sum from the class and the hashcons, but remembers it: adding it again finds the class and
+    // changes nothing, and it stays a parent of 1 and 2 for congruence, as egg's pruning leaves
+    // it in the memo and the parent lists.
     EGraph<Toy, Long> g = new EGraph<>(ConstantFoldTest.FOLD);
     int one = g.add(new Toy.Num(1));
     int two = g.add(new Toy.Num(2));
@@ -227,5 +228,53 @@ class EGraphMergeTest {
     assertEquals(3L, g.data(ab));
     g.checkInvariants();
     g.checkAnalysisInvariant();
+  }
+
+  /** ConstantFoldTest's analysis, pruning a folded class to its constant as egg's math does. */
+  static final Analysis<Toy, Long> PRUNING_FOLD = new Analysis<>() {
+    @Override
+    public Long make(EGraph<Toy, Long> g, Toy node) {
+      return ConstantFoldTest.FOLD.make(g, node);
+    }
+
+    @Override
+    public Long join(Long a, Long b) {
+      return ConstantFoldTest.FOLD.join(a, b);
+    }
+
+    @Override
+    public void modify(EGraph<Toy, Long> g, int id) {
+      Long value = g.data(id);
+      if (value != null) {
+        int root = g.merge(id, g.add(new Toy.Num(value)));
+        g.retainNodes(root, node -> node.children().isEmpty());
+      }
+    }
+  };
+
+  @Test
+  void aParentEntryOlderThanThePruneIsStillKnownAsPruned() {
+    // op = a + b. a is merged with z, so z's parent entry for op is re-keyed, while b's still
+    // reads a + b as added. Then a is merged with 1 and op folds and is pruned. Then b is merged
+    // with y: the repair of y's class meets b's old entry, whose form no prune ever saw. It must
+    // still know op as pruned and not put it back into the hashcons.
+    EGraph<Toy, Long> g = new EGraph<>(PRUNING_FOLD);
+    int y = g.add(new Toy.Var("y"));
+    int z = g.add(new Toy.Var("z"));
+    int one = g.add(new Toy.Num(1));
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Num(5));
+    int op = g.add(new Toy.Add(IntList.of(a, b)));
+    g.merge(a, z);
+    g.rebuild();
+    g.merge(a, one);
+    g.rebuild();
+    assertEquals(List.of(new Toy.Num(6)), g.classOf(op).nodes(), "folded and pruned");
+    g.merge(b, y);
+    g.rebuild();
+    g.checkInvariants();
+    g.checkAnalysisInvariant();
+    assertEquals(List.of(new Toy.Num(6)), g.classOf(op).nodes());
+    assertEquals(g.find(op), g.lookup(new Toy.Add(IntList.of(a, b))).getAsInt());
   }
 }

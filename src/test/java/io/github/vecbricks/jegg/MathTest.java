@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 /**
  * egg's {@code tests/math.rs} (egg 73975c9), ported test for test: symbolic arithmetic with
  * derivatives and integrals, constant folding that prunes a folded class to its constant, and
- * egg's 44 rules under its names. Each test adds a term, runs the rules with egg's limits until
+ * egg's 36 rules under its names. Each test adds a term, runs the rules with egg's limits until
  * its goal is in the term's class, and checks that its run ends where egg's does.
  */
 class MathTest {
@@ -147,6 +147,9 @@ class MathTest {
     }
   }
 
+  private static final java.util.regex.Pattern NUMBER =
+      java.util.regex.Pattern.compile("-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?");
+
   static final TreeBridge<Term, Math> BRIDGE = new TreeBridge<>() {
     // As egg's define_language! parses: an operator at its arity, else a number, else a symbol.
     @Override
@@ -173,11 +176,10 @@ class MathTest {
         throw new IllegalArgumentException("no operator " + t.op() + " of " + arity
             + " children in " + t);
       }
-      try {
-        return new Math.Constant(Double.parseDouble(t.op()));
-      } catch (NumberFormatException notANumber) {
-        return new Math.Symbol(t.op());
-      }
+      // A plain decimal is a constant; anything else, including Java's "1d", "0x1p3", "NaN"
+      // and "Infinity", which Double.parseDouble would take, is a symbol, as in egg.
+      return NUMBER.matcher(t.op()).matches() ? new Math.Constant(Double.parseDouble(t.op()))
+          : new Math.Symbol(t.op());
     }
 
     @Override
@@ -421,19 +423,29 @@ class MathTest {
     }
   }
 
-  /** egg's {@code test_runner}: the terms added, the rules run until every goal is proved. */
-  private static Run run(Case c) {
+  /** A case's graph before the run: the start term, egg's extra terms, and the goals. */
+  record Prepared(EGraph<Math, Double> graph, int root, List<Pattern<Math>> goals) {
+    boolean allProved() {
+      return goals.stream().allMatch(p -> proved(graph, root, p));
+    }
+  }
+
+  static Prepared prepare(Case c) {
     EGraph<Math, Double> g = new EGraph<>(CONSTANT_FOLD);
     int root = g.addTree(Term.parse(c.start()), BRIDGE);
     for (String extra : c.extraTerms()) {
       g.addTree(Term.parse(extra), BRIDGE);
     }
-    List<Pattern<Math>> goals = c.goals().stream().map(MathTest::pattern).toList();
-    RunReport report = new Runner<>(g, rules(), c.limits(), new BackoffScheduler<>())
-        .withHook(graph -> goals.stream().allMatch(p -> proved(graph, root, p))
-            ? Optional.of(PROVED) : Optional.empty())
+    return new Prepared(g, root, c.goals().stream().map(MathTest::pattern).toList());
+  }
+
+  /** egg's {@code test_runner}: the terms added, the rules run until every goal is proved. */
+  private static Run run(Case c) {
+    Prepared p = prepare(c);
+    RunReport report = new Runner<>(p.graph(), rules(), c.limits(), new BackoffScheduler<>())
+        .withHook(_ -> p.allProved() ? Optional.of(PROVED) : Optional.empty())
         .run();
-    return new Run(g, root, report, goals);
+    return new Run(p.graph(), p.root(), report, p.goals());
   }
 
   private static void sameAsEgg(Run r, Egg egg) {

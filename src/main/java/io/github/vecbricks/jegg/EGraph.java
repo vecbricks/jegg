@@ -274,6 +274,9 @@ public final class EGraph<L extends Language<L>, D> {
     kept.mutableNodes().addAll(gone.mutableNodes());
     kept.mutableParents().addAll(gone.mutableParents());
     kept.setData(joined);
+    if (gone.hasPruned()) {
+      kept.markPruned();
+    }
     classes.set(other, null);
     liveClasses--;
     worklist.add(root);
@@ -285,36 +288,31 @@ public final class EGraph<L extends Language<L>, D> {
    * Keeps the nodes of {@code eclass}'s class that {@code keep} accepts and drops the others:
    * egg's pruning, which its {@code math} suite's constant folding does in {@code modify} to
    * leave a folded class with its constant alone, so no rule matches the folded forms again. A
-   * dropped node leaves the hashcons and its children's parent lists, so the invariants hold,
-   * but is remembered with its class: {@link #add} and {@link #lookup} of it find the class and
-   * change nothing, as egg's memo does, which is what lets a run whose rules keep re-making the
-   * folded forms saturate. A class cannot be emptied. Returns how many nodes were dropped.
+   * dropped node leaves the hashcons, so that still holds exactly the graph's nodes, but is
+   * remembered with its class - {@link #add} and {@link #lookup} of it find the class and change
+   * nothing, as egg's leftover memo entry does, which lets a run whose rules keep re-making the
+   * folded forms saturate - and it stays in its children's parent lists, as egg's does: a later
+   * merge of a child can make it congruent with a live node, and {@link #rebuild} then unions
+   * the two classes. A class cannot be emptied. Returns how many nodes were dropped.
    */
   public int retainNodes(int eclass, Predicate<L> keep) {
     EClass<L, D> c = classOf(eclass);
     List<L> nodes = c.mutableNodes();
-    List<L> dropped = new ArrayList<>();
-    for (L node : nodes) {
-      if (!keep.test(node)) {
-        dropped.add(node);
-      }
+    if (nodes.stream().noneMatch(keep)) {
+      throw new IllegalArgumentException("retainNodes would empty class " + c.id());
     }
+    List<L> dropped = new ArrayList<>();
+    nodes.removeIf(node -> !keep.test(node) && dropped.add(node));
     if (dropped.isEmpty()) {
       return 0;
     }
-    if (dropped.size() == nodes.size()) {
-      throw new IllegalArgumentException("retainNodes would empty class " + c.id());
-    }
-    nodes.removeAll(dropped);
+    c.markPruned();
     for (L node : dropped) {
       // Inside a rebuild a listed node may be stale while the hashcons holds its canonical form,
-      // so both are removed and both remembered. The node stays in its children's parent lists,
-      // as egg's does: a later merge of a child can make it congruent with another node, and
-      // repair must union the two classes; repair re-keys it among the pruned, not the hashcons.
+      // so both are removed; the canonical form is remembered, and repair keeps it current.
       L canonical = canonicalize(node);
       hashcons.remove(node);
       hashcons.remove(canonical);
-      pruned.put(node, c.id());
       pruned.put(canonical, c.id());
     }
     changes++;
@@ -388,6 +386,8 @@ public final class EGraph<L extends Language<L>, D> {
       // canonicalise first), so egg leaves it as garbage; here it is swept, so that the hashcons
       // holds exactly the graph's nodes and its size is their count.
       hashcons.keySet().removeIf(node -> !node.equals(canonicalize(node)));
+      // The pruned memory likewise: repair re-keyed every entry a merge touched.
+      pruned.keySet().removeIf(node -> !node.equals(canonicalize(node)));
     }
     return repaired;
   }
@@ -406,15 +406,16 @@ public final class EGraph<L extends Language<L>, D> {
   }
 
   /**
-   * Whether a parent entry is a node retainNodes dropped: remembered under some form, and not
-   * listed by its class - a live node may share a dropped node's canonical form, and then it is
-   * the live one. The list is walked only when the forms are remembered, which is rare.
+   * Whether a parent entry is a node retainNodes dropped from its class: the class has pruned,
+   * and does not list the node. The entry's form is no guide - an entry can carry a form older
+   * than any the prune saw - so the class's list is read, which is short where pruning happens.
    */
-  private boolean isPruned(L stored, L canonical, int root) {
-    if (!pruned.containsKey(stored) && !pruned.containsKey(canonical)) {
+  private boolean isPruned(L canonical, int root) {
+    EClass<L, D> c = classes.get(root);
+    if (!c.hasPruned()) {
       return false;
     }
-    for (L n : classes.get(root).mutableNodes()) {
+    for (L n : c.mutableNodes()) {
       if (canonicalize(n).equals(canonical)) {
         return false;
       }
@@ -439,10 +440,9 @@ public final class EGraph<L extends Language<L>, D> {
     for (EClass.Parent<L> parent : parents) {
       L canonical = canonicalize(parent.node());
       int root = unionFind.find(parent.classId());
-      if (isPruned(parent.node(), canonical, root)) {
+      if (isPruned(canonical, root)) {
         // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
         // that adding it again still finds the class, and never back into the hashcons.
-        pruned.remove(parent.node());
         pruned.put(canonical, root);
       } else {
         hashcons.remove(parent.node());
