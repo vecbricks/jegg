@@ -83,7 +83,10 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
     return Matcher.search(graph, lhs);
   }
 
-  /** The first {@code limit} matches, and no search past them ({@link Matcher#search}). */
+  /**
+   * The first {@code limit} matches, the search stopped within the node that reached the limit
+   * ({@link Matcher#search(EGraph, Pattern, int)}).
+   */
   public List<Matcher.Match> search(EGraph<L, D> graph, int limit) {
     return Matcher.search(graph, lhs, limit);
   }

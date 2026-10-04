@@ -236,45 +236,47 @@ class PatternMatchTest {
         .toString());
   }
 
-  /** A head that counts the nodes it is asked to match, to see how far a search went. */
-  private static final class CountingHead implements Pattern.Head<Toy> {
-    private final Pattern.Head<Toy> head = Pattern.head(new Toy.Add(IntList.EMPTY));
-    int asked;
-
-    @Override
-    public Subst match(Toy node, Subst subst) {
-      asked++;
-      return head.match(node, subst);
-    }
-
-    @Override
-    public Toy build(Subst subst, IntList children) {
-      return head.build(subst, children);
-    }
-
-    @Override
-    public java.util.Optional<java.util.Set<String>> variables() {
-      return head.variables();
-    }
-  }
-
   @Test
   void aLimitedSearchReturnsAPrefixOfTheFullOneAndStopsThere() {
     // Nine sums over nine leaves, one per class: the full search finds nine matches; a search
-    // limited to three finds the first three, in the same order, and asks fewer nodes.
+    // limited to three finds the first three, in the same order, and asks three nodes.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int prev = g.add(new Toy.Var("a0"));
     for (int i = 1; i <= 9; i++) {
       prev = g.add(new Toy.Add(IntList.of(prev, g.add(new Toy.Var("a" + i)))));
     }
-    CountingHead full = new CountingHead();
+    Toy.CountingHead full = new Toy.CountingHead();
     List<Matcher.Match> all = Matcher.search(g, Pattern.node(full, X, Y));
     assertEquals(9, all.size());
-    CountingHead limited = new CountingHead();
-    List<Matcher.Match> three = Matcher.search(g, Pattern.node(limited, X, Y), 3);
-    assertEquals(all.subList(0, 3), three);
-    assertTrue(limited.asked < full.asked, limited.asked + " of " + full.asked + " nodes asked");
-    assertEquals(all, Matcher.search(g, Pattern.node(new CountingHead(), X, Y), 9));
-    assertEquals(all, Matcher.search(g, Pattern.node(new CountingHead(), X, Y), 100));
+    assertEquals(9, full.asked);
+    Toy.CountingHead limited = new Toy.CountingHead();
+    assertEquals(all.subList(0, 3), Matcher.search(g, Pattern.node(limited, X, Y), 3));
+    assertEquals(3, limited.asked);
+    assertEquals(all, Matcher.search(g, Pattern.node(new Toy.CountingHead(), X, Y), 9));
+    assertEquals(all, Matcher.search(g, Pattern.node(new Toy.CountingHead(), X, Y), 100));
+    assertThrows(IllegalArgumentException.class,
+        () -> Matcher.search(g, Pattern.node(new Toy.CountingHead(), X, Y), 0));
+  }
+
+  @Test
+  void aLimitedSearchStopsWithinAClassToo() {
+    // The nine sums merged into one class, the shape of a rule about to be banned: the full
+    // search asks all nine nodes of the class; limited to three it asks three and stops.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int first = -1;
+    for (int i = 0; i < 9; i++) {
+      int sum = g.add(new Toy.Add(IntList.of(g.add(new Toy.Var("l" + i)),
+          g.add(new Toy.Var("r" + i)))));
+      first = first < 0 ? sum : g.merge(first, sum);
+    }
+    g.rebuild();
+    assertEquals(9, g.classOf(first).nodes().size());
+    Toy.CountingHead full = new Toy.CountingHead();
+    List<Matcher.Match> all = Matcher.search(g, Pattern.node(full, X, Y));
+    assertEquals(9, all.size());
+    assertEquals(9, full.asked);
+    Toy.CountingHead limited = new Toy.CountingHead();
+    assertEquals(all.subList(0, 3), Matcher.search(g, Pattern.node(limited, X, Y), 3));
+    assertEquals(3, limited.asked);
   }
 }

@@ -443,42 +443,22 @@ class RunnerTest {
 
   @Test
   void aBannedRuleIsSearchedOnlyPastItsThreshold() {
-    // Commutativity on the five-summand sum has four matches. With a match limit of two the
-    // scheduler bans it, having searched for three matches and no further: the head was asked
-    // fewer nodes than a full search asks, as egg's search_with_limit does.
+    // Commutativity on the five-summand sum has four matches, one per sum. With a match limit
+    // of two the scheduler bans it after a search for three matches, which asks three nodes
+    // where the full search asks four, as egg's search_with_limit does.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     sumOfFive(g);
-    class Counting implements Pattern.Head<Toy> {
-      final Pattern.Head<Toy> head = Pattern.head(new Toy.Add(IntList.EMPTY));
-      int asked;
-
-      @Override
-      public Subst match(Toy node, Subst subst) {
-        asked++;
-        return head.match(node, subst);
-      }
-
-      @Override
-      public Toy build(Subst subst, IntList children) {
-        return head.build(subst, children);
-      }
-
-      @Override
-      public java.util.Optional<java.util.Set<String>> variables() {
-        return head.variables();
-      }
-    }
-    Counting full = new Counting();
+    Toy.CountingHead full = new Toy.CountingHead();
     Rewrite<Toy, Void> commute = Rewrite.of("commute", Pattern.node(full, v("a"), v("b")),
         add(v("b"), v("a")));
     assertEquals(4, commute.search(g).size());
-    int fullyAsked = full.asked;
-    Counting limited = new Counting();
+    assertEquals(4, full.asked);
+    Toy.CountingHead limited = new Toy.CountingHead();
     Rewrite<Toy, Void> commuteLimited = Rewrite.of("commute",
         Pattern.node(limited, v("a"), v("b")), add(v("b"), v("a")));
     BackoffScheduler<Toy, Void> scheduler = new BackoffScheduler<>(2, 5);
     assertEquals(List.of(), scheduler.search(1, 0, commuteLimited, g));
     assertEquals(1, scheduler.timesBanned(0));
-    assertTrue(limited.asked < fullyAsked, limited.asked + " of " + fullyAsked + " nodes asked");
+    assertEquals(3, limited.asked);
   }
 }
