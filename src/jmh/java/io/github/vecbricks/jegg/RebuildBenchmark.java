@@ -23,8 +23,7 @@ import org.openjdk.jmh.annotations.State;
  * {@code rebuild} per iteration or one after every merge. Single-shot, since a run is the unit.
  * The three runs that grow past a few thousand nodes (prop's fold, lambda's fib and repeat) are
  * not here: eager rebuilding takes minutes on them, so {@link Benchmarks} times them once each,
- * eager under a
- * cap.
+ * eager under a cap.
  */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.SingleShotTime)
