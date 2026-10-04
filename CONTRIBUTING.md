@@ -23,4 +23,10 @@ the code to a new reader; how it came to be this way is in the issues, the plan 
 
 Java 25, Maven, `mvn -B verify` must be clean under `-Xlint:all -Werror`.
 
+A pull request fills in `.github/PULL_REQUEST_TEMPLATE`, the template Apache Spark and Varka use.
+Following the ASF Generative Tooling Guidance
+(https://www.apache.org/legal/generative-tooling.html), work authored or co-authored with
+generative AI tooling says so with a `Generated-by:` line naming the tool and its version, in the
+template's last section and as the last line of each commit message.
+
 The process was set on 3 October 2026 (https://github.com/vecbricks/jegg/issues/3) after the first steps had gone code-first.
