@@ -90,7 +90,7 @@ final class Saturation {
         timedOut);
   }
 
-  /** The runs of the ported suites, by name: the prop cases, then the lambda cases. */
+  /** The runs of the ported suites, by name: the prop cases, the lambda cases, the math cases. */
   static Map<String, Workload> suites() {
     Map<String, Workload> out = new LinkedHashMap<>();
     for (PropRulesTest.Case c : PropRulesTest.CASES) {
@@ -117,19 +117,30 @@ final class Saturation {
         int root = g.addTree(Term.parse(c.start()), LambdaTest.BRIDGE);
         List<Pattern<LambdaTest.Lambda>> goals =
             c.goals().stream().map(LambdaTest::pattern).toList();
-        Outcome o = run(mode, g, LambdaTest.rules(), c.limits(), new BackoffScheduler<>(),
-            graph -> goals.stream()
+        return asEgg(c.name(), c.proves(), run(mode, g, LambdaTest.rules(), c.limits(),
+            new BackoffScheduler<>(), graph -> goals.stream()
                 .allMatch(p -> !Matcher.matchIn(graph, p, root, Subst.EMPTY).isEmpty()),
-            deadline);
-        boolean proved = o.stop().equals("Proved all goals");
-        if (!o.timedOut() && proved != c.proves()) {
-          throw new IllegalStateException(c.name() + " ended " + o.stop() + ", egg "
-              + (c.proves() ? "proves it" : "does not"));
-        }
-        return o;
+            deadline));
+      });
+    }
+    for (MathTest.Case c : MathTest.CASES) {
+      out.put(c.name(), (mode, deadline) -> {
+        MathTest.Prepared p = MathTest.prepare(c);
+        return asEgg(c.name(), c.proves(), run(mode, p.graph(), MathTest.rules(), c.limits(),
+            new BackoffScheduler<>(), _ -> p.allProved(), deadline));
       });
     }
     return out;
+  }
+
+  /** The outcome, if it ended as egg's run of the case does: proved, or not. */
+  private static Outcome asEgg(String name, boolean proves, Outcome o) {
+    boolean proved = o.stop().equals("Proved all goals");
+    if (!o.timedOut() && proved != proves) {
+      throw new IllegalStateException(name + " ended " + o.stop() + ", egg "
+          + (proves ? "proves it" : "does not"));
+    }
+    return o;
   }
 
   /** The runs that grow past a few thousand nodes, where eager rebuilding takes minutes. */

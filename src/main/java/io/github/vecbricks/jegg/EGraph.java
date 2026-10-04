@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
+import java.util.function.Predicate;
 
 /**
  * An e-graph: a union-find over e-class ids, a hashcons from canonical e-nodes to the class each
@@ -46,6 +47,11 @@ public final class EGraph<L extends Language<L>, D> {
   private final Analysis<L, D> analysis;
   private final UnionFind unionFind = new UnionFind();
   private final Map<L, Integer> hashcons = new HashMap<>();
+  // Nodes retainNodes dropped from their class, with the class: egg leaves such entries in its
+  // memo, so adding a dropped node again finds its class and changes nothing, which is what
+  // lets a run whose rules keep re-making folded forms saturate. Kept apart from the hashcons
+  // so that it still holds exactly the graph's nodes.
+  private final Map<L, Integer> pruned = new HashMap<>();
   // Indexed by id; an entry is null once its id is no longer a root.
   private final List<EClass<L, D>> classes = new ArrayList<>();
   // How many entries of classes are not null, kept by add and merge so counting is free.
@@ -90,7 +96,11 @@ public final class EGraph<L extends Language<L>, D> {
    * Reads the hashcons and changes nothing.
    */
   public OptionalInt lookup(L node) {
-    Integer id = hashcons.get(canonicalize(node));
+    L canonical = canonicalize(node);
+    Integer id = hashcons.get(canonical);
+    if (id == null) {
+      id = pruned.get(canonical);
+    }
     return id == null ? OptionalInt.empty() : OptionalInt.of(unionFind.find(id));
   }
 
@@ -102,6 +112,9 @@ public final class EGraph<L extends Language<L>, D> {
   public int add(L node) {
     L canonical = canonicalize(node);
     Integer existing = hashcons.get(canonical);
+    if (existing == null) {
+      existing = pruned.get(canonical);
+    }
     if (existing != null) {
       return unionFind.find(existing);
     }
@@ -261,11 +274,49 @@ public final class EGraph<L extends Language<L>, D> {
     kept.mutableNodes().addAll(gone.mutableNodes());
     kept.mutableParents().addAll(gone.mutableParents());
     kept.setData(joined);
+    if (gone.hasPruned()) {
+      kept.markPruned();
+    }
     classes.set(other, null);
     liveClasses--;
     worklist.add(root);
     modifyPending.add(root);
     return root;
+  }
+
+  /**
+   * Keeps the nodes of {@code eclass}'s class that {@code keep} accepts and drops the others:
+   * egg's pruning, which its {@code math} suite's constant folding does in {@code modify} to
+   * leave a folded class with its constant alone, so no rule matches the folded forms again. A
+   * dropped node leaves the hashcons, so that still holds exactly the graph's nodes, but is
+   * remembered with its class - {@link #add} and {@link #lookup} of it find the class and change
+   * nothing, as egg's leftover memo entry does, which lets a run whose rules keep re-making the
+   * folded forms saturate - and it stays in its children's parent lists, as egg's does: a later
+   * merge of a child can make it congruent with a live node, and {@link #rebuild} then unions
+   * the two classes. A class cannot be emptied. Returns how many nodes were dropped.
+   */
+  public int retainNodes(int eclass, Predicate<L> keep) {
+    EClass<L, D> c = classOf(eclass);
+    List<L> nodes = c.mutableNodes();
+    if (nodes.stream().noneMatch(keep)) {
+      throw new IllegalArgumentException("retainNodes would empty class " + c.id());
+    }
+    List<L> dropped = new ArrayList<>();
+    nodes.removeIf(node -> !keep.test(node) && dropped.add(node));
+    if (dropped.isEmpty()) {
+      return 0;
+    }
+    c.markPruned();
+    for (L node : dropped) {
+      // Inside a rebuild a listed node may be stale while the hashcons holds its canonical form,
+      // so both are removed; the canonical form is remembered, and repair keeps it current.
+      L canonical = canonicalize(node);
+      hashcons.remove(node);
+      hashcons.remove(canonical);
+      pruned.put(canonical, c.id());
+    }
+    changes++;
+    return dropped.size();
   }
 
   /**
@@ -335,6 +386,8 @@ public final class EGraph<L extends Language<L>, D> {
       // canonicalise first), so egg leaves it as garbage; here it is swept, so that the hashcons
       // holds exactly the graph's nodes and its size is their count.
       hashcons.keySet().removeIf(node -> !node.equals(canonicalize(node)));
+      // The pruned memory likewise: repair re-keyed every entry a merge touched.
+      pruned.keySet().removeIf(node -> !node.equals(canonicalize(node)));
     }
     return repaired;
   }
@@ -353,6 +406,24 @@ public final class EGraph<L extends Language<L>, D> {
   }
 
   /**
+   * Whether a parent entry is a node retainNodes dropped from its class: the class has pruned,
+   * and does not list the node. The entry's form is no guide - an entry can carry a form older
+   * than any the prune saw - so the class's list is read, which is short where pruning happens.
+   */
+  private boolean isPruned(L canonical, int root) {
+    EClass<L, D> c = classes.get(root);
+    if (!c.hasPruned()) {
+      return false;
+    }
+    for (L n : c.mutableNodes()) {
+      if (canonicalize(n).equals(canonical)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * One class's repair (paper Figure 4, lines 36-53): each parent is taken out of the hashcons
    * and put back canonical under its class's root, and two parents that became the same
    * canonical node are merged, which puts their root on the worklist for the next pass.
@@ -367,9 +438,18 @@ public final class EGraph<L extends Language<L>, D> {
     eclass.mutableParents().clear();
     List<EClass.Parent<L>> seen = new ArrayList<>(parents.size());
     for (EClass.Parent<L> parent : parents) {
-      hashcons.remove(parent.node());
       L canonical = canonicalize(parent.node());
-      hashcons.put(canonical, unionFind.find(parent.classId()));
+      int root = unionFind.find(parent.classId());
+      if (isPruned(canonical, root)) {
+        // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
+        // that adding it again still finds the class, and never back into the hashcons.
+        pruned.put(canonical, root);
+      } else {
+        hashcons.remove(parent.node());
+        hashcons.put(canonical, root);
+        // A live node that takes a pruned node's form stands for it from now on.
+        pruned.remove(canonical);
+      }
     }
     for (EClass.Parent<L> parent : parents) {
       L canonical = canonicalize(parent.node());

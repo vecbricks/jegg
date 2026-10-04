@@ -34,6 +34,9 @@ public final class EClass<L extends Language<L>, D> {
   private final List<L> nodes = new ArrayList<>();
   private final List<Parent<L>> parents = new ArrayList<>();
   private D data;
+  // Whether retainNodes ever dropped a node of this class: then a parent entry naming this class
+  // may be a dropped node, and repair tells by the node list, not by the entry's form.
+  private boolean pruned;
 
   EClass(int id, D data) {
     this.id = id;
@@ -62,6 +65,14 @@ public final class EClass<L extends Language<L>, D> {
   /** The analysis fact, {@code null} under {@link Analysis#none}. */
   public D data() {
     return data;
+  }
+
+  boolean hasPruned() {
+    return pruned;
+  }
+
+  void markPruned() {
+    pruned = true;
   }
 
   void setData(D data) {
