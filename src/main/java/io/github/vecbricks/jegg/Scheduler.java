@@ -30,9 +30,12 @@ public interface Scheduler<L extends Language<L>, D> {
       EGraph<L, D> graph);
 
   /**
-   * Whether an iteration that changed nothing means saturation. A scheduler that held a rule
-   * back says no, and the runner continues; it must then release the rule, or the run ends
-   * on a limit.
+   * Called after every iteration in which no rule merged two classes, whether or not nodes were
+   * added - a condition or an applier may add without merging - as egg calls its
+   * {@code can_stop}. A scheduler that held a rule back may release it here, and says no; the
+   * runner then continues, and the run saturates only once an iteration with no rule held back
+   * changes nothing. A scheduler that holds nothing back says yes; the runner reports
+   * saturation only if, besides, the iteration added nothing.
    */
   default boolean canStop(int iteration) {
     return true;

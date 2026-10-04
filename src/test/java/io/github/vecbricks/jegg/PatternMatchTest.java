@@ -128,4 +128,42 @@ class PatternMatchTest {
     assertTrue(g.numNodes() > before, "the instantiated terms are in the graph");
     assertTrue(g.lookup(new Toy.Mul(IntList.of(x, g.add(new Toy.Num(2))))).isPresent());
   }
+
+  @Test
+  void conditionEqualReadsBothRootsAfterBothSidesAreAdded() {
+    // An analysis whose modify hook, on a sum, merges the sum with both its summands: adding
+    // the right side (?x + 0) merges x's class under the smaller root of 0, so x's root read
+    // before that addition would be stale, and the condition would read false though x, 0 and
+    // the sum are now one class.
+    Analysis<Toy, Boolean> joining = new Analysis<>() {
+      @Override
+      public Boolean make(EGraph<Toy, Boolean> g, Toy node) {
+        return node instanceof Toy.Add;
+      }
+
+      @Override
+      public Boolean join(Boolean a, Boolean b) {
+        return a || b;
+      }
+
+      @Override
+      public void modify(EGraph<Toy, Boolean> g, int id) {
+        if (g.data(id)) {
+          for (Toy node : List.copyOf(g.classOf(id).nodes())) {
+            if (node instanceof Toy.Add sum) {
+              g.merge(id, sum.children().get(0));
+              g.merge(id, sum.children().get(1));
+            }
+          }
+        }
+      }
+    };
+    EGraph<Toy, Boolean> g = new EGraph<>(joining);
+    int zero = g.add(new Toy.Num(0));
+    int x = g.add(new Toy.Var("x"));
+    assertTrue(g.find(x) > g.find(zero), "x's root is the one a merge would replace");
+    Condition<Toy, Boolean> equal = Condition.equal(X, add(X, Pattern.of(new Toy.Num(0))));
+    assertTrue(equal.holds(g, x, Subst.EMPTY.bind("x", x)));
+    assertEquals(g.find(x), g.find(zero));
+  }
 }

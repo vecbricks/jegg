@@ -94,19 +94,8 @@ class PropRulesTest {
     }
   };
 
-  /** A pattern from an s-expression whose atoms starting with '?' are variables. */
   static Pattern<Prop> pattern(String s) {
-    return pattern(Term.parse(s));
-  }
-
-  private static Pattern<Prop> pattern(Term t) {
-    if (t.kids().isEmpty()) {
-      return t.op().startsWith("?") ? Pattern.var(t.op().substring(1))
-          : Pattern.of(new Prop.Sym(t.op()));
-    }
-    List<Pattern<Prop>> kids = t.kids().stream().map(PropRulesTest::pattern).toList();
-    Prop proto = BRIDGE.node(t, IntList.EMPTY);
-    return new Pattern.Node<>(Pattern.head(proto), kids);
+    return Term.pattern(s, BRIDGE);
   }
 
   static Rewrite<Prop, Void> rule(String name, String lhs, String rhs) {

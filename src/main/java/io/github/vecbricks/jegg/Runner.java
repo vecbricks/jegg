@@ -21,7 +21,8 @@ import java.util.Set;
 /**
  * Equality saturation (the paper's Figure 5b): each iteration searches every rule over the
  * graph as it stands, then applies every match found, then rebuilds once; it stops when an
- * iteration changes nothing or a {@link RunLimits} limit is hit, and reports what it did.
+ * iteration changes nothing, a {@link RunLimits} limit is hit or a {@link Hook} asks, and
+ * reports what it did.
  *
  * <p>Two things are fixed that egg leaves to chance. Rules are searched and applied in the
  * order they were given, and each rule's matches are applied in the matcher's order (class id,
@@ -42,8 +43,10 @@ public final class Runner<L extends Language<L>, D> {
 
   /**
    * Run before each iteration, on the rebuilt graph (egg's {@code with_hook}): a reason to stop
-   * ends the run with {@link StopReason.Other}, an empty one lets the iteration go ahead. A test
-   * stops once its goals are proved; a client might stop on a budget of its own.
+   * ends the run with {@link StopReason.Other}, an empty one (never {@code null}) lets the
+   * iteration go ahead. A test stops once its goals are proved; a client might stop on a budget
+   * of its own. A hook may change the graph: the runner rebuilds after the hooks, and an
+   * iteration whose hooks added or merged is not saturation, as in egg.
    *
    * @param <L> the language
    * @param <D> the analysis fact
@@ -92,10 +95,15 @@ public final class Runner<L extends Language<L>, D> {
     StopReason stop = overLimit();
     int iteration = 0;
     while (stop == null) {
+      // The sizes before the hooks: an iteration counts as changing nothing only if the hooks,
+      // the conditions and the appliers all left them as they were, as egg's does.
+      int nodesBefore = graph.numNodes();
+      int classesBefore = graph.numClasses();
       stop = askHooks();
       if (stop != null) {
         break;
       }
+      graph.rebuild();
       iteration++;
       // Read every match before writing any, so no rule sees this iteration's additions.
       List<List<Matcher.Match>> matches = new ArrayList<>(rules.size());
@@ -105,8 +113,6 @@ public final class Runner<L extends Language<L>, D> {
         matches.add(found);
         counts.put(rules.get(i).name(), found.size());
       }
-      int nodesBefore = graph.numNodes();
-      int classesBefore = graph.numClasses();
       int applied = 0;
       int unions = 0;
       for (int i = 0; i < rules.size(); i++) {
@@ -122,12 +128,13 @@ public final class Runner<L extends Language<L>, D> {
       iterations.add(new RunReport.Iteration(iteration, graph.numClasses(), graph.numNodes(),
           counts, applied, unions, repaired));
       stop = overLimit();
-      // As egg: the scheduler is asked whenever nothing was merged, so it may release its bans
-      // even when a condition or an applier added nodes without a union; saturated only if,
-      // besides, nothing was added.
+      // As egg: the scheduler is asked whenever no rule merged two classes, whether or not
+      // nodes were added, so it may release its bans then (Scheduler.canStop says so); the
+      // iteration is saturation only if, besides, nothing was added.
+      boolean canStop = unions == 0 && scheduler.canStop(iteration);
       boolean unchanged = graph.numNodes() == nodesBefore
           && graph.numClasses() == classesBefore;
-      if (stop == null && unions == 0 && scheduler.canStop(iteration) && unchanged) {
+      if (stop == null && canStop && unchanged) {
         stop = new StopReason.Saturated();
       }
       if (stop == null && iteration >= limits.iterations()) {

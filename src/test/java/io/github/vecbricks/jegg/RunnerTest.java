@@ -268,4 +268,50 @@ class RunnerTest {
     assertEquals(2, report.size(), "iteration 1 grew the graph, so only iteration 2 saturates");
     assertInstanceOf(StopReason.Saturated.class, report.stop());
   }
+
+  @Test
+  void anIterationWhoseHookAddedToTheGraphIsNotSaturation() {
+    // No rules; the hook adds a node before each of the first three iterations. Those are not
+    // saturation, as egg's are not: the fourth, which it leaves alone, is.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    g.add(new Toy.Var("a"));
+    int[] calls = {0};
+    RunReport report = new Runner<>(g, List.of(), RunLimits.DEFAULT, Scheduler.simple())
+        .withHook(graph -> {
+          if (calls[0]++ < 3) {
+            graph.add(new Toy.Num(calls[0]));
+          }
+          return java.util.Optional.empty();
+        })
+        .run();
+    assertInstanceOf(StopReason.Saturated.class, report.stop(), report.toString());
+    assertEquals(4, report.size(), report.toString());
+    assertEquals(4, g.numNodes());
+  }
+
+  @Test
+  void aHookThatMergesLeavesARebuiltGraphToTheSearch() {
+    // a + b and b + a are two classes; the hook merges a and b without rebuilding. The runner
+    // rebuilds before searching, so commutativity sees one class holding one node, a + a, and
+    // matches once, not twice on a stale pair.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    g.add(new Toy.Add(IntList.of(a, b)));
+    g.add(new Toy.Add(IntList.of(b, a)));
+    int[] calls = {0};
+    RunReport report = new Runner<>(g, List.of(expansive().get(1)), RunLimits.DEFAULT,
+        Scheduler.simple())
+        .withHook(graph -> {
+          if (calls[0]++ == 0) {
+            graph.merge(a, b);
+          }
+          return java.util.Optional.empty();
+        })
+        .run();
+    assertEquals(1, report.iterations().get(0).matches().get("commute-add"), report.toString());
+    assertEquals(0, report.iterations().get(0).unions(), report.toString());
+    assertInstanceOf(StopReason.Saturated.class, report.stop(), report.toString());
+    g.checkInvariants();
+  }
 }

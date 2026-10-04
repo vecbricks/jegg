@@ -53,6 +53,8 @@
     <junit.version>5.10.2</junit.version>
     <jmh.version>1.37</jmh.version>
     <maven.surefire.version>3.2.5</maven.surefire.version>
+    <!-- JUnit tags to skip, e.g. -Dsurefire.excludedGroups=slow; CI skips none. -->
+    <surefire.excludedGroups></surefire.excludedGroups>
   </properties>
 
   <dependencies>
@@ -94,6 +96,9 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${maven.surefire.version}</version>
+        <configuration>
+          <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

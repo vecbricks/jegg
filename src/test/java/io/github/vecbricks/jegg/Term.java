@@ -14,10 +14,23 @@ import java.util.List;
 
 /**
  * The tests' term type: a tiny s-expression tree, which each suite bridges to its language and
- * reads patterns from (an atom starting with '?' is a variable there). Any whitespace separates,
- * so egg's test terms parse as written, across lines.
+ * reads patterns from through {@link #pattern}, where an atom starting with '?' is a variable.
+ * Any whitespace separates, so egg's test terms parse as written, across lines.
  */
 record Term(String op, List<Term> kids) {
+
+  /** A pattern from an s-expression, each node built through {@code bridge}. */
+  static <L extends Language<L>> Pattern<L> pattern(String s, TreeBridge<Term, L> bridge) {
+    return pattern(parse(s), bridge);
+  }
+
+  static <L extends Language<L>> Pattern<L> pattern(Term t, TreeBridge<Term, L> bridge) {
+    if (t.kids().isEmpty() && t.op().startsWith("?")) {
+      return Pattern.var(t.op().substring(1));
+    }
+    List<Pattern<L>> kids = t.kids().stream().map(k -> pattern(k, bridge)).toList();
+    return new Pattern.Node<>(Pattern.head(bridge.node(t, IntList.EMPTY)), kids);
+  }
 
   static Term parse(String s) {
     Parser p = new Parser(s);
@@ -39,13 +52,13 @@ record Term(String op, List<Term> kids) {
 
     Term term() {
       skip();
-      if (s.charAt(i) == '(') {
+      if (peek() == '(') {
         i++;
         skip();
         String op = atom();
         List<Term> kids = new ArrayList<>();
         skip();
-        while (s.charAt(i) != ')') {
+        while (peek() != ')') {
           kids.add(term());
           skip();
         }
@@ -53,6 +66,13 @@ record Term(String op, List<Term> kids) {
         return new Term(op, kids);
       }
       return new Term(atom(), List.of());
+    }
+
+    private char peek() {
+      if (i >= s.length()) {
+        throw new IllegalArgumentException("unexpected end of input at " + i + " in: " + s);
+      }
+      return s.charAt(i);
     }
 
     private String atom() {

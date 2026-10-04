@@ -10,6 +10,7 @@ package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -134,21 +136,41 @@ class LambdaTest {
       return t.kids();
     }
 
+    // As egg's define_language! parses: an operator at its arity, else a literal, else a
+    // symbol; an operator at another arity, or an unknown one with children, is an error, so a
+    // misspelt rule fails here and not as a rule that never matches. The arity is the term's:
+    // a pattern's head prototype is built over no children.
     @Override
     public Lambda node(Term t, IntList children) {
+      int arity = t.kids().size();
+      Lambda node = switch (t.op()) {
+        case "var" -> arity == 1 ? new Lambda.Var(children) : null;
+        case "+" -> arity == 2 ? new Lambda.Add(children) : null;
+        case "=" -> arity == 2 ? new Lambda.Eq(children) : null;
+        case "app" -> arity == 2 ? new Lambda.App(children) : null;
+        case "lam" -> arity == 2 ? new Lambda.Lam(children) : null;
+        case "let" -> arity == 3 ? new Lambda.Let(children) : null;
+        case "fix" -> arity == 2 ? new Lambda.Fix(children) : null;
+        case "if" -> arity == 3 ? new Lambda.If(children) : null;
+        default -> null;
+      };
+      if (node != null) {
+        return node;
+      }
+      if (arity > 0) {
+        throw new IllegalArgumentException("no operator " + t.op() + " of " + arity
+            + " children in " + t);
+      }
       return switch (t.op()) {
-        case "var" -> new Lambda.Var(children);
-        case "+" -> new Lambda.Add(children);
-        case "=" -> new Lambda.Eq(children);
-        case "app" -> new Lambda.App(children);
-        case "lam" -> new Lambda.Lam(children);
-        case "let" -> new Lambda.Let(children);
-        case "fix" -> new Lambda.Fix(children);
-        case "if" -> new Lambda.If(children);
         case "true" -> new Lambda.Bool(true);
         case "false" -> new Lambda.Bool(false);
-        default -> t.op().matches("-?\\d+") ? new Lambda.Num(Integer.parseInt(t.op()))
-            : new Lambda.Sym(t.op());
+        default -> {
+          try {
+            yield new Lambda.Num(Integer.parseInt(t.op()));
+          } catch (NumberFormatException notANumber) {
+            yield new Lambda.Sym(t.op());
+          }
+        }
       };
     }
 
@@ -169,23 +191,16 @@ class LambdaTest {
     }
   };
 
-  /** A pattern from an s-expression whose atoms starting with '?' are variables. */
   static Pattern<Lambda> pattern(String s) {
-    return pattern(Term.parse(s));
-  }
-
-  private static Pattern<Lambda> pattern(Term t) {
-    if (t.kids().isEmpty() && t.op().startsWith("?")) {
-      return Pattern.var(t.op().substring(1));
-    }
-    List<Pattern<Lambda>> kids = t.kids().stream().map(LambdaTest::pattern).toList();
-    return new Pattern.Node<>(Pattern.head(BRIDGE.node(t, IntList.EMPTY)), kids);
+    return Term.pattern(s, BRIDGE);
   }
 
   /**
    * egg's {@code Data}: the variables free in the class, as the classes of their names, and the
    * class's constant if it has one. egg's constant also carries a pattern for explanations,
-   * which jegg does not port.
+   * which jegg does not port. The free set holds the ids as they were when the fact was made,
+   * as egg's {@code HashSet<Id>} does; it stays exact while no two names' classes are merged,
+   * which the suite's rules never do (a name is only ever merged with nothing).
    */
   record Data(Set<Integer> free, Lambda constant) {
   }
@@ -202,11 +217,7 @@ class LambdaTest {
           free.remove(g.find(kids.get(0)));
           free.addAll(g.data(kids.get(1)).free());
         }
-        case Lambda.Lam l -> {
-          free.addAll(g.data(kids.get(1)).free());
-          free.remove(g.find(kids.get(0)));
-        }
-        case Lambda.Fix f -> {
+        case Lambda.Lam _, Lambda.Fix _ -> {
           free.addAll(g.data(kids.get(1)).free());
           free.remove(g.find(kids.get(0)));
         }
@@ -283,9 +294,10 @@ class LambdaTest {
     return (g, eclass, s) -> g.data(s.idOf(v)).constant() != null;
   }
 
-  private static final Pattern<Lambda> IF_NOT_FREE = pattern("(lam ?v2 (let ?v1 ?e ?body))");
-  private static final Pattern<Lambda> IF_FREE =
-      pattern("(lam ?fresh (let ?v1 ?e (let ?v2 (var ?fresh) ?body)))");
+  private static final Applier<Lambda, Data> IF_NOT_FREE =
+      Applier.pattern(pattern("(lam ?v2 (let ?v1 ?e ?body))"));
+  private static final Applier<Lambda, Data> IF_FREE =
+      Applier.pattern(pattern("(lam ?fresh (let ?v1 ?e (let ?v2 (var ?fresh) ?body)))"));
 
   /**
    * egg's {@code CaptureAvoid}: pushing {@code let v1 = e} under {@code lam v2} renames v2 to a
@@ -296,9 +308,9 @@ class LambdaTest {
     boolean v2FreeInE = g.data(s.idOf("e")).free().stream().anyMatch(id -> g.find(id) == v2);
     if (v2FreeInE) {
       int fresh = g.add(new Lambda.Sym("_" + eclass));
-      return IntList.of(Matcher.instantiate(g, IF_FREE, s.bind("fresh", fresh)));
+      return IF_FREE.apply(g, eclass, s.bind("fresh", fresh));
     }
-    return IntList.of(Matcher.instantiate(g, IF_NOT_FREE, s));
+    return IF_NOT_FREE.apply(g, eclass, s);
   };
 
   /** egg's rules, by their names and in their order. */
@@ -329,12 +341,19 @@ class LambdaTest {
             .when(isNotSameVar("v1", "v2")));
   }
 
+  private static final String PROVED = "Proved all goals";
+
+  /** Whether the goal pattern matches in the root's class: egg's {@code search_eclass}. */
+  private static boolean proved(EGraph<Lambda, Data> g, int root, Pattern<Lambda> goal) {
+    return !Matcher.matchIn(g, goal, root, Subst.EMPTY).isEmpty();
+  }
+
   /** One run: the graph, the start term's class, the report and the goals. */
   private record Run(EGraph<Lambda, Data> graph, int root, RunReport report,
       List<Pattern<Lambda>> goals) {
 
     boolean proves(int goal) {
-      return !Matcher.matchIn(graph, goals.get(goal), root, Subst.EMPTY).isEmpty();
+      return proved(graph, root, goals.get(goal));
     }
 
     /** egg's {@code check_goals}: every goal is in the start's class. */
@@ -355,9 +374,8 @@ class LambdaTest {
     List<Pattern<Lambda>> patterns = java.util.Arrays.stream(goals).map(LambdaTest::pattern)
         .toList();
     RunReport report = new Runner<>(g, rules(), limits, new BackoffScheduler<>())
-        .withHook(graph -> patterns.stream()
-            .allMatch(p -> !Matcher.matchIn(graph, p, root, Subst.EMPTY).isEmpty())
-                ? Optional.of("Proved all goals") : Optional.empty())
+        .withHook(graph -> patterns.stream().allMatch(p -> proved(graph, root, p))
+            ? Optional.of(PROVED) : Optional.empty())
         .run();
     return new Run(g, root, report, patterns);
   }
@@ -370,21 +388,24 @@ class LambdaTest {
   private record Egg(int iterations, int nodes, int classes) {
   }
 
-  /** The run ends where egg's does, at the same size, which names the divergence if not. */
-  private static void sameAsEgg(Run r, Egg egg, boolean stoppedByHook) {
-    RunReport.Iteration last = r.report().iterations().get(r.report().size() - 1);
+  /**
+   * The run ends where egg's does, at the same size, which names the divergence if not. The
+   * sizes are read from the graph, which is also what a report with no iterations - goals that
+   * held before the first - leaves to compare.
+   */
+  private static void sameAsEgg(Run r, Egg egg) {
+    boolean stoppedByHook = r.report().stop() instanceof StopReason.Other;
     String why = "egg reports " + egg + "\n" + r.report();
     assertEquals(egg.iterations(), r.report().size() + (stoppedByHook ? 1 : 0), why);
-    assertEquals(egg.nodes(), last.nodes(), why);
-    assertEquals(egg.classes(), last.classes(), why);
+    assertEquals(egg.nodes(), r.graph().numNodes(), why);
+    assertEquals(egg.classes(), r.graph().numClasses(), why);
   }
 
   private static void proves(RunLimits limits, Egg egg, String start, String... goals) {
     Run r = run(limits, start, goals);
     r.checkGoals();
-    assertEquals(new StopReason.Other("Proved all goals"), r.report().stop(),
-        r.report().toString());
-    sameAsEgg(r, egg, true);
+    assertEquals(new StopReason.Other(PROVED), r.report().stop(), r.report().toString());
+    sameAsEgg(r, egg);
   }
 
   /** egg's {@code should_panic(expected = "Could not prove goal 0")}: egg saturates them. */
@@ -392,7 +413,7 @@ class LambdaTest {
     Run r = run(limits, start, goal);
     assertFalse(r.proves(0), "goal 0 proved, which egg says it must not be\n" + r.report());
     assertEquals(new StopReason.Saturated(), r.report().stop(), r.report().toString());
-    sameAsEgg(r, egg, false);
+    sameAsEgg(r, egg);
     r.graph().checkInvariants();
   }
 
@@ -478,8 +499,10 @@ class LambdaTest {
   }
 
   @Test
+  @Tag("slow")
   void lambdaFunctionRepeat() {
-    // egg runs this in release builds only, with a 20 s time limit jegg does not have.
+    // egg runs this in release builds only, with a 20 s time limit jegg does not have; here it
+    // is tagged slow (see CONTRIBUTING.md), as is fib below.
     proves(DEFAULT.withIterations(60).withNodes(150_000), new Egg(59, 32636, 6825), """
         (let compose (lam f (lam g (lam x (app (var f)
                                            (app (var g) (var x))))))
@@ -508,8 +531,8 @@ class LambdaTest {
   }
 
   @Test
+  @Tag("slow")
   void lambdaFib() {
-    // egg runs this in release builds only.
     proves(DEFAULT.withIterations(60).withNodes(500_000), new Egg(57, 14582, 4996), """
         (let fib (fix fib (lam n
             (if (= (var n) 0)
@@ -531,5 +554,24 @@ class LambdaTest {
         (+ (var x) (var y))))""", "1");
     r.graph().checkAnalysisInvariant();
     assertTrue(r.proves(0));
+  }
+
+  @Test
+  void aMisspeltOrMisusedOperatorIsRefusedWhenParsed() {
+    assertThrows(IllegalArgumentException.class, () -> pattern("(lambda ?x ?body)"));
+    assertThrows(IllegalArgumentException.class, () -> pattern("(lam ?x)"));
+    assertThrows(IllegalArgumentException.class, () -> pattern("(var x y)"));
+    assertThrows(IllegalArgumentException.class, () -> Term.parse("(lam x"));
+    assertEquals(new Lambda.Sym("+"), BRIDGE.node(Term.parse("+"), IntList.EMPTY));
+    assertEquals(new Lambda.Sym("99999999999"),
+        BRIDGE.node(Term.parse("99999999999"), IntList.EMPTY));
+    assertEquals(new Lambda.Num(5), BRIDGE.node(Term.parse("+5"), IntList.EMPTY));
+  }
+
+  @Test
+  void aGoalThatHoldsBeforeTheFirstIterationStopsAtOnce() {
+    // 1 + 2 folds to 3 as it is added, so the hook stops the run with no iteration run; egg
+    // would record that as one.
+    proves(DEFAULT, new Egg(1, 4, 3), "(+ 1 2)", "3");
   }
 }

@@ -22,6 +22,9 @@ load), and every number a document quotes traces to one of those files. Code com
 the code to a new reader; how it came to be this way is in the issues, the plan and git.
 
 Java 25, Maven, `mvn -B verify` must be clean under `-Xlint:all -Werror`.
+Two of egg's ported tests (`lambda_fib`, `lambda_function_repeat`), which egg runs only in release
+builds, take most of a run's time and are tagged `slow`; `mvn -Dsurefire.excludedGroups=slow verify`
+skips them locally, while CI runs everything.
 
 A pull request fills in `.github/PULL_REQUEST_TEMPLATE`, the template Apache Spark and Varka use.
 Following the ASF Generative Tooling Guidance
