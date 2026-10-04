@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 
 /**
  * An e-graph: a union-find over e-class ids, a hashcons from canonical e-nodes to the class each
@@ -52,6 +53,8 @@ public final class EGraph<L extends Language<L>, D> {
   // lets a run whose rules keep re-making folded forms saturate. Kept apart from the hashcons
   // so that it still holds exactly the graph's nodes.
   private final Map<L, Integer> pruned = new HashMap<>();
+  // What a lookup answers for a node the graph does not hold; ids are never negative.
+  private static final int MISSING = -1;
   // Indexed by id; an entry is null once its id is no longer a root.
   private final List<EClass<L, D>> classes = new ArrayList<>();
   // How many entries of classes are not null, kept by add and merge so counting is free.
@@ -96,12 +99,17 @@ public final class EGraph<L extends Language<L>, D> {
    * Reads the hashcons and changes nothing.
    */
   public OptionalInt lookup(L node) {
-    L canonical = canonicalize(node);
+    int id = idOf(canonicalize(node));
+    return id == MISSING ? OptionalInt.empty() : OptionalInt.of(id);
+  }
+
+  /** The class of a canonical node, from the hashcons or the pruned memory, or MISSING. */
+  private int idOf(L canonical) {
     Integer id = hashcons.get(canonical);
     if (id == null) {
       id = pruned.get(canonical);
     }
-    return id == null ? OptionalInt.empty() : OptionalInt.of(unionFind.find(id));
+    return id == null ? MISSING : unionFind.find(id);
   }
 
   /**
@@ -111,12 +119,9 @@ public final class EGraph<L extends Language<L>, D> {
    */
   public int add(L node) {
     L canonical = canonicalize(node);
-    Integer existing = hashcons.get(canonical);
-    if (existing == null) {
-      existing = pruned.get(canonical);
-    }
-    if (existing != null) {
-      return unionFind.find(existing);
+    int existing = idOf(canonical);
+    if (existing != MISSING) {
+      return existing;
     }
     int id = unionFind.makeSet();
     EClass<L, D> eclass = new EClass<>(id, null);
@@ -137,25 +142,12 @@ public final class EGraph<L extends Language<L>, D> {
   /**
    * Adds a client's tree bottom-up through {@code bridge} and returns the root's class. A
    * subtree object reached twice (a DAG) is added once; equal subtrees reached through different
-   * objects hashcons to the same class anyway.
+   * objects hashcons to the same class anyway. The walk recurses once per level of the tree, so
+   * its depth is bounded by the thread's stack, and a client structure with a cycle is not a
+   * tree: the walk would not end.
    */
   public <T> int addTree(T root, TreeBridge<T, L> bridge) {
-    return addTree(root, bridge, new IdentityHashMap<>());
-  }
-
-  private <T> int addTree(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen) {
-    Integer done = seen.get(tree);
-    if (done != null) {
-      return unionFind.find(done);
-    }
-    List<T> subtrees = bridge.childrenOf(tree);
-    int[] ids = new int[subtrees.size()];
-    for (int i = 0; i < ids.length; i++) {
-      ids[i] = addTree(subtrees.get(i), bridge, seen);
-    }
-    int id = add(bridge.node(tree, IntList.of(ids)));
-    seen.put(tree, id);
-    return id;
+    return walk(root, bridge, new IdentityHashMap<>(), this::add);
   }
 
   /**
@@ -163,30 +155,37 @@ public final class EGraph<L extends Language<L>, D> {
    * nothing: a subtree missing anywhere means the whole is missing. As in {@link #addTree}, a
    * subtree object reached twice is looked up once. Like {@link #lookup} it reads the hashcons,
    * so after a merge it is exact only once the graph is rebuilt: before, a tree whose children
-   * were merged can read as missing.
+   * were merged can read as missing. The walk's depth is bounded as {@link #addTree}'s is.
    */
   public <T> OptionalInt lookupTree(T root, TreeBridge<T, L> bridge) {
-    int id = lookupTree(root, bridge, new IdentityHashMap<>());
-    return id < 0 ? OptionalInt.empty() : OptionalInt.of(id);
+    int id = walk(root, bridge, new IdentityHashMap<>(), node -> idOf(canonicalize(node)));
+    return id == MISSING ? OptionalInt.empty() : OptionalInt.of(id);
   }
 
-  private <T> int lookupTree(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen) {
+  /**
+   * The one walk of a client's tree behind {@link #addTree} and {@link #lookupTree}: bottom-up,
+   * each subtree object visited once ({@code seen} is by identity), and {@code step} applied to
+   * the node built over the children's classes. A step answering {@link #MISSING} ends the whole
+   * walk with it, so a miss needs no memo: nothing reads one before the walk returns.
+   */
+  private <T> int walk(T tree, TreeBridge<T, L> bridge, Map<T, Integer> seen,
+      ToIntFunction<L> step) {
     Integer done = seen.get(tree);
     if (done != null) {
-      return done < 0 ? -1 : unionFind.find(done);
+      return unionFind.find(done);
     }
     List<T> subtrees = bridge.childrenOf(tree);
     int[] ids = new int[subtrees.size()];
     for (int i = 0; i < ids.length; i++) {
-      ids[i] = lookupTree(subtrees.get(i), bridge, seen);
-      if (ids[i] < 0) {
-        seen.put(tree, -1);
-        return -1;
+      ids[i] = walk(subtrees.get(i), bridge, seen, step);
+      if (ids[i] == MISSING) {
+        return MISSING;
       }
     }
-    OptionalInt found = lookup(bridge.node(tree, IntList.of(ids)));
-    int id = found.isPresent() ? found.getAsInt() : -1;
-    seen.put(tree, id);
+    int id = step.applyAsInt(bridge.node(tree, IntList.of(ids)));
+    if (id != MISSING) {
+      seen.put(tree, id);
+    }
     return id;
   }
 
