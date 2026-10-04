@@ -121,39 +121,61 @@ class PropRulesTest {
   static final Rewrite<Prop, Void> CONTRAPOSITIVE =
       rule("contrapositive", "(-> ?a ?b)", "(-> (~ ?b) (~ ?a))");
 
+  /** egg's limits for this suite. */
+  static final RunLimits LIMITS = RunLimits.DEFAULT.withIterations(20).withNodes(5_000);
+
+  /**
+   * One of egg's `prove_something` tests: its rules, start term and goals, every goal to be in
+   * the start's class after the run. The cases are data so the measurement harness (PLAN.md 6)
+   * can run the same suite.
+   */
+  record Case(String name, List<Rewrite<Prop, Void>> rules, String start, List<String> goals) {
+  }
+
+  static final Case CONTRAPOSITIVE_CASE = new Case("prove_contrapositive",
+      List.of(DEF_IMPLY, DEF_IMPLY_FLIP, DOUBLE_NEG_FLIP, COMM_OR), "(-> x y)",
+      List.of("(-> x y)", "(| (~ x) y)", "(| (~ x) (~ (~ y)))", "(| (~ (~ y)) (~ x))",
+          "(-> (~ y) (~ x))"));
+
+  static final Case CHAIN_CASE = new Case("prove_chain",
+      List.of(DEF_IMPLY, DEF_IMPLY_FLIP, DOUBLE_NEG_FLIP, COMM_OR, COMM_AND, LEM_IMPLY),
+      "(& (-> x y) (-> y z))",
+      List.of("(& (-> x y) (-> y z))", "(& (| (~ x) y) (| (~ y) z))", "(| (~ x) z)",
+          "(-> x z)"));
+
+  /** Distribution and association: (x | y) & (x | z) reaches x | (y & z). */
+  static final Case FOLD_CASE = new Case("prove_fold",
+      List.of(DIST_OR_AND, DIST_AND_OR, COMM_OR, COMM_AND, ASSOC_OR, DOUBLE_NEG, CONTRAPOSITIVE),
+      "(& (| x y) (| x z))", List.of("(| x (& y z))"));
+
+  static final List<Case> CASES = List.of(CONTRAPOSITIVE_CASE, CHAIN_CASE, FOLD_CASE);
+
   /** egg's `prove_something`: every goal must be in the start's class after the run. */
-  private static void prove(String start, List<Rewrite<Prop, Void>> rules, String... goals) {
+  private static void prove(Case c) {
     EGraph<Prop, Void> g = EGraph.withoutAnalysis();
-    int root = g.addTree(Term.parse(start), BRIDGE);
-    RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT.withIterations(20)
-        .withNodes(5_000), new BackoffScheduler<>()).run();
-    for (String goal : goals) {
+    int root = g.addTree(Term.parse(c.start()), BRIDGE);
+    RunReport report = new Runner<>(g, c.rules(), LIMITS, new BackoffScheduler<>()).run();
+    for (String goal : c.goals()) {
       int id = g.lookupTree(Term.parse(goal), BRIDGE);
       assertTrue(id >= 0 && g.find(id) == g.find(root),
-          goal + " is not in the class of " + start + "\n" + report);
+          goal + " is not in the class of " + c.start() + "\n" + report);
     }
     g.checkInvariants();
   }
 
   @Test
   void proveContrapositive() {
-    prove("(-> x y)", List.of(DEF_IMPLY, DEF_IMPLY_FLIP, DOUBLE_NEG_FLIP, COMM_OR),
-        "(-> x y)", "(| (~ x) y)", "(| (~ x) (~ (~ y)))", "(| (~ (~ y)) (~ x))",
-        "(-> (~ y) (~ x))");
+    prove(CONTRAPOSITIVE_CASE);
   }
 
   @Test
   void proveChain() {
-    prove("(& (-> x y) (-> y z))",
-        List.of(DEF_IMPLY, DEF_IMPLY_FLIP, DOUBLE_NEG_FLIP, COMM_OR, COMM_AND, LEM_IMPLY),
-        "(& (-> x y) (-> y z))", "(& (| (~ x) y) (| (~ y) z))", "(| (~ x) z)", "(-> x z)");
+    prove(CHAIN_CASE);
   }
 
   @Test
   void proveFoldWithTheOtherRules() {
-    // Distribution and association: (x | y) & (x | z) reaches x | (y & z).
-    prove("(& (| x y) (| x z))", List.of(DIST_OR_AND, DIST_AND_OR, COMM_OR, COMM_AND, ASSOC_OR,
-        DOUBLE_NEG, CONTRAPOSITIVE), "(| x (& y z))");
+    prove(FOLD_CASE);
   }
 
   @Test

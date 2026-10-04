@@ -1,0 +1,43 @@
+================================================================================================
+Where a saturation spends its time: lambda_function_repeat, deferred, under JFR
+================================================================================================
+
+OpenJDK 64-Bit Server VM 25.0.4.1+1-1-26.04.4-Ubuntu on Linux 7.0.0-34-generic
+AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M; pinned to cpus 0-3,12-15 (taskset), governor performance
+commit 70e7016 (the library as in 74d5f8a; the commits between change the harness only), 2026-10-04T14:02+02:00
+load average before 0.54
+taskset -c 0-3,12-15 mvn -B -q test -Dtest='LambdaTest#lambdaFunctionRepeat' \
+    -DargLine=-XX:StartFlightRecording=filename=repeat.jfr,settings=profile
+jfr print --json --events jdk.ExecutionSample repeat.jfr, the samples grouped by the jegg phase on the stack
+
+Not a benchmark: a profile of one run of the test (58 iterations, 32,636 nodes, 11 s), for the share
+prediction 5 of PLAN.md 6.1 asks about. JFR samples every 10-20 ms per thread, hence the count.
+
+1023 execution samples, by phase (a phase is named when one of its frames is on the stack):
+   38.8%  unattributed (outer frames cut off at JFR's stack depth of 64)
+           top of stack: ArraysSupport.mismatch 21.9%, HashMap.getNode 3.6%, AbstractMap.hashCode 2.2%
+   32.4%  matcher (Matcher.search, matchIn)
+           top of stack: Matcher.matchIn 18.1%, Pattern$1.match 3.9%, HashMap.putVal 2.5%
+   26.4%  rebuild (repair, canonicalizeNodes, the sweep)
+           top of stack: EGraph.repair 17.7%, ArrayList.indexOfRange 6.5%, EGraph.canonicalize 0.5%
+    1.5%  apply (instantiate, add, merge)
+           top of stack: HashMap.getNode 0.6%, Pattern$1.build 0.3%, LambdaTest$2.make 0.1%
+    1.0%  the test's goal check
+           top of stack: 0x000000007d146400.guard 0.4%, HashMap.getNode 0.2%, Collections$UnmodifiableCollection$1.<init> 0.1%
+
+The innermost jegg frame on the stack, over all samples:
+   23.2%  Matcher.matchIn
+   21.9%  IntList.equals
+   18.5%  EGraph.repair
+   10.2%  none
+    6.5%  EGraph.canonicalizeNodes
+    4.7%  Pattern$1.match
+    3.6%  Subst.equals
+    2.2%  Subst.bind
+    2.1%  Subst.lambda$toString$0
+    1.7%  Subst.id
+
+Reading: the unattributed samples are almost all IntList.equals (Arrays.equals, via node equality in
+hashcons lookups and in repair's and canonicalizeNodes's list scans) whose callers the stack depth cut;
+they belong to the matcher and to rebuild in a split the profile cannot give. So the matcher is at least
+a third of the run and rebuild at least a quarter, each with a share of the remaining two fifths.
