@@ -14,6 +14,7 @@ import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.TreeMap;
 import java.util.function.ToDoubleFunction;
 
@@ -182,6 +183,13 @@ public final class Extractor<L extends Language<L>, D> {
         throw new IllegalStateException("root " + roots.get(i) + " has no finite-cost term");
       }
     }
+    Descent descent = started(canonical, score);
+    descent.run();
+    return descent.selection();
+  }
+
+  /** A descent started from the greedy choice, or from the tree choice if that closes a cycle. */
+  private Descent started(IntList canonical, ToDoubleFunction<Selection<L>> score) {
     Descent descent = new Descent(canonical, score);
     if (!descent.start(greedy())) {
       // The greedy choices, each made against its children's choices at the time, can close
@@ -189,10 +197,11 @@ public final class Extractor<L extends Language<L>, D> {
       // is the start instead.
       Map<Integer, L> trees = new HashMap<>();
       best.forEach((id, b) -> trees.put(id, b.node()));
-      descent.start(trees);
+      if (!descent.start(trees)) {
+        throw new IllegalStateException("the tree choice closed a cycle");
+      }
     }
-    descent.run();
-    return descent.selection();
+    return descent;
   }
 
   /**
@@ -201,14 +210,7 @@ public final class Extractor<L extends Language<L>, D> {
    */
   Selection<L> greedyStart(IntList roots) {
     checkUnchanged();
-    IntList canonical = roots.map(graph::find);
-    Descent descent = new Descent(canonical, null);
-    if (!descent.start(greedy())) {
-      Map<Integer, L> trees = new HashMap<>();
-      best.forEach((id, b) -> trees.put(id, b.node()));
-      descent.start(trees);
-    }
-    return descent.selection();
+    return started(roots.map(graph::find), null).selection();
   }
 
   /** Whether every child of the node has a finite-cost term, so the node can be chosen. */
@@ -279,8 +281,9 @@ public final class Extractor<L extends Language<L>, D> {
         assigned[e.getKey()] = e.getValue().node();
       }
       assignment.forEach((id, n) -> assigned[id] = n);
+      byte[] color = new byte[assigned.length];
       for (int i = 0; i < roots.size(); i++) {
-        if (reaches(node(roots.get(i)), roots.get(i), true)) {
+        if (cyclic(roots.get(i), color)) {
           return false;
         }
       }
@@ -291,29 +294,43 @@ public final class Extractor<L extends Language<L>, D> {
       return true;
     }
 
-    /**
-     * Whether {@code target} is reached from {@code from}'s children through the assigned
-     * nodes; with {@code anyCycle}, whether any cycle is reached, as the start must know.
-     */
-    private boolean reaches(L from, int target, boolean anyCycle) {
-      walk++;
-      return reachesFrom(from, target, anyCycle);
+    /** Whether a cycle is reached from {@code id} through the assigned nodes: a gray hit. */
+    private boolean cyclic(int id, byte[] color) {
+      if (color[id] == 2) {
+        return false;
+      }
+      if (color[id] == 1) {
+        return true;
+      }
+      color[id] = 1;
+      IntList children = node(id).children();
+      for (int i = 0; i < children.size(); i++) {
+        if (cyclic(graph.find(children.get(i)), color)) {
+          return true;
+        }
+      }
+      color[id] = 2;
+      return false;
     }
 
-    private boolean reachesFrom(L from, int target, boolean anyCycle) {
+    /** Whether {@code target} is reached from {@code from}'s children through assigned nodes. */
+    private boolean reaches(L from, int target) {
+      walk++;
+      return reachesFrom(from, target);
+    }
+
+    private boolean reachesFrom(L from, int target) {
       IntList children = from.children();
       for (int i = 0; i < children.size(); i++) {
         int child = graph.find(children.get(i));
         if (child == target) {
           return true;
         }
-        if (seen[child] == walk) {
-          continue;
-        }
-        seen[child] = walk;
-        if (anyCycle ? reachesFrom(node(child), child, true) || reachesFrom(node(child), target,
-            true) : reachesFrom(node(child), target, false)) {
-          return true;
+        if (seen[child] != walk) {
+          seen[child] = walk;
+          if (reachesFrom(node(child), target)) {
+            return true;
+          }
         }
       }
       return false;
@@ -380,17 +397,15 @@ public final class Extractor<L extends Language<L>, D> {
      * did. The classes newly selected are collected into {@code added} when asked.
      */
     private boolean change(int id, L n, boolean collect) {
-      if (reaches(n, id, false)) {
+      if (reaches(n, id)) {
         return false;
       }
       L old = node(id);
       nodeLog.add(new Object[] {id, old});
       cost += nodeCost(n) - nodeCost(old);
-      IntList oldChildren = old.children();
-      for (int i = 0; i < oldChildren.size(); i++) {
-        release(graph.find(oldChildren.get(i)));
-      }
       assigned[id] = n;
+      // The new node's children first, then the old node's released: a class both reach keeps
+      // its count above zero and is not collected as a newcomer.
       collecting = collect;
       added.clear();
       IntList children = n.children();
@@ -398,6 +413,10 @@ public final class Extractor<L extends Language<L>, D> {
         acquire(graph.find(children.get(i)));
       }
       collecting = false;
+      IntList oldChildren = old.children();
+      for (int i = 0; i < oldChildren.size(); i++) {
+        release(graph.find(oldChildren.get(i)));
+      }
       return true;
     }
 
@@ -407,6 +426,7 @@ public final class Extractor<L extends Language<L>, D> {
     }
 
     void run() {
+      double current = evaluate();
       boolean kept = true;
       while (kept) {
         kept = false;
@@ -419,23 +439,30 @@ public final class Extractor<L extends Language<L>, D> {
             if (refs[id] == 0 || n.equals(node(id)) || !priced(n)) {
               continue;
             }
-            double before = evaluate();
+            // Nothing undoes past a top-level candidate, so the logs start afresh at each.
+            logSize = 0;
+            nodeLog.clear();
             long mark = mark();
             double costBefore = cost;
             if (!change(id, n, true)) {
               continue;
             }
-            if (evaluate() < before - EPSILON) {
+            double changed = evaluate();
+            if (changed < current - EPSILON) {
+              current = changed;
               kept = true;
               continue;
             }
             // Held: the change brought classes in; the selected parents of those classes are
             // offered their nodes that use them, each kept if it lowers the score, and the
             // whole kept if the total fell.
-            if (!added.isEmpty() && offerToParents(id, List.copyOf(added))
-                && evaluate() < before - EPSILON) {
-              kept = true;
-              continue;
+            if (!added.isEmpty()) {
+              double settled = offerToParents(id, List.copyOf(added), changed);
+              if (settled < current - EPSILON) {
+                current = settled;
+                kept = true;
+                continue;
+              }
             }
             undo(mark, costBefore);
           }
@@ -445,29 +472,37 @@ public final class Extractor<L extends Language<L>, D> {
 
     /**
      * For each class newly selected, each selected parent of it other than {@code held} is
-     * offered the parent's nodes that have it as a child; true if any was taken.
+     * offered the parent's nodes that have it as a child, each kept if it lowers the score from
+     * {@code score}; the score settled at. A parent entry may be a node as it was added, with
+     * children since merged, so it is canonicalised and its class read from the hashcons.
      */
-    private boolean offerToParents(int held, List<Integer> newClasses) {
-      boolean took = false;
+    private double offerToParents(int held, List<Integer> newClasses, double score) {
+      double current = score;
       for (int newClass : newClasses) {
-        for (EClass.Parent<L> parent : List.copyOf(graph.classOf(newClass).parents())) {
-          int pc = graph.find(parent.classId());
-          L pn = parent.node();
-          if (pc == held || refs[pc] == 0 || pn.equals(node(pc)) || !priced(pn)
-              || !graph.classOf(pc).nodes().contains(pn)) {
+        for (EClass.Parent<L> parent : graph.classOf(newClass).parents()) {
+          L pn = graph.canonicalize(parent.node());
+          OptionalInt in = graph.lookup(pn);
+          if (in.isEmpty()) {
             continue;
           }
-          double before = evaluate();
+          int pc = in.getAsInt();
+          if (pc == held || refs[pc] == 0 || pn.equals(node(pc)) || !priced(pn)) {
+            continue;
+          }
           long mark = mark();
           double costBefore = cost;
-          if (change(pc, pn, false) && evaluate() < before - EPSILON) {
-            took = true;
+          if (!change(pc, pn, false)) {
+            continue;
+          }
+          double changed = evaluate();
+          if (changed < current - EPSILON) {
+            current = changed;
           } else {
             undo(mark, costBefore);
           }
         }
       }
-      return took;
+      return current;
     }
 
     /** The selection the state holds: the classes referred to, with their nodes, in id order. */

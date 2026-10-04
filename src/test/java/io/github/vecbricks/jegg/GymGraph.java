@@ -84,7 +84,12 @@ final class GymGraph {
         int[] kids = new int[children.size()];
         boolean ready = true;
         for (int i = 0; i < kids.length; i++) {
-          Integer c = idOfClass.get(classOfNode.get((String) children.get(i)));
+          String childClass = classOfNode.get((String) children.get(i));
+          if (childClass == null) {
+            throw new IllegalArgumentException(file + ": node " + id + " has a child "
+                + children.get(i) + " that is no node of the file");
+          }
+          Integer c = idOfClass.get(childClass);
           if (c == null) {
             ready = false;
             break;
