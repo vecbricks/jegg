@@ -14,7 +14,7 @@ active-object framework whose package is `jegg`; the package here avoids it.*
 
 ## 1. Where this came from
 
-`SCOPE_MILESTONE_8.md` item 11, "Physical representation as a compiler
+`sql/varka/plans/m8/SCOPE.md` item 11, "Physical representation as a compiler
 decision", concluded that the engine Varka is meant to become - every Spark
 type and expression, several physical forms per logical value - needs an
 extractor over equivalence classes: conversion nodes as ordinary nodes,
@@ -127,7 +127,7 @@ saturation in fresh JVMs and compares the serialised graphs.
 
 ### 3.2 What Varka's client asks of the API, 3 October 2026
 
-Read against `SCOPE_MILESTONE_8.md` item 11, the IR and the cost model, on the owner's question of
+Read against `sql/varka/plans/m8/SCOPE.md` item 11, the IR and the cost model, on the owner's question of
 what API Varka would need. egg's shape covers most of it; four things are not in egg's API as it
 stands, and the tables above carry them.
 
@@ -143,7 +143,7 @@ stands, and the tables above carry them.
    predicate or a payload variable, and `Subst` holds payload bindings beside class ids.
 3. **Extraction over several roots sharing a DAG, with a cost the client measures.** A
    projection has many outputs sharing prefixes, and Varka's cost model prices groups of
-   outputs with that sharing (task 58). egg's extractor costs each root as a tree, so two
+   outputs with that sharing (VARKA-58). egg's extractor costs each root as a tree, so two
    outputs sharing a prefix can be given different forms and the sharing lost. `extractAll`
    chooses one node per e-class across all roots, pays a shared node once and returns a
    `Selection` as a DAG, never re-expanded; it is greedy, since the ILP is out, and a hook
@@ -220,7 +220,7 @@ In the library's repository:
 | `src/jmh/java/` and `benchmarks/` | section 6, with the provenance header Varka's result files carry |
 | `PLAN.md` (this file, moved) and `README.md` | the record and the front door |
 
-In Varka, now: `SCOPE_MILESTONE_8.md` item 11 pointing here, and
+In Varka, now: `sql/varka/plans/m8/SCOPE.md` item 11 pointing here, and
 `PLAN_EGRAPH_PORT.md` reduced to a pointer. In Varka, at
 item 11's time: the dependency on a pinned version and the client mapping,
 planned there.
