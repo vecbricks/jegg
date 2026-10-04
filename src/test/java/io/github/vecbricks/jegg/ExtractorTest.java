@@ -317,4 +317,46 @@ class ExtractorTest {
     assertEquals(8.0, sel.cost(), 1e-9, sel.toString());
     assertEquals(new Toy.Mul(IntList.of(c, g.find(r))), sel.node(g.find(t)));
   }
+
+  @Test
+  void theGuardsRefuseADirtyGraphAndAClassOutsideTheSelection() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    g.merge(a, b);
+    assertThrows(IllegalStateException.class, () -> new Extractor<>(g, CostFunction.astSize()),
+        "a merge not yet rebuilt");
+    g.rebuild();
+    int sum = g.add(new Toy.Add(IntList.of(a, a)));
+    Selection<Toy> sel = new Extractor<>(g, CostFunction.<Toy>astSize())
+        .extractAll(IntList.of(sum));
+    assertEquals(IntList.of(sum), sel.roots());
+    assertEquals(2, sel.size());
+    assertThrows(IllegalArgumentException.class, () -> sel.node(1_000));
+    // A class with no finite-cost term cannot be built: every node is added over classes that
+    // exist, so every class holds a term, and the extractor refuses infinite costs. The guards
+    // for it in best and extractAll stay as defensive code.
+  }
+
+  @Test
+  void aCandidateThatWouldCloseACycleIsRefusedAndTheDescentGoesOn() {
+    // A = {x (3), Add(B, B) (0)}, B = {y (1), Add(A, A) (0)}, root A. The greedy start takes
+    // A -> Add(B, B) over y, cost 1. The descent then tries B -> Add(A, A), which would close
+    // A -> B -> A: refused, and the selection stays a term of cost 1.
+    CostFunction<Toy> table = node -> switch (node) {
+      case Toy.Var v -> v.name().equals("x") ? 3.0 : 1.0;
+      default -> 0.0;
+    };
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("x"));
+    int b = g.add(new Toy.Var("y"));
+    g.merge(a, g.add(new Toy.Add(IntList.of(b, b))));
+    g.merge(b, g.add(new Toy.Add(IntList.of(a, a))));
+    g.rebuild();
+    Selection<Toy> sel = new Extractor<>(g, table).extractAll(IntList.of(a));
+    assertEquals(1.0, sel.cost(), sel.toString());
+    assertEquals(new Toy.Add(IntList.of(g.find(b), g.find(b))), sel.node(g.find(a)));
+    assertEquals(new Toy.Var("y"), sel.node(g.find(b)));
+    assertEquals(1, sel.terms().size());
+  }
 }

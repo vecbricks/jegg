@@ -197,4 +197,41 @@ class PatternMatchTest {
     Rewrite.of("client", Pattern.node(undeclared, X, Y), Pattern.node(div, Y, X));
     assertTrue(Pattern.node(undeclared, X, Y).payloadVariables().isEmpty());
   }
+
+  @Test
+  void aPayloadVariableBoundTwiceMatchesOnlyWhenBothPayloadsAgree() {
+    // (div ?c ?x (div ?c ?y ?z)): the outer and inner modes must be the same.
+    Pattern.Head<Toy> div = Pattern.binding(Toy.Div.class, "c", Toy.Div::checked,
+        (c, kids) -> new Toy.Div((Boolean) c, kids));
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int c = g.add(new Toy.Var("c"));
+    int same = g.add(new Toy.Div(true, IntList.of(a, g.add(new Toy.Div(true, IntList.of(b, c))))));
+    int mixed = g.add(new Toy.Div(true, IntList.of(a, g.add(new Toy.Div(false, IntList.of(b, c))))));
+    Pattern<Toy> nested = Pattern.node(div, X, Pattern.node(div, Y, Pattern.var("z")));
+    List<Matcher.Match> matches = Matcher.search(g, nested);
+    assertEquals(1, matches.size(), matches.toString());
+    assertEquals(same, matches.get(0).eclass());
+    assertTrue(g.find(mixed) != same);
+    assertEquals(Boolean.TRUE, matches.get(0).subst().payload("c"));
+    assertEquals("Div{?c}", div.toString());
+    // A head that does not declare its variables, nested under one that does, leaves the whole
+    // pattern's payload variables undeclared.
+    Pattern.Head<Toy> undeclared = new Pattern.Head<>() {
+      @Override
+      public Subst match(Toy node, Subst subst) {
+        return node instanceof Toy.Div d ? subst.bindPayload("c", d.checked()) : null;
+      }
+
+      @Override
+      public Toy build(Subst subst, IntList children) {
+        return new Toy.Div((Boolean) subst.payload("c"), children);
+      }
+    };
+    assertTrue(Pattern.node(div, X, Pattern.node(undeclared, Y, Pattern.var("z")))
+        .payloadVariables().isEmpty());
+    assertEquals("swap", Rewrite.of("swap", Pattern.node(div, X, Y), Pattern.node(div, Y, X))
+        .toString());
+  }
 }

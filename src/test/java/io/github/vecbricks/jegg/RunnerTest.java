@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -415,5 +416,28 @@ class RunnerTest {
     assertEquals(java.util.Set.of("mark"), report.iterations().get(0).skipped());
     assertTrue(g.lookup(new Toy.Var("marker")).isEmpty());
     g.checkInvariants();
+  }
+
+  @Test
+  void aClassLimitStopsTheRun() {
+    // The five-summand sum has nine classes; associativity and commutativity add more each
+    // iteration, so a limit of twelve classes stops the run on them, as the node limit does.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    sumOfFive(g);
+    assertEquals(9, g.numClasses());
+    RunReport report = new Runner<>(g, expansive(), RunLimits.DEFAULT.withClasses(12),
+        Scheduler.simple()).run();
+    assertInstanceOf(StopReason.ClassLimit.class, report.stop(), report.toString());
+    assertEquals(new StopReason.ClassLimit(g.numClasses()), report.stop());
+    assertTrue(g.numClasses() > 12);
+    assertSame(g, new Runner<>(g, expansive(), RunLimits.DEFAULT, Scheduler.simple()).graph());
+  }
+
+  @Test
+  void limitsAndBansMustBePositive() {
+    assertThrows(IllegalArgumentException.class, () -> new RunLimits(0, 1, 1));
+    assertThrows(IllegalArgumentException.class, () -> RunLimits.DEFAULT.withNodes(-5));
+    assertThrows(IllegalArgumentException.class, () -> new BackoffScheduler<Toy, Void>(0, 5));
+    assertThrows(IllegalArgumentException.class, () -> new BackoffScheduler<Toy, Void>(5, 0));
   }
 }
