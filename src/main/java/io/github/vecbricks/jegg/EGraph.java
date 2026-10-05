@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 
@@ -71,6 +73,7 @@ public final class EGraph<L extends Language<L>, D> {
   // The classes named by the parent entries this rebuild's repairs processed: the only classes
   // whose node lists can hold a form a merge made stale, re-canonicalised when the rebuild ends.
   private final BitSet staleOwners = new BitSet();
+  private int parentSerial;
   // Parent entries whose class's fact may have grown because a child's fact did (paper
   // section 4.1, egg's analysis_pending): each is re-made and joined into its class's fact.
   private final List<EClass.Parent<L>> analysisPending = new ArrayList<>();
@@ -138,7 +141,7 @@ public final class EGraph<L extends Language<L>, D> {
     IntList children = canonical.children();
     // One entry, shared by every child's list, so that a repair through any child re-keys the
     // form all of them and the hashcons hold.
-    EClass.Parent<L> entry = new EClass.Parent<>(canonical, id);
+    EClass.Parent<L> entry = new EClass.Parent<>(canonical, id, parentSerial++);
     for (int i = 0; i < children.size(); i++) {
       classOf(children.get(i)).addParent(entry);
     }
@@ -280,6 +283,7 @@ public final class EGraph<L extends Language<L>, D> {
       analysisPending.addAll(gone.mutableParents());
     }
     kept.mutableNodes().addAll(gone.mutableNodes());
+    kept.setMergedNodes(true);
     kept.mutableParents().addAll(gone.mutableParents());
     kept.setData(joined);
     if (gone.hasPruned()) {
@@ -404,14 +408,30 @@ public final class EGraph<L extends Language<L>, D> {
     return repaired;
   }
 
+  /**
+   * Puts the class's nodes in canonical form and drops the duplicates: a node is remade only
+   * when a child is no longer a root, and the list is deduplicated only when a node was remade
+   * or another class's nodes were merged in since the list was last canonical.
+   */
   private void canonicalizeNodes(EClass<L, D> eclass) {
     List<L> nodes = eclass.mutableNodes();
-    LinkedHashSet<L> canonicalNodes = LinkedHashSet.newLinkedHashSet(nodes.size());
-    for (L node : nodes) {
-      canonicalNodes.add(canonicalize(node));
+    boolean changed = eclass.hasMergedNodes();
+    eclass.setMergedNodes(false);
+    for (int i = 0; i < nodes.size(); i++) {
+      L node = nodes.get(i);
+      if (!isCanonical(node)) {
+        nodes.set(i, canonicalize(node));
+        changed = true;
+      }
     }
-    nodes.clear();
-    nodes.addAll(canonicalNodes);
+    if (changed && nodes.size() > 1) {
+      LinkedHashSet<L> distinct = LinkedHashSet.newLinkedHashSet(nodes.size());
+      distinct.addAll(nodes);
+      if (distinct.size() < nodes.size()) {
+        nodes.clear();
+        nodes.addAll(distinct);
+      }
+    }
   }
 
   /** Whether every child of {@code node} is a root: canonical, told without making the form. */
@@ -476,25 +496,33 @@ public final class EGraph<L extends Language<L>, D> {
       parent.rekey(canonical, root);
     }
     // Two entries that are one canonical node now are congruent, and their classes are merged.
-    // The form is made again here, since a merge in this loop can change a later entry's form;
-    // such an entry keeps the form it was keyed under above, and the next pass, which the merge
-    // puts the root on the worklist for, re-keys it. Insertion order is kept, so the merges and
-    // the repaired list come out in the order the entries were met.
+    // Of the two, the older stays in the list and the newer leaves it: the older is in every
+    // list that names the node (an entry is only ever dropped in favour of an older one), so a
+    // repair through any child finds it, and when the newer was keyed above under a form of its
+    // own, that key goes with it, since any other entry under that form is congruent, hence in
+    // this list, hence dropped too. A merge here can change a later entry's form, so from the
+    // first merge on the form is made again; an entry whose form changed keeps the one it was
+    // keyed under, and the next pass, which the merge puts the root on the worklist for, re-keys
+    // it. Insertion order is kept, so the merges and the list come out in the order met.
     LinkedHashMap<L, EClass.Parent<L>> seen = LinkedHashMap.newLinkedHashMap(parents.size());
+    boolean merged = false;
     for (EClass.Parent<L> parent : parents) {
-      L canonical = canonicalize(parent.node());
-      int classId = unionFind.find(parent.classId());
+      L canonical = merged ? canonicalize(parent.node()) : parent.node();
       EClass.Parent<L> same = seen.putIfAbsent(canonical, parent);
-      if (same != null && same != parent) {
-        int merged = merge(same.classId(), classId);
-        same.rekey(same.node(), merged);
-        if (!parent.node().equals(same.node())) {
-          // The dropped entry was keyed above under a form of its own, which a merge in this
-          // loop has since made the kept entry's form too. The kept entry is in a list and will
-          // be re-keyed; the dropped one leaves this list, so its key goes with it.
-          hashcons.remove(parent.node());
-          pruned.remove(parent.node());
-        }
+      if (same == null || same == parent) {
+        continue;
+      }
+      int root = merge(same.classId(), unionFind.find(parent.classId()));
+      merged = true;
+      EClass.Parent<L> kept = parent.serial() < same.serial() ? parent : same;
+      EClass.Parent<L> dropped = kept == parent ? same : parent;
+      kept.rekey(kept.node(), root);
+      if (kept != same) {
+        seen.put(canonical, kept);
+      }
+      if (!dropped.node().equals(kept.node())) {
+        hashcons.remove(dropped.node());
+        pruned.remove(dropped.node());
       }
     }
     classOf(eclass.id()).mutableParents().addAll(seen.values());
@@ -526,9 +554,12 @@ public final class EGraph<L extends Language<L>, D> {
    * Checks the hashcons invariant (paper Definition 2.7) and the congruence invariant (its
    * Theorem 3.1): every node of every live class is canonical and maps in the hashcons to that
    * class, every hashcons entry's node is in the class it maps to, and no two classes hold an
-   * equal canonical node. Both hold after {@link #rebuild}; the second may not between a merge
-   * and the rebuild. For tests and debugging; throws {@link IllegalStateException} naming the
-   * first violation.
+   * equal canonical node. Also the parent entries: for every node some one entry is in every
+   * list that names the node, in canonical form and mapped by the hashcons or the pruned memory
+   * to its class, so that a repair through any child re-keys the form all of them hold; and no
+   * entry left behind under an older form is a key. All hold after {@link #rebuild}; none need
+   * hold between a merge and the rebuild. For tests and debugging; throws
+   * {@link IllegalStateException} naming the first violation.
    */
   public void checkInvariants() {
     int counted = 0;
@@ -565,6 +596,45 @@ public final class EGraph<L extends Language<L>, D> {
     if (classes().size() != liveClasses) {
       throw new IllegalStateException(classes().size() + " live classes, " + liveClasses
           + " counted");
+    }
+    checkParentEntries();
+  }
+
+  private void checkParentEntries() {
+    // Per node (canonical form): the lists naming it through any entry, and its entry objects
+    // with the lists holding each (by identity; one object listed twice in a list is one entry).
+    Map<L, Set<Integer>> listsOfNode = new HashMap<>();
+    Map<EClass.Parent<L>, Set<Integer>> listsOfEntry = new IdentityHashMap<>();
+    Map<L, List<EClass.Parent<L>>> entriesOfNode = new HashMap<>();
+    for (EClass<L, D> eclass : classes()) {
+      for (EClass.Parent<L> entry : eclass.parents()) {
+        L node = entry.node();
+        L canonical = canonicalize(node);
+        if (!node.equals(canonical) && (hashcons.containsKey(node) || pruned.containsKey(node))) {
+          throw new IllegalStateException("class " + eclass.id() + " has a parent entry " + node
+              + " that is not canonical yet is a key");
+        }
+        listsOfNode.computeIfAbsent(canonical, n -> new HashSet<>()).add(eclass.id());
+        Set<Integer> lists = listsOfEntry.computeIfAbsent(entry, e -> new HashSet<>());
+        if (lists.isEmpty()) {
+          entriesOfNode.computeIfAbsent(canonical, n -> new ArrayList<>()).add(entry);
+        }
+        lists.add(eclass.id());
+      }
+    }
+    for (var e : entriesOfNode.entrySet()) {
+      L canonical = e.getKey();
+      int lists = listsOfNode.get(canonical).size();
+      int mapped = idOf(canonical);
+      boolean shared = e.getValue().stream().anyMatch(entry ->
+          listsOfEntry.get(entry).size() == lists && entry.node().equals(canonical)
+              && unionFind.find(entry.classId()) == mapped);
+      if (!shared) {
+        throw new IllegalStateException("no entry for " + canonical + " is in all " + lists
+            + " lists naming it in canonical form and mapped to its class "
+            + (mapped == MISSING ? "(none)" : String.valueOf(mapped)) + "; " + e.getValue().size()
+            + " entries: " + e.getValue());
+      }
     }
   }
 }

@@ -473,8 +473,8 @@ public final class Extractor<L extends Language<L>, D> {
     /**
      * For each class newly selected, each selected parent of it other than {@code held} is
      * offered the parent's nodes that have it as a child, each kept if it lowers the score from
-     * {@code score}; the score settled at. After a rebuild a parent entry names its node in its
-     * canonical form; it is canonicalised here all the same, and its class read from the hashcons.
+     * {@code score}; the score settled at. A parent entry may be a node under an older form,
+     * with children since merged, so it is canonicalised and its class read from the hashcons.
      */
     private double offerToParents(int held, List<Integer> newClasses, double score) {
       double current = score;

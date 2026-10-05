@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -113,6 +114,7 @@ class EGraphRebuildTest {
     EClass.Parent<Toy> entry = g.classOf(b).parents().get(0);
     assertEquals(new EClass.Parent<>(reKeyed, op).hashCode(), entry.hashCode());
     assertEquals("Parent[node=" + reKeyed + ", classId=" + op + "]", entry.toString());
+    assertNotEquals(entry, reKeyed, "an entry is not its node");
     g.checkInvariants();
   }
 
@@ -145,8 +147,7 @@ class EGraphRebuildTest {
     // c having been merged into b), which are congruent and so merge b's class into v0's; then
     // b * v0 and b * b, keyed a moment earlier under those forms, which that merge has just made
     // one node, v0 * v0. b * b is the duplicate and leaves the list; b is its only child, so no
-    // list will name it again, and its key must leave the hashcons with it. Found by the random
-    // deferred-against-eager check; this is its smallest shape.
+    // list will name it again, and its key must leave the hashcons with it.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int v0 = g.add(new Toy.Var("v0"));
     int s = g.add(new Toy.Var("s"));
@@ -166,6 +167,38 @@ class EGraphRebuildTest {
     assertEquals(3, g.numClasses(), "v0 with b, c and the sums; s; the product");
     assertEquals(6, g.numNodes(), "four variables, one sum, one product");
     assertEquals(OptionalInt.of(g.find(bb)), g.lookup(new Toy.Mul(IntList.of(b, b))));
+  }
+
+  @Test
+  void congruentEntriesKeepTheSameSurvivorInEveryList() {
+    // p4 = x2 + y was added before p3 = x + y, so y's list reads [p4, p3] and, once x2 is merged
+    // into x, x's list reads [p3, p4]. The two are congruent then, and each repair keeps one of
+    // them: it must be the same one in both lists, or the two lists go on with one entry each,
+    // and a re-key through x leaves a key that no later repair through y will find.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int c = g.add(new Toy.Var("c"));
+    int x = g.add(new Toy.Var("x"));
+    int x2 = g.add(new Toy.Var("x2"));
+    int y = g.add(new Toy.Var("y"));
+    int p4 = g.add(new Toy.Add(IntList.of(x2, y)));
+    int p3 = g.add(new Toy.Add(IntList.of(x, y)));
+    g.merge(x, x2);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(g.find(p3), g.find(p4));
+    g.merge(y, c);
+    g.rebuild();
+    g.checkInvariants();
+    g.merge(x, b);
+    g.rebuild();
+    g.checkInvariants();
+    g.merge(c, a);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(7, g.numNodes(), "six variables and one sum");
+    assertEquals(OptionalInt.of(g.find(p3)), g.lookup(new Toy.Add(IntList.of(b, a))));
   }
 
   @Test
