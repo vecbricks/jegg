@@ -26,8 +26,65 @@ import java.util.List;
  */
 public final class EClass<L extends Language<L>, D> {
 
-  /** A parent entry: an e-node that has the class as a child, and the class it was added to. */
-  public record Parent<L>(L node, int classId) {
+  /**
+   * A parent entry: an e-node that has the class as a child, and the class it was added to. The
+   * entry made when the node was added is shared by the lists of all its children, and
+   * {@code rebuild} re-keys it in place when a child's class is merged, so every list and the
+   * hashcons name the node by one form. When a merge makes two nodes one, the older entry stands
+   * for both from then on, and a repair drops the newer from each list it repairs. Two entries
+   * are equal when they name the same node and class; since a rebuild changes both in place, an
+   * entry is not a stable key for a hash table while the graph changes.
+   */
+  public static final class Parent<L> {
+    private L node;
+    private int classId;
+    // The order the entries were made in: of two entries a merge makes congruent, the older
+    // survives in every list, which is what keeps one entry shared by all of a node's lists.
+    private final int serial;
+
+    public Parent(L node, int classId) {
+      this(node, classId, 0);
+    }
+
+    Parent(L node, int classId, int serial) {
+      this.node = node;
+      this.classId = classId;
+      this.serial = serial;
+    }
+
+    int serial() {
+      return serial;
+    }
+
+    /** The node, in the form the hashcons holds it under. */
+    public L node() {
+      return node;
+    }
+
+    /** The class the node was added to, or a root it was merged into since; not always a root. */
+    public int classId() {
+      return classId;
+    }
+
+    void rekey(L node, int classId) {
+      this.node = node;
+      this.classId = classId;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      return o instanceof Parent<?> p && classId == p.classId && node.equals(p.node);
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * node.hashCode() + classId;
+    }
+
+    @Override
+    public String toString() {
+      return "Parent[node=" + node + ", classId=" + classId + "]";
+    }
   }
 
   private final int id;
@@ -37,6 +94,11 @@ public final class EClass<L extends Language<L>, D> {
   // Whether retainNodes ever dropped a node of this class: then a parent entry naming this class
   // may be a dropped node, and repair tells by the node list, not by the entry's form.
   private boolean pruned;
+  // Whether another class's nodes were merged into this one since its list was last put in
+  // canonical form: two classes can hold one canonical node between a merge and its rebuild
+  // (an add can miss the node under a stale key), so the merged list may hold a duplicate
+  // without any node being stale.
+  private boolean mergedNodes;
 
   EClass(int id, D data) {
     this.id = id;
@@ -75,6 +137,14 @@ public final class EClass<L extends Language<L>, D> {
     pruned = true;
   }
 
+  boolean hasMergedNodes() {
+    return mergedNodes;
+  }
+
+  void setMergedNodes(boolean mergedNodes) {
+    this.mergedNodes = mergedNodes;
+  }
+
   void setData(D data) {
     this.data = data;
   }
@@ -83,8 +153,8 @@ public final class EClass<L extends Language<L>, D> {
     nodes.add(node);
   }
 
-  void addParent(L node, int classId) {
-    parents.add(new Parent<>(node, classId));
+  void addParent(Parent<L> entry) {
+    parents.add(entry);
   }
 
   List<L> mutableNodes() {

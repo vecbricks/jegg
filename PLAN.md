@@ -476,9 +476,9 @@ the compile: at the 200 limit it is half the saturation.
 - **The runner differed from egg in when it asks the scheduler**, found only
   by comparing ban logs on `lambda_function_repeat` (#19); the hook API and
   `ConditionEqual` came with that suite.
-- **The rebuild sweeps the whole graph every time**, which the deferred-eager
-  numbers above show and #15 plans away; the node limits overshoot by an
-  iteration (#14).
+- **The rebuild swept the whole graph every time**, which the deferred-eager
+  numbers above show; #15 removed the sweep, and #45 measures it; the node
+  limits overshot by an iteration (#14).
 - **`extractAll` is the compile-time cost**, not saturation, at a compiler's
   budget; prediction 4 was written with egg's tree extraction in mind.
 - **The process**: an issue, then a plan in it, then a pull request
