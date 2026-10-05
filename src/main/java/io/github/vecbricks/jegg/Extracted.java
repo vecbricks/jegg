@@ -19,6 +19,12 @@ import java.util.Map;
  * tree when built by {@link Extractor#extract}; a DAG with shared subterms when built from a
  * {@link Selection}, where one class is one object however many parents it has.
  *
+ * <p>A value candidate (PLAN.md 3.1): immutable, compared by content. {@link #toTree} and
+ * {@link #treeSize} visit a shared subterm once by object identity; as a value class the term
+ * would have no identity, and they would visit a shared subterm once per path to it: still
+ * correct, but in time proportional to the tree, not the DAG. A client that needs the DAG then
+ * walks the term by class id, which {@link #eclass()} gives for every subterm.
+ *
  * @param <L> the language
  */
 public record Extracted<L extends Language<L>>(int eclass, L node, List<Extracted<L>> children) {

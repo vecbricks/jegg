@@ -11,11 +11,8 @@ package io.github.vecbricks.jegg;
 
 import java.util.ArrayList;
 import java.util.BitSet;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.OptionalInt;
-import java.util.TreeMap;
 import java.util.function.ToDoubleFunction;
 
 /**
@@ -33,13 +30,19 @@ import java.util.function.ToDoubleFunction;
  */
 public final class Extractor<L extends Language<L>, D> {
 
-  /** A class's best node and the cost of the tree rooted there. */
+  /**
+   * A class's best node and the cost of the tree rooted there. A value candidate (PLAN.md 3.1):
+   * immutable, compared by content.
+   */
   public record Best<L extends Language<L>>(L node, double cost) {
   }
 
   private final EGraph<L, D> graph;
   private final CostFunction<L> costs;
-  private final Map<Integer, Best<L>> best = new HashMap<>();
+  // The best node of each class and its tree cost, by class id; null where the class has no
+  // finite-cost term. Arrays by id, not maps: ids are dense from 0, and a map would box each.
+  private final Object[] bestNode;
+  private final double[] bestCost;
   // The graph's size when priced: a changed size means the prices are stale.
   private final int nodes;
   private final int classes;
@@ -58,7 +61,18 @@ public final class Extractor<L extends Language<L>, D> {
     this.costs = costs;
     this.nodes = graph.numNodes();
     this.classes = graph.numClasses();
+    this.bestNode = new Object[graph.idBound()];
+    this.bestCost = new double[bestNode.length];
     findCosts();
+  }
+
+  @SuppressWarnings("unchecked")
+  private L bestNode(int id) {
+    return (L) bestNode[id];
+  }
+
+  private boolean hasBest(int id) {
+    return bestNode[id] != null;
   }
 
   private void checkUnchanged() {
@@ -70,11 +84,11 @@ public final class Extractor<L extends Language<L>, D> {
   /** The best node of a class and its tree cost; every class reachable from leaves has one. */
   public Best<L> best(int eclass) {
     checkUnchanged();
-    Best<L> b = best.get(graph.find(eclass));
-    if (b == null) {
+    int root = graph.find(eclass);
+    if (!hasBest(root)) {
       throw new IllegalStateException("class " + eclass + " has no finite-cost term");
     }
-    return b;
+    return new Best<>(bestNode(root), bestCost[root]);
   }
 
   /**
@@ -83,13 +97,13 @@ public final class Extractor<L extends Language<L>, D> {
    */
   public Extracted<L> extract(int eclass) {
     checkUnchanged();
-    return extract(graph.find(eclass), new HashMap<>());
+    return extract(graph.find(eclass), new Object[bestNode.length]);
   }
 
-  private Extracted<L> extract(int root, Map<Integer, Extracted<L>> built) {
-    Extracted<L> done = built.get(root);
-    if (done != null) {
-      return done;
+  @SuppressWarnings("unchecked")
+  private Extracted<L> extract(int root, Object[] built) {
+    if (built[root] != null) {
+      return (Extracted<L>) built[root];
     }
     L node = best(root).node();
     List<Extracted<L>> kids = new ArrayList<>();
@@ -98,7 +112,7 @@ public final class Extractor<L extends Language<L>, D> {
       kids.add(extract(graph.find(children.get(i)), built));
     }
     Extracted<L> term = new Extracted<>(root, node, kids);
-    built.put(root, term);
+    built[root] = term;
     return term;
   }
 
@@ -110,16 +124,14 @@ public final class Extractor<L extends Language<L>, D> {
     while (changed) {
       changed = false;
       for (EClass<L, D> eclass : graph.classes()) {
-        Best<L> current = best.get(eclass.id());
+        int id = eclass.id();
         for (L node : eclass.nodes()) {
           double c = costIfKnown(node);
-          if (!Double.isNaN(c) && (current == null || c < current.cost())) {
-            current = new Best<>(node, c);
+          if (!Double.isNaN(c) && (bestNode[id] == null || c < bestCost[id])) {
+            bestNode[id] = node;
+            bestCost[id] = c;
             changed = true;
           }
-        }
-        if (current != null) {
-          best.put(eclass.id(), current);
         }
       }
     }
@@ -131,7 +143,7 @@ public final class Extractor<L extends Language<L>, D> {
     }
     // The node's own price is checked too: a negative one can hide in a non-negative tree.
     nodeCost(node);
-    return checked(node, costs.cost(node, id -> best.get(graph.find(id)).cost()));
+    return checked(node, costs.cost(node, id -> bestCost[graph.find(id)]));
   }
 
   /** The node's own cost, checked. */
@@ -179,7 +191,7 @@ public final class Extractor<L extends Language<L>, D> {
     checkUnchanged();
     IntList canonical = roots.map(graph::find);
     for (int i = 0; i < canonical.size(); i++) {
-      if (!best.containsKey(canonical.get(i))) {
+      if (!hasBest(canonical.get(i))) {
         throw new IllegalStateException("root " + roots.get(i) + " has no finite-cost term");
       }
     }
@@ -195,9 +207,7 @@ public final class Extractor<L extends Language<L>, D> {
       // The greedy choices, each made against its children's choices at the time, can close
       // a cycle once a child changes; the tree choice, with costs non-negative, cannot, so it
       // is the start instead.
-      Map<Integer, L> trees = new HashMap<>();
-      best.forEach((id, b) -> trees.put(id, b.node()));
-      if (!descent.start(trees)) {
+      if (!descent.start(null)) {
         throw new IllegalStateException("the tree choice closed a cycle");
       }
     }
@@ -217,7 +227,7 @@ public final class Extractor<L extends Language<L>, D> {
   private boolean priced(L node) {
     IntList children = node.children();
     for (int i = 0; i < children.size(); i++) {
-      if (!best.containsKey(graph.find(children.get(i)))) {
+      if (!hasBest(graph.find(children.get(i)))) {
         return false;
       }
     }
@@ -241,13 +251,15 @@ public final class Extractor<L extends Language<L>, D> {
     private final int[] refs;
     private double cost;
     // The undo log: a class whose count changed and its old count, and a class whose node
-    // changed and its old node, in order.
+    // changed and its old node, in order; parallel arrays, so an entry is no object.
     private int[] logIds = new int[64];
     private int[] logRefs = new int[64];
     private int logSize;
-    private final List<Object[]> nodeLog = new ArrayList<>();
+    private int[] logNodeIds = new int[16];
+    private Object[] logNodes = new Object[16];
+    private int nodeLogSize;
     // The classes a change newly brought into the selection, when asked to collect them.
-    private final List<Integer> added = new ArrayList<>();
+    private final IntArray added = new IntArray();
     private boolean collecting;
     // For the cycle walk: the classes seen in the current walk.
     private final int[] seen;
@@ -256,10 +268,7 @@ public final class Extractor<L extends Language<L>, D> {
     Descent(IntList roots, ToDoubleFunction<Selection<L>> score) {
       this.roots = roots;
       this.score = score;
-      int size = 0;
-      for (EClass<L, D> c : graph.classes()) {
-        size = Math.max(size, c.id() + 1);
-      }
+      int size = bestNode.length;
       assigned = new Object[size];
       refs = new int[size];
       seen = new int[size];
@@ -270,17 +279,24 @@ public final class Extractor<L extends Language<L>, D> {
       return (L) assigned[id];
     }
 
-    /** Takes an assignment and selects from the roots; false, and nothing kept, on a cycle. */
-    boolean start(Map<Integer, L> assignment) {
-      java.util.Arrays.fill(assigned, null);
+    /**
+     * Takes an assignment (a node per class id, null where the class's best node stands; the
+     * whole array null for the best nodes alone) and selects from the roots; false, and nothing
+     * kept, on a cycle.
+     */
+    boolean start(Object[] assignment) {
+      System.arraycopy(bestNode, 0, assigned, 0, assigned.length);
       java.util.Arrays.fill(refs, 0);
       cost = 0.0;
       logSize = 0;
-      nodeLog.clear();
-      for (Map.Entry<Integer, Best<L>> e : best.entrySet()) {
-        assigned[e.getKey()] = e.getValue().node();
+      nodeLogSize = 0;
+      if (assignment != null) {
+        for (int id = 0; id < assignment.length; id++) {
+          if (assignment[id] != null) {
+            assigned[id] = assignment[id];
+          }
+        }
       }
-      assignment.forEach((id, n) -> assigned[id] = n);
       byte[] color = new byte[assigned.length];
       for (int i = 0; i < roots.size(); i++) {
         if (cyclic(roots.get(i), color)) {
@@ -373,9 +389,19 @@ public final class Extractor<L extends Language<L>, D> {
       logSize++;
     }
 
+    private void logNode(int id, L old) {
+      if (nodeLogSize == logNodeIds.length) {
+        logNodeIds = java.util.Arrays.copyOf(logNodeIds, nodeLogSize * 2);
+        logNodes = java.util.Arrays.copyOf(logNodes, nodeLogSize * 2);
+      }
+      logNodeIds[nodeLogSize] = id;
+      logNodes[nodeLogSize] = old;
+      nodeLogSize++;
+    }
+
     /** A mark to undo to: the log's size and the cost, with the node log's size. */
     private long mark() {
-      return ((long) logSize << 32) | nodeLog.size();
+      return ((long) logSize << 32) | nodeLogSize;
     }
 
     private void undo(long mark, double costBefore) {
@@ -385,9 +411,9 @@ public final class Extractor<L extends Language<L>, D> {
         logSize--;
         refs[logIds[logSize]] = logRefs[logSize];
       }
-      while (nodeLog.size() > toNodes) {
-        Object[] e = nodeLog.remove(nodeLog.size() - 1);
-        assigned[(Integer) e[0]] = e[1];
+      while (nodeLogSize > toNodes) {
+        nodeLogSize--;
+        assigned[logNodeIds[nodeLogSize]] = logNodes[nodeLogSize];
       }
       cost = costBefore;
     }
@@ -401,7 +427,7 @@ public final class Extractor<L extends Language<L>, D> {
         return false;
       }
       L old = node(id);
-      nodeLog.add(new Object[] {id, old});
+      logNode(id, old);
       cost += nodeCost(n) - nodeCost(old);
       assigned[id] = n;
       // The new node's children first, then the old node's released: a class both reach keeps
@@ -441,7 +467,7 @@ public final class Extractor<L extends Language<L>, D> {
             }
             // Nothing undoes past a top-level candidate, so the logs start afresh at each.
             logSize = 0;
-            nodeLog.clear();
+            nodeLogSize = 0;
             long mark = mark();
             double costBefore = cost;
             if (!change(id, n, true)) {
@@ -457,7 +483,7 @@ public final class Extractor<L extends Language<L>, D> {
             // offered their nodes that use them, each kept if it lowers the score, and the
             // whole kept if the total fell.
             if (!added.isEmpty()) {
-              double settled = offerToParents(id, List.copyOf(added), changed);
+              double settled = offerToParents(id, added.toArray(), changed);
               if (settled < current - EPSILON) {
                 current = settled;
                 kept = true;
@@ -476,7 +502,7 @@ public final class Extractor<L extends Language<L>, D> {
      * {@code score}; the score settled at. A parent entry may be a node under an older form,
      * with children since merged, so it is canonicalised and its class read from the hashcons.
      */
-    private double offerToParents(int held, List<Integer> newClasses, double score) {
+    private double offerToParents(int held, int[] newClasses, double score) {
       double current = score;
       for (int newClass : newClasses) {
         for (EClass.Parent<L> parent : graph.classOf(newClass).parents()) {
@@ -510,55 +536,78 @@ public final class Extractor<L extends Language<L>, D> {
 
     /** The selection the state holds: the classes referred to, with their nodes, in id order. */
     Selection<L> selection() {
-      TreeMap<Integer, L> chosen = new TreeMap<>();
+      int count = 0;
+      for (int id = 0; id < refs.length; id++) {
+        if (refs[id] > 0) {
+          count++;
+        }
+      }
+      int[] ids = new int[count];
+      Object[] chosen = new Object[count];
       double total = 0.0;
+      int k = 0;
       for (int id = 0; id < refs.length; id++) {
         if (refs[id] > 0) {
           L n = node(id);
-          chosen.put(id, n);
+          ids[k] = id;
+          chosen[k] = n;
+          k++;
           total += nodeCost(n);
         }
       }
-      return new Selection<>(chosen, roots, total);
+      return new Selection<>(ids, chosen, roots, total);
     }
   }
 
   // The greedy start: a fixed point in which a class's choice is the node whose DAG costs
   // least, a subterm two children share counted once.
-  private Map<Integer, L> greedy() {
-    Map<Integer, Choice<L>> choice = new HashMap<>();
+  private Object[] greedy() {
+    Object[] choice = new Object[bestNode.length];
     boolean changed = true;
     while (changed) {
       changed = false;
       for (EClass<L, D> eclass : graph.classes()) {
-        Choice<L> current = choice.get(eclass.id());
+        int id = eclass.id();
+        Choice<L> current = choice(choice, id);
         for (L node : eclass.nodes()) {
-          Choice<L> candidate = dagChoice(eclass.id(), node, choice);
+          Choice<L> candidate = dagChoice(id, node, choice);
           if (candidate != null && (current == null || candidate.cost() < current.cost())) {
             current = candidate;
             changed = true;
           }
         }
         if (current != null) {
-          choice.put(eclass.id(), current);
+          choice[id] = current;
         }
       }
     }
-    Map<Integer, L> assigned = new HashMap<>();
-    choice.forEach((id, c) -> assigned.put(id, c.node()));
+    Object[] assigned = new Object[choice.length];
+    for (int id = 0; id < choice.length; id++) {
+      if (choice[id] != null) {
+        assigned[id] = choice(choice, id).node();
+      }
+    }
     return assigned;
   }
 
-  /** A class's DAG choice: the node, the classes its DAG covers, and their nodes' costs summed. */
+  /**
+   * A class's DAG choice: the node, the classes its DAG covers, and their nodes' costs summed. A
+   * value candidate: immutable once made, compared by content.
+   */
   private record Choice<L extends Language<L>>(L node, BitSet classes, double cost) {
   }
 
-  private Choice<L> dagChoice(int id, L node, Map<Integer, Choice<L>> choice) {
+  @SuppressWarnings("unchecked")
+  private Choice<L> choice(Object[] choice, int id) {
+    return (Choice<L>) choice[id];
+  }
+
+  private Choice<L> dagChoice(int id, L node, Object[] choice) {
     BitSet classes = new BitSet();
     classes.set(id);
     IntList children = node.children();
     for (int i = 0; i < children.size(); i++) {
-      Choice<L> child = choice.get(graph.find(children.get(i)));
+      Choice<L> child = choice(choice, graph.find(children.get(i)));
       if (child == null || child.classes().get(id)) {
         // Not priced yet, or a DAG through this class itself: a cycle, never a term.
         return null;
@@ -567,7 +616,7 @@ public final class Extractor<L extends Language<L>, D> {
     }
     double total = 0.0;
     for (int c = classes.nextSetBit(0); c >= 0; c = classes.nextSetBit(c + 1)) {
-      total += nodeCost(c == id ? node : choice.get(c).node());
+      total += nodeCost(c == id ? node : choice(choice, c).node());
     }
     return new Choice<>(node, classes, total);
   }

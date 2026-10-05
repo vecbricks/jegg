@@ -29,7 +29,10 @@ public final class Matcher {
   private Matcher() {
   }
 
-  /** One match: the class the pattern's root matched in, and what its variables stand for. */
+  /**
+   * One match: the class the pattern's root matched in, and what its variables stand for. A
+   * value candidate (PLAN.md 3.1): immutable, compared by content.
+   */
   public record Match(int eclass, Subst subst) {
   }
 

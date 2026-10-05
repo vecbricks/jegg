@@ -21,6 +21,9 @@ import java.util.stream.IntStream;
  * that component by reference, so two e-nodes built from separate arrays would never be equal,
  * the hashcons would never find a node already in the graph, and the e-graph would silently be a
  * tree. {@link #equals} and {@link #hashCode} here are over the elements.
+ *
+ * <p>A value candidate (PLAN.md 3.1): immutable, compared by content; the {@code this == o}
+ * shortcut in {@link #equals} is correct under substitutability.
  */
 public final class IntList {
 

@@ -13,7 +13,8 @@ package io.github.vecbricks.jegg;
  * Where a run stops if it has not saturated: after this many iterations, or once the graph
  * holds more than this many nodes or classes. There is no wall-clock limit, on purpose: a run
  * bounded by nodes and iterations ends in the same graph on every machine, which is what lets
- * a client pin what it extracts (PLAN.md 2, determinism).
+ * a client pin what it extracts (PLAN.md 2, determinism). A value candidate (PLAN.md 3.1):
+ * immutable, compared by content.
  *
  * @param iterations the most iterations to run; at least one
  * @param nodes the run stops once the graph holds more nodes than this, checked after each
