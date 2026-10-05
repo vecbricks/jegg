@@ -360,4 +360,66 @@ class ExtractorTest {
     assertEquals(new Toy.Var("y"), sel.node(g.find(b)));
     assertEquals(1, sel.terms().size());
   }
+
+  @Test
+  void aGraphThatIssuedIdsSinceThePricingIsRefusedWhateverItsCounts() {
+    // After the pricing, a class is added and two others merged, whose two parents become one
+    // node: the node and class counts are what they were, but there is an id the pricing never
+    // saw, and the extractor must refuse rather than price it as missing.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int f = g.add(new Toy.Add(IntList.of(a, a)));
+    g.merge(f, g.add(new Toy.Add(IntList.of(b, b))));
+    g.rebuild();
+    Extractor<Toy, Void> ex = new Extractor<>(g, CostFunction.astSize());
+    int nodes = g.numNodes();
+    int classes = g.numClasses();
+    int c = g.add(new Toy.Var("c"));
+    g.merge(a, b);
+    g.rebuild();
+    assertEquals(nodes, g.numNodes());
+    assertEquals(classes, g.numClasses());
+    IllegalStateException e = assertThrows(IllegalStateException.class, () -> ex.extract(c));
+    assertTrue(e.getMessage().contains("changed"), e.getMessage());
+    assertThrows(IllegalStateException.class, () -> ex.extractAll(IntList.of(c)));
+    assertThrows(IllegalStateException.class, () -> ex.best(a));
+  }
+
+  @Test
+  void aNodeWithItsOwnClassAsAChildReadsThePreviousPassesCost() {
+    // One class, nodes in order x (cost 5), h(C) and m(C), where h costs 1 + half its child and
+    // m costs 10 less twice its child, a cost that falls as the child's rises. egg's make_pass
+    // prices a class's nodes against the costs before the pass and stores the class's cost after:
+    // pass one prices x alone, pass two prices h and m against 5, and m at 0 wins for good. Read
+    // against the pass's own running cost, m would see h's 3.5 first and lose to h at 2.
+    CostFunction<Toy> table = new CostFunction<>() {
+      @Override
+      public double nodeCost(Toy node) {
+        return switch (node) {
+          case Toy.Var v -> 5.0;
+          case Toy.Add h -> 1.0;
+          default -> 10.0;
+        };
+      }
+
+      @Override
+      public double cost(Toy node, java.util.function.IntToDoubleFunction childCost) {
+        return switch (node) {
+          case Toy.Add h -> 1.0 + 0.5 * childCost.applyAsDouble(h.children().get(0));
+          case Toy.Mul m -> 10.0 - 2.0 * childCost.applyAsDouble(m.children().get(0));
+          default -> nodeCost(node);
+        };
+      }
+    };
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int c = g.add(new Toy.Var("x"));
+    g.merge(c, g.add(new Toy.Add(IntList.of(c))));
+    g.merge(c, g.add(new Toy.Mul(IntList.of(c))));
+    g.rebuild();
+    assertEquals(List.of(new Toy.Var("x"), new Toy.Add(IntList.of(c)), new Toy.Mul(IntList.of(c))),
+        g.classOf(c).nodes());
+    assertEquals(new Extractor.Best<>(new Toy.Mul(IntList.of(c)), 0.0),
+        new Extractor<>(g, table).best(c));
+  }
 }

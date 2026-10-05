@@ -51,13 +51,18 @@ public final class Selection<L extends Language<L>> {
     return (L) chosen[index];
   }
 
-  /** The node chosen for this class; the class must be one the roots reach. */
-  public L node(int eclass) {
+  /** The position of a class in the selection; the class must be one the roots reach. */
+  private int indexOf(int eclass) {
     int index = Arrays.binarySearch(ids, eclass);
     if (index < 0) {
       throw new IllegalArgumentException("class " + eclass + " is not in the selection");
     }
-    return at(index);
+    return index;
+  }
+
+  /** The node chosen for this class; the class must be one the roots reach. */
+  public L node(int eclass) {
+    return at(indexOf(eclass));
   }
 
   /** The classes the selection covers, in id order, with their nodes, read-only. */
@@ -91,10 +96,7 @@ public final class Selection<L extends Language<L>> {
 
   @SuppressWarnings("unchecked")
   private Extracted<L> term(int eclass, Object[] built) {
-    int index = Arrays.binarySearch(ids, eclass);
-    if (index < 0) {
-      throw new IllegalArgumentException("class " + eclass + " is not in the selection");
-    }
+    int index = indexOf(eclass);
     if (built[index] != null) {
       return (Extracted<L>) built[index];
     }

@@ -43,6 +43,10 @@ public final class Extractor<L extends Language<L>, D> {
   // finite-cost term. Arrays by id, not maps: ids are dense from 0, and a map would box each.
   private final Object[] bestNode;
   private final double[] bestCost;
+  // The memo of one tree extraction, by class id, kept between calls and cleared of what a call
+  // wrote, so that a call costs the term it builds and not the graph.
+  private Object[] built;
+  private final IntArray builtIds = new IntArray();
   // The graph's size when priced: a changed size means the prices are stale.
   private final int nodes;
   private final int classes;
@@ -76,7 +80,8 @@ public final class Extractor<L extends Language<L>, D> {
   }
 
   private void checkUnchanged() {
-    if (graph.isDirty() || graph.numNodes() != nodes || graph.numClasses() != classes) {
+    if (graph.isDirty() || graph.numNodes() != nodes || graph.numClasses() != classes
+        || graph.idBound() != bestNode.length) {
       throw new IllegalStateException("the graph changed since this extractor priced it");
     }
   }
@@ -97,7 +102,17 @@ public final class Extractor<L extends Language<L>, D> {
    */
   public Extracted<L> extract(int eclass) {
     checkUnchanged();
-    return extract(graph.find(eclass), new Object[bestNode.length]);
+    if (built == null) {
+      built = new Object[bestNode.length];
+    }
+    try {
+      return extract(graph.find(eclass), built);
+    } finally {
+      for (int i = 0; i < builtIds.size(); i++) {
+        built[builtIds.get(i)] = null;
+      }
+      builtIds.clear();
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -105,7 +120,10 @@ public final class Extractor<L extends Language<L>, D> {
     if (built[root] != null) {
       return (Extracted<L>) built[root];
     }
-    L node = best(root).node();
+    if (!hasBest(root)) {
+      throw new IllegalStateException("class " + root + " has no finite-cost term");
+    }
+    L node = bestNode(root);
     List<Extracted<L>> kids = new ArrayList<>();
     IntList children = node.children();
     for (int i = 0; i < children.size(); i++) {
@@ -113,26 +131,33 @@ public final class Extractor<L extends Language<L>, D> {
     }
     Extracted<L> term = new Extracted<>(root, node, kids);
     built[root] = term;
+    builtIds.add(root);
     return term;
   }
 
   // The fixed point of egg's find_costs: a class's cost is the cheapest of its nodes' costs
   // given its children's costs so far, until no class gets cheaper. Classes in id order and
-  // nodes in insertion order; a node replaces the class's best only when strictly cheaper.
+  // nodes in insertion order; a node replaces the class's best only when strictly cheaper. A
+  // class's own cost is stored after its nodes are priced, as egg's make_pass does, so a node
+  // with the class itself as a child reads the previous pass's cost, not this one's.
   private void findCosts() {
     boolean changed = true;
     while (changed) {
       changed = false;
       for (EClass<L, D> eclass : graph.classes()) {
         int id = eclass.id();
+        L current = bestNode(id);
+        double currentCost = bestCost[id];
         for (L node : eclass.nodes()) {
           double c = costIfKnown(node);
-          if (!Double.isNaN(c) && (bestNode[id] == null || c < bestCost[id])) {
-            bestNode[id] = node;
-            bestCost[id] = c;
+          if (!Double.isNaN(c) && (current == null || c < currentCost)) {
+            current = node;
+            currentCost = c;
             changed = true;
           }
         }
+        bestNode[id] = current;
+        bestCost[id] = currentCost;
       }
     }
   }

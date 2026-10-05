@@ -76,10 +76,16 @@ public final class Subst {
     return new Subst(nextNames, nextIds, payloadNames, payloads);
   }
 
-  /** This substitution with the payload variable {@code variable} bound to {@code value}. */
+  /**
+   * This substitution with the payload variable {@code variable} bound to {@code value}; a
+   * variable bound already is rebound in place, keeping its position.
+   */
   public Subst bindPayload(String variable, Object value) {
     int i = indexOf(payloadNames, variable);
     if (i >= 0) {
+      if (Objects.equals(payloads[i], value)) {
+        return this;
+      }
       Object[] next = payloads.clone();
       next[i] = value;
       return new Subst(names, ids, payloadNames, next);
@@ -164,14 +170,26 @@ public final class Subst {
 
   @Override
   public int hashCode() {
-    // A sum over the bindings, so that equal substitutions in any order hash alike.
+    // A sum over the bindings, so that equal substitutions in any order hash alike; each term
+    // mixed first, so that two variables with their ids swapped (what a commutative rule yields
+    // in every class) do not cancel out to one bucket.
     int h = 0;
     for (int i = 0; i < names.length; i++) {
-      h += names[i].hashCode() ^ ids[i];
+      h += mix(31 * names[i].hashCode() + ids[i]);
     }
     for (int i = 0; i < payloadNames.length; i++) {
-      h += payloadNames[i].hashCode() ^ Objects.hashCode(payloads[i]);
+      h += mix(31 * payloadNames[i].hashCode() + Objects.hashCode(payloads[i]));
     }
+    return h;
+  }
+
+  /** MurmurHash3's finaliser: every input bit affects every output bit. */
+  private static int mix(int h) {
+    h ^= h >>> 16;
+    h *= 0x85ebca6b;
+    h ^= h >>> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >>> 16;
     return h;
   }
 

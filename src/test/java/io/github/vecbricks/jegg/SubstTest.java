@@ -70,7 +70,12 @@ class SubstTest {
     assertEquals(payloads, s.bindPayload("d", null).bindPayload("c", 1));
     assertEquals(payloads.hashCode(), s.bindPayload("d", null).bindPayload("c", 1).hashCode());
     assertEquals(2, payloads.bindPayload("c", 2).payload("c"), "a payload rebound in place");
-    assertEquals(List.of("c", "d"), new ArrayList<>(payloads.bindPayload("c", 2).payloads().keySet()));
+    assertEquals(List.of("c", "d"),
+        new ArrayList<>(payloads.bindPayload("c", 2).payloads().keySet()));
+    assertSame(payloads, payloads.bindPayload("d", null), "bound already, to the same value");
+    // Swapped ids hash apart: the buckets a commutative rule's matches would otherwise share.
+    assertNotEquals(Subst.EMPTY.bind("a", 1).bind("b", 2).hashCode(),
+        Subst.EMPTY.bind("a", 2).bind("b", 1).hashCode());
     assertNotEquals(payloads, s.bindPayload("c", 2).bindPayload("d", null));
     assertNotEquals(payloads, s.bindPayload("c", 1).bindPayload("e", null));
     assertTrue(payloads.hasPayload("d"));
