@@ -13,9 +13,11 @@ package io.github.vecbricks.jegg;
  * A rewrite's side condition: whether a match may be applied, read from the graph - the facts
  * of the bound classes, their nodes - and the substitution. It is evaluated at apply time, in
  * the iteration's write phase and just before its match is applied, never during the search:
- * a condition may add nodes to the graph, as {@link #equal} does, though never merge, and its
- * additions count against saturation like a right-hand side's. A scheduler must not evaluate
- * conditions while searching.
+ * a condition may add nodes to the graph, as {@link #equal} does, and never merges classes
+ * itself, though an analysis's {@code modify} hook that an added node runs may, so a root read
+ * before an add is read again after it with {@link EGraph#find}; its additions count against
+ * saturation like a right-hand side's. A scheduler must not evaluate conditions while
+ * searching.
  *
  * @param <L> the language
  * @param <D> the analysis fact
@@ -26,7 +28,8 @@ public interface Condition<L extends Language<L>, D> {
   /**
    * Whether the match may be applied.
    *
-   * @param graph the graph, which a condition may add nodes to but not merge in
+   * @param graph the graph, which a condition may add nodes to; an analysis hook run by an add
+   *     may merge classes, so roots read before an add are found again after it
    * @param eclass the class the left-hand side matched, an id of the graph, not necessarily
    *     canonical
    * @param subst the match's bindings for the left-hand side's variables

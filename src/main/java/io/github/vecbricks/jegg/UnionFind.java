@@ -32,7 +32,7 @@ public final class UnionFind {
   /**
    * A new set of one element; its id, which is the next unused one.
    *
-   * @return the new id, equal to {@link #size} before the call
+   * @return the new id, equal to {@link #size()} before the call
    */
   public int makeSet() {
     if (size == parent.length) {
@@ -53,7 +53,7 @@ public final class UnionFind {
 
   /**
    * The root of {@code id}'s set, with the path to it compressed. An id this union-find never
-   * made - negative, or past {@link #size} - is refused: an unmade slot below the array's
+   * made - negative, or past {@link #size()} - is refused: an unmade slot below the array's
    * capacity would otherwise read as a member of set 0, silently.
    *
    * @param id an id made by {@link #makeSet}

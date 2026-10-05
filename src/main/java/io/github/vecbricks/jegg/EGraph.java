@@ -142,7 +142,8 @@ public final class EGraph<L extends Language<L>, D> {
    * Reads the hashcons and changes nothing.
    *
    * @param node an e-node whose children are ids this graph issued
-   * @return the root id of the node's class, or empty if the graph does not hold it
+   * @return the root id of the node's class, or empty if the graph holds no such node; a node
+   *     {@link #retainNodes} dropped from its class is still found, with that class
    */
   public OptionalInt lookup(L node) {
     int id = idOf(canonicalize(node));
@@ -226,7 +227,7 @@ public final class EGraph<L extends Language<L>, D> {
    * @param root the root of the client's tree
    * @param bridge how to read a tree's subtrees and build its e-node over their class ids
    * @return the canonical id of the class holding the whole tree, or empty if any subtree is
-   *     missing
+   *     missing; as for {@link #lookup}, a node {@link #retainNodes} dropped still counts
    */
   public <T> OptionalInt lookupTree(T root, TreeBridge<T, L> bridge) {
     int id = walk(root, bridge, new IdentityHashMap<>(), node -> idOf(canonicalize(node)));
@@ -379,9 +380,10 @@ public final class EGraph<L extends Language<L>, D> {
   }
 
   /**
-   * How many times the graph has changed: a class made by {@link #add}, or two roots joined by
-   * {@link #merge}, including the merges a {@link #rebuild} makes. Two readings that agree mean
-   * nothing happened in between; sizes cannot say that, since an add and a merge cancel out.
+   * How many times the graph has changed: a class made by {@link #add}, two roots joined by
+   * {@link #merge}, including the merges a {@link #rebuild} makes, or nodes dropped by
+   * {@link #retainNodes}. Two readings that agree mean nothing happened in between; sizes cannot
+   * say that, since an add and a merge cancel out.
    *
    * @return a count that never decreases
    */

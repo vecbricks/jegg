@@ -17,8 +17,8 @@ package io.github.vecbricks.jegg;
  * immutable, compared by content.
  *
  * @param iterations the most iterations to run; at least one
- * @param nodes the run stops once the graph holds more nodes than this, checked after each
- *     iteration's rebuild
+ * @param nodes the run stops once the graph holds more nodes than this, checked before the first
+ *     iteration, after each rule's matches are applied, and after each iteration's rebuild
  * @param classes the same for classes
  */
 public record RunLimits(int iterations, int nodes, int classes) {

@@ -44,7 +44,9 @@ public interface Scheduler<L extends Language<L>, D> {
    * saturation only if, besides, the iteration added nothing.
    *
    * @param iteration the iteration just run, counted from 1
-   * @return true if the scheduler holds no rule back, so the run may stop; false to run on
+   * @return true if the scheduler holds no rule back, so the run may stop; false to run on. Not a
+   *     pure query: a scheduler that holds rules back changes its bans here, as
+   *     {@link BackoffScheduler} does by shortening each by the shortest
    */
   default boolean canStop(int iteration) {
     return true;

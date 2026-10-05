@@ -100,7 +100,9 @@ public final class Extractor<L extends Language<L>, D> {
    *
    * @param eclass the id of the class, canonical or not
    * @return the class's cheapest node and the cost of the tree rooted there
-   * @throws IllegalStateException if the class has no finite-cost term
+   * @throws IllegalStateException if the class has no finite-cost term, or if the graph changed
+   *     or is dirty since this extractor priced it (a change that keeps the node, class and id
+   *     counts goes unseen)
    */
   public Best<L> best(int eclass) {
     checkUnchanged();
@@ -117,7 +119,9 @@ public final class Extractor<L extends Language<L>, D> {
    *
    * @param eclass the id of the class to extract from, canonical or not
    * @return the term, whose root is the class's best node
-   * @throws IllegalStateException if the class has no finite-cost term
+   * @throws IllegalStateException if the class has no finite-cost term, or if the graph changed
+   *     or is dirty since this extractor priced it (a change that keeps the node, class and id
+   *     counts goes unseen)
    */
   public Extracted<L> extract(int eclass) {
     checkUnchanged();
@@ -242,7 +246,8 @@ public final class Extractor<L extends Language<L>, D> {
    * @param score the cost of a whole candidate selection, lower being better, or null for the
    *     sum of the chosen nodes' own costs
    * @return the selection covering every class the roots reach
-   * @throws IllegalStateException if a root has no finite-cost term
+   * @throws IllegalStateException if a root has no finite-cost term, or if the graph changed or
+   *     is dirty since this extractor priced it
    */
   public Selection<L> extractAll(IntList roots, ToDoubleFunction<Selection<L>> score) {
     checkUnchanged();
