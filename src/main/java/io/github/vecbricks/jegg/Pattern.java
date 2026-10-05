@@ -77,6 +77,17 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
     default Optional<Set<String>> variables() {
       return Optional.empty();
     }
+
+    /**
+     * The class of e-node this head can match, when it is one class (a record per operator, as
+     * jegg's languages are written): a search then starts at the classes holding such a node
+     * rather than at every class. Empty, the default, means any node may match and every class
+     * is looked at. A head that names a class must match no node outside it; jegg's own heads
+     * name theirs.
+     */
+    default Optional<Class<? extends L>> type() {
+      return Optional.empty();
+    }
   }
 
   /** The subterm variables of this pattern, in first-occurrence order. */
@@ -158,10 +169,22 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
    */
   static <L extends Language<L>> Head<L> head(L prototype) {
     Object key = prototype.head();
+    // Equal heads are nodes of one class only when the head is itself a node of the prototype's
+    // class (the default head(), or a key of that class): then a search may start at the classes
+    // holding such a node. A key of another class, a language's cheaper key, could be shared
+    // across node classes, and the head names no type: every class is looked at.
+    @SuppressWarnings("unchecked")
+    Optional<Class<? extends L>> type = key.getClass() == prototype.getClass()
+        ? Optional.of((Class<? extends L>) prototype.getClass()) : Optional.empty();
     return new Head<>() {
       @Override
       public Subst match(L node, Subst subst) {
         return key.equals(node.head()) ? subst : null;
+      }
+
+      @Override
+      public Optional<Class<? extends L>> type() {
+        return type;
       }
 
       @Override
@@ -190,6 +213,11 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
   static <L extends Language<L>, N extends L> Head<L> binding(Class<N> type, String variable,
       Function<N, ?> payloadOf, BiFunction<Object, IntList, L> build) {
     return new Head<>() {
+      @Override
+      public Optional<Class<? extends L>> type() {
+        return Optional.of(type);
+      }
+
       @Override
       public Subst match(L node, Subst subst) {
         if (!type.isInstance(node)) {

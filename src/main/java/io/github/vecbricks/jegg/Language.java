@@ -32,14 +32,19 @@ public interface Language<L extends Language<L>> {
   /** The children, as e-class ids, in the operator's argument order. */
   IntList children();
 
-  /** The same operator and payload over these children. */
+  /**
+   * The same operator and payload over these children: a node of the same class as this one,
+   * which the e-graph's index from node class to classes relies on.
+   */
   L withChildren(IntList children);
 
   /**
    * The operator and payload without the children: what two nodes must share to match up to
    * their arguments. By default the node over no children, which for a record is equal to
    * another's exactly when every component but the children is; a language may override it
-   * with a cheaper key.
+   * with a cheaper key. A pattern head built from a prototype ({@link Pattern#head}) starts its
+   * searches at the classes holding a node of the prototype's class only when the head is such
+   * a node itself, so a cheaper key costs a look at every class and never a match.
    */
   default Object head() {
     return withChildren(IntList.EMPTY);

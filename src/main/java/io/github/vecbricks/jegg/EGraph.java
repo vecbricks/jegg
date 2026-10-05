@@ -73,6 +73,15 @@ public final class EGraph<L extends Language<L>, D> {
   // The classes named by the parent entries this rebuild's repairs processed: the only classes
   // whose node lists can hold a form a merge made stale, re-canonicalised when the rebuild ends.
   private final BitSet staleOwners = new BitSet();
+  // The classes holding a node of each node class (operator), a bit per class id: where a search
+  // for a head that names its node class starts (Pattern.Head.type). Exact: set at add, moved
+  // at merge, cleared by retainNodes when a class's last node of the class goes; checkInvariants
+  // checks it both ways. Insertion-ordered, since iterating it reaches ids.
+  private final Map<Class<?>, BitSet> byNodeClass = new LinkedHashMap<>();
+  // The unions asked for through classesHolding for a type that is not one node class, kept
+  // current on set and recomputed after a clear or a new node class.
+  private final Map<Class<?>, BitSet> unions = new LinkedHashMap<>();
+  private boolean unionsStale;
   private int parentSerial;
   // Parent entries whose class's fact may have grown because a child's fact did (paper
   // section 4.1, egg's analysis_pending): each is re-made and joined into its class's fact.
@@ -138,6 +147,7 @@ public final class EGraph<L extends Language<L>, D> {
     liveClasses++;
     changes++;
     eclass.addNode(canonical);
+    index(canonical, id);
     IntList children = canonical.children();
     // One entry, shared by every child's list, so that a repair through any child re-keys the
     // form all of them and the hashcons hold.
@@ -238,6 +248,71 @@ public final class EGraph<L extends Language<L>, D> {
     return classes.size();
   }
 
+  /** The smallest live class id at or after {@code from}, or -1. */
+  int nextLiveClass(int from) {
+    for (int id = from; id < classes.size(); id++) {
+      if (classes.get(id) != null) {
+        return id;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * The live classes holding a node of {@code type}: the set for that node class, or the union of
+   * the sets for the node classes assignable to it, kept for the next call. Not to be modified,
+   * and read before the graph changes: the sets are live.
+   */
+  BitSet classesHolding(Class<?> type) {
+    BitSet exact = byNodeClass.get(type);
+    if (exact != null) {
+      return exact;
+    }
+    if (unionsStale) {
+      for (Map.Entry<Class<?>, BitSet> e : unions.entrySet()) {
+        e.setValue(unionFor(e.getKey()));
+      }
+      unionsStale = false;
+    }
+    return unions.computeIfAbsent(type, this::unionFor);
+  }
+
+  private BitSet unionFor(Class<?> type) {
+    BitSet union = new BitSet();
+    for (Map.Entry<Class<?>, BitSet> e : byNodeClass.entrySet()) {
+      if (type.isAssignableFrom(e.getKey())) {
+        union.or(e.getValue());
+      }
+    }
+    return union;
+  }
+
+  private void index(L node, int id) {
+    Class<?> type = node.getClass();
+    BitSet holding = byNodeClass.get(type);
+    if (holding == null) {
+      holding = new BitSet();
+      byNodeClass.put(type, holding);
+      unionsStale = true;
+    }
+    holding.set(id);
+    if (!unionsStale) {
+      for (Map.Entry<Class<?>, BitSet> e : unions.entrySet()) {
+        if (e.getKey().isAssignableFrom(type)) {
+          e.getValue().set(id);
+        }
+      }
+    }
+  }
+
+  private void unindex(Class<?> type, int id) {
+    BitSet holding = byNodeClass.get(type);
+    if (holding != null && holding.get(id)) {
+      holding.clear(id);
+      unionsStale = true;
+    }
+  }
+
   /** How many classes are live. */
   public int numClasses() {
     return liveClasses;
@@ -294,6 +369,10 @@ public final class EGraph<L extends Language<L>, D> {
     if (!Objects.equals(joined, gone.data())) {
       analysisPending.addAll(gone.mutableParents());
     }
+    for (L node : gone.mutableNodes()) {
+      index(node, root);
+      unindex(node.getClass(), other);
+    }
     kept.mutableNodes().addAll(gone.mutableNodes());
     kept.setMergedNodes(true);
     kept.mutableParents().addAll(gone.mutableParents());
@@ -338,6 +417,12 @@ public final class EGraph<L extends Language<L>, D> {
       hashcons.remove(node);
       hashcons.remove(canonical);
       pruned.put(canonical, c.id());
+      // The class leaves the index for a node class none of its nodes has any more, so searches
+      // for that operator stop looking at it.
+      Class<?> type = node.getClass();
+      if (nodes.stream().noneMatch(n -> n.getClass() == type)) {
+        unindex(type, c.id());
+      }
     }
     changes++;
     return dropped.size();
@@ -609,6 +694,30 @@ public final class EGraph<L extends Language<L>, D> {
           + " counted");
     }
     checkParentEntries();
+    checkIndex();
+  }
+
+  private void checkIndex() {
+    for (EClass<L, D> eclass : classes()) {
+      for (L node : eclass.nodes()) {
+        BitSet holding = byNodeClass.get(node.getClass());
+        if (holding == null || !holding.get(eclass.id())) {
+          throw new IllegalStateException("class " + eclass.id() + " holds " + node
+              + " but is not indexed under " + node.getClass().getSimpleName());
+        }
+      }
+    }
+    for (Map.Entry<Class<?>, BitSet> e : byNodeClass.entrySet()) {
+      BitSet holding = e.getValue();
+      for (int id = holding.nextSetBit(0); id >= 0; id = holding.nextSetBit(id + 1)) {
+        EClass<L, D> eclass = id < classes.size() ? classes.get(id) : null;
+        if (eclass == null || eclass.nodes().stream().noneMatch(n -> n.getClass() == e.getKey())) {
+          throw new IllegalStateException("class " + id + " is indexed under "
+              + e.getKey().getSimpleName() + " but " + (eclass == null ? "is not live"
+              : "holds no such node"));
+        }
+      }
+    }
   }
 
   private void checkParentEntries() {

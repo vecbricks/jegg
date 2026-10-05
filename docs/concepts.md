@@ -68,9 +68,11 @@ matches any payload and binds it to a **payload variable**, so a rule can match
 `Subst` holds the bindings, subterm variables to class ids and payload variables
 to values.
 
-`Matcher.search(graph, pattern)` finds every match in the whole graph, class by
-class, nodes in insertion order; the order is fixed, which is part of the
-determinism jegg promises. A `Rewrite` is a name, a left-hand pattern, a
+`Matcher.search(graph, pattern)` finds every match in the graph, class by class
+in id order, nodes in insertion order; where the root head names its node class
+(`Pattern.Head.type`, which jegg's own heads do), only the classes holding such
+a node are visited. The order is fixed, which is part of the determinism jegg
+promises. A `Rewrite` is a name, a left-hand pattern, a
 right-hand `Applier` (a pattern to instantiate, or a function of the graph and
 the substitution: `Rewrite.dynamic`) and a `Condition` read at apply time.
 (Paper, section 2.2; the compiled matcher of egg's `machine.rs` is not ported.)

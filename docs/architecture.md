@@ -18,7 +18,7 @@ through them, and where the invariants hold and where they may not.
 | `Analysis` | `make`, `join` (a semilattice join), `modify`; `Analysis.none()`. |
 | `Pattern`, `Pattern.Head` | a pattern tree of nodes and variables; a head matches an operator and payload exactly (`Pattern.of`) or binds the payload to a variable (`Pattern.binding`) and declares what it binds. |
 | `Subst` | the bindings of a match: subterm variables to class ids, payload variables to values; immutable. |
-| `Matcher` | the naive backtracking matcher: `search` over the whole graph (optionally to a limit), `matchIn` one class, `instantiate` a right-hand side. Order fixed: classes by id, nodes by insertion. |
+| `Matcher` | the backtracking matcher: `search` over the graph (optionally to a limit), starting at the classes holding the root head's node class when the head names it (`Pattern.Head.type`, an index `EGraph` keeps per node class), `matchIn` one class in one depth-first walk, `instantiate` a right-hand side. Order fixed: classes by id, nodes by insertion, children depth-first. |
 | `Rewrite`, `Applier`, `Condition` | a named rule: left pattern, right-hand side (a pattern or a function), condition read at apply time; `Rewrite` refuses a right-hand variable the left does not bind. |
 | `Scheduler`, `BackoffScheduler` | which matches are applied each iteration; the backoff bans a rule past its threshold and searches it only one match past it. |
 | `RunLimits`, `StopReason`, `RunReport` | the bounds of a run, why it stopped, what each iteration did. |

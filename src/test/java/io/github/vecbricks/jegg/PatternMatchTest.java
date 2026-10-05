@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class PatternMatchTest {
@@ -278,5 +279,217 @@ class PatternMatchTest {
     Toy.CountingHead limited = new Toy.CountingHead();
     assertEquals(all.subList(0, 3), Matcher.search(g, Pattern.node(limited, X, Y), 3));
     assertEquals(3, limited.asked);
+  }
+
+  /** A head that matches like {@code inner} but names no node class: every class is looked at. */
+  private static Pattern.Head<Toy> untyped(Pattern.Head<Toy> inner) {
+    return new Pattern.Head<>() {
+      @Override
+      public Subst match(Toy node, Subst subst) {
+        return inner.match(node, subst);
+      }
+
+      @Override
+      public Toy build(Subst subst, IntList children) {
+        return inner.build(subst, children);
+      }
+    };
+  }
+
+  @Test
+  void aHeadThatNamesItsNodeClassFindsWhatALookAtEveryClassFinds() {
+    // The index from node class to classes follows merges (a class merged away leaves it, the
+    // kept one gains its operators) and prunes (a class whose last node of an operator is
+    // dropped leaves that operator's set); a search through it must find exactly what a search
+    // through every class finds, in the same order. checkInvariants checks the index both ways.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int c = g.add(new Toy.Var("c"));
+    int ab = g.add(new Toy.Add(IntList.of(a, b)));
+    int bc = g.add(new Toy.Add(IntList.of(b, c)));
+    int ac = g.add(new Toy.Mul(IntList.of(a, c)));
+    int top = g.add(new Toy.Add(IntList.of(ab, c)));
+    g.merge(ab, bc);
+    g.merge(top, g.add(new Toy.Var("d")));
+    g.rebuild();
+    assertEquals(1, g.retainNodes(g.find(top), node -> node instanceof Toy.Var));
+    g.checkInvariants();
+    Pattern.Head<Toy> addHead = Pattern.head(new Toy.Add(IntList.EMPTY));
+    assertEquals(Optional.of(Toy.Add.class), addHead.type());
+    assertTrue(untyped(addHead).type().isEmpty());
+    Pattern<Toy> typed = Pattern.node(addHead, Pattern.var("x"), Pattern.var("y"));
+    Pattern<Toy> everywhere = Pattern.node(untyped(addHead), Pattern.var("x"), Pattern.var("y"));
+    List<Matcher.Match> found = Matcher.search(g, typed);
+    assertEquals(Matcher.search(g, everywhere), found);
+    assertEquals(2, found.size(), found.toString());
+    assertEquals(g.find(ab), found.get(0).eclass(), "the merged class, once");
+    assertTrue(found.stream().noneMatch(m -> m.eclass() == g.find(top)), "pruned: no sum left");
+    assertEquals(List.of(new Matcher.Match(ac, Subst.EMPTY.bind("x", a).bind("y", c))),
+        Matcher.search(g, Pattern.of(new Toy.Mul(IntList.EMPTY), Pattern.var("x"),
+            Pattern.var("y"))));
+    // A binding head over the language's interface: the union of every node class's set.
+    Pattern.Head<Toy> anyBinary = Pattern.binding(Toy.class, "op", node -> node.getClass(),
+        (op, kids) -> op == Toy.Mul.class ? new Toy.Mul(kids) : new Toy.Add(kids));
+    assertEquals(Optional.of(Toy.class), anyBinary.type());
+    Pattern<Toy> binary = Pattern.node(anyBinary, Pattern.var("x"), Pattern.var("y"));
+    assertEquals(Matcher.search(g, Pattern.node(untyped(anyBinary), Pattern.var("x"),
+        Pattern.var("y"))), Matcher.search(g, binary));
+    assertEquals(3, Matcher.search(g, binary).size());
+    // A class of a node type the graph never held: nothing, and nothing thrown.
+    assertEquals(List.of(), Matcher.search(g, Pattern.of(new Toy.Num(0))));
+    // The union for an interface type follows later adds, merges and prunes.
+    int ad = g.add(new Toy.Mul(IntList.of(a, g.find(top))));
+    assertEquals(4, Matcher.search(g, binary).size());
+    g.merge(ad, ac);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(Matcher.search(g, Pattern.node(untyped(anyBinary), Pattern.var("x"),
+        Pattern.var("y"))), Matcher.search(g, binary));
+    assertEquals(4, Matcher.search(g, binary).size());
+  }
+
+  @Test
+  void aPruneThatLeavesANodeOfTheOperatorKeepsTheClassIndexedUnderIt() {
+    // a + b and b + a in one class with a variable: dropping b + a alone keeps the class in the
+    // sums' set, since a + b is still there; dropping both takes it out.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int ab = g.add(new Toy.Add(IntList.of(a, b)));
+    Toy ba = new Toy.Add(IntList.of(b, a));
+    g.merge(ab, g.add(ba));
+    g.merge(ab, g.add(new Toy.Var("e")));
+    g.rebuild();
+    Pattern<Toy> sum = Pattern.of(new Toy.Add(IntList.EMPTY), Pattern.var("x"), Pattern.var("y"));
+    assertEquals(2, Matcher.search(g, sum).size());
+    assertEquals(1, g.retainNodes(ab, node -> !node.equals(ba)));
+    g.checkInvariants();
+    assertEquals(List.of(new Matcher.Match(ab, Subst.EMPTY.bind("x", a).bind("y", b))),
+        Matcher.search(g, sum));
+    assertEquals(1, g.retainNodes(ab, node -> node instanceof Toy.Var));
+    g.checkInvariants();
+    assertEquals(List.of(), Matcher.search(g, sum));
+  }
+
+  @Test
+  void aPrototypeWhoseHeadIsACheaperKeyNamesNoTypeAndStillMatches() {
+    // A language whose head() is a string shared by two node classes: the head built from a
+    // prototype must not start at the prototype's class alone, or the other class's nodes would
+    // be missed. It names no type, and every class is looked at.
+    record Plus(IntList children) implements Language<Plus> {
+      @Override
+      public Plus withChildren(IntList children) {
+        return new Plus(children);
+      }
+
+      @Override
+      public Object head() {
+        return "+";
+      }
+    }
+    Pattern.Head<Plus> plus = Pattern.head(new Plus(IntList.EMPTY));
+    assertTrue(plus.type().isEmpty());
+    assertEquals(Optional.of(Toy.Add.class), Pattern.head(new Toy.Add(IntList.EMPTY)).type());
+    EGraph<Plus, Void> g = EGraph.withoutAnalysis();
+    int leaf = g.add(new Plus(IntList.EMPTY));
+    int sum = g.add(new Plus(IntList.of(leaf, leaf)));
+    assertEquals(List.of(new Matcher.Match(sum,
+        Subst.EMPTY.bind("x", leaf))), Matcher.search(g, Pattern.node(plus, Pattern.var("x"),
+            Pattern.var("x"))));
+  }
+
+  @Test
+  void aSubstitutionReachedTwiceWithinOneNodesWalkIsOneMatch() {
+    // A child head that binds the payload variable p for Div(true, ..) and binds nothing for
+    // Div(false, ..), over a class holding both: the first child yields {p, x, y} and {x, y},
+    // the second child over the same class extends both to {p, x, y}, among others, so one
+    // node's walk reaches {p, x, y} twice. It is one match.
+    Pattern.Head<Toy> some = new Pattern.Head<>() {
+      @Override
+      public Subst match(Toy node, Subst subst) {
+        if (!(node instanceof Toy.Div d)) {
+          return null;
+        }
+        if (!d.checked()) {
+          return subst;
+        }
+        return subst.hasPayload("p") ? subst : subst.bindPayload("p", true);
+      }
+
+      @Override
+      public Toy build(Subst subst, IntList children) {
+        return new Toy.Div(subst.hasPayload("p"), children);
+      }
+    };
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int c = g.add(new Toy.Div(true, IntList.of(a, b)));
+    g.merge(c, g.add(new Toy.Div(false, IntList.of(a, b))));
+    g.rebuild();
+    int outer = g.add(new Toy.Add(IntList.of(c, c)));
+    Pattern<Toy> both = Pattern.of(new Toy.Add(IntList.EMPTY),
+        Pattern.node(some, Pattern.var("x"), Pattern.var("y")),
+        Pattern.node(some, Pattern.var("x"), Pattern.var("y")));
+    Subst xy = Subst.EMPTY.bind("x", a).bind("y", b);
+    assertEquals(List.of(new Matcher.Match(outer, xy.bindPayload("p", true)),
+        new Matcher.Match(outer, xy)), Matcher.search(g, both));
+    assertEquals(1, Matcher.search(g, both, 1).size());
+  }
+
+  @Test
+  void aVariableBoundAlreadyMatchesItsClassAloneWhenAskedOfOneClass() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    Subst bound = Subst.EMPTY.bind("x", a);
+    assertEquals(List.of(bound), Matcher.matchIn(g, Pattern.var("x"), a, bound));
+    assertEquals(List.of(), Matcher.matchIn(g, Pattern.var("x"), b, bound));
+    assertEquals(List.of(Subst.EMPTY.bind("y", b)),
+        Matcher.matchIn(g, Pattern.var("y"), b, Subst.EMPTY));
+  }
+
+  @Test
+  void twoNodesOfAClassThatYieldOneSubstitutionAreOneMatchAndCountOnceForTheLimit() {
+    // A head that reads no payload over Div(true, a, b) and Div(false, a, b) in one class: one
+    // substitution, not two, and the limited search counts it once, so a limit of one stops at
+    // the first class with a result and a limit of two reaches the second.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int d = g.add(new Toy.Div(true, IntList.of(a, b)));
+    g.merge(d, g.add(new Toy.Div(false, IntList.of(a, b))));
+    g.rebuild();
+    int e = g.add(new Toy.Div(true, IntList.of(b, a)));
+    assertEquals(2, g.classOf(d).nodes().size());
+    Pattern.Head<Toy> anyDiv = new Pattern.Head<>() {
+      @Override
+      public Subst match(Toy node, Subst subst) {
+        return node instanceof Toy.Div ? subst : null;
+      }
+
+      @Override
+      public Toy build(Subst subst, IntList children) {
+        return new Toy.Div(true, children);
+      }
+
+      @Override
+      public Optional<Class<? extends Toy>> type() {
+        return Optional.of(Toy.Div.class);
+      }
+    };
+    Pattern<Toy> div = Pattern.node(anyDiv, Pattern.var("x"), Pattern.var("y"));
+    List<Matcher.Match> all = Matcher.search(g, div);
+    assertEquals(List.of(new Matcher.Match(d, Subst.EMPTY.bind("x", a).bind("y", b)),
+        new Matcher.Match(e, Subst.EMPTY.bind("x", b).bind("y", a))), all);
+    assertEquals(all.subList(0, 1), Matcher.search(g, div, 1));
+    assertEquals(all, Matcher.search(g, div, 2));
+    // Nested under another node, the duplicate is one substitution there too.
+    int outer = g.add(new Toy.Add(IntList.of(d, e)));
+    Pattern<Toy> nested = Pattern.of(new Toy.Add(IntList.EMPTY), div,
+        Pattern.node(anyDiv, Pattern.var("p"), Pattern.var("q")));
+    assertEquals(List.of(new Matcher.Match(outer, Subst.EMPTY.bind("x", a).bind("y", b)
+        .bind("p", b).bind("q", a))), Matcher.search(g, nested));
   }
 }
