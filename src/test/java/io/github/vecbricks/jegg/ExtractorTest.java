@@ -51,6 +51,54 @@ class ExtractorTest {
     assertEquals(2.0, new Extractor<>(g, CostFunction.astDepth()).best(ab).cost());
   }
 
+  /**
+   * One class holding a smaller but deeper term, a chain of three unary sums over {@code a}
+   * (four nodes, depth four), and a larger but shallower one, a sum of {@code a}, {@code b},
+   * {@code c} and {@code d} (five nodes, depth two): size and depth disagree outright.
+   */
+  private static int chainOrWide(EGraph<Toy, Void> g, int[] chainTop) {
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int c = g.add(new Toy.Var("c"));
+    int d = g.add(new Toy.Var("d"));
+    int inner = g.add(new Toy.Add(IntList.of(a)));
+    int middle = g.add(new Toy.Add(IntList.of(inner)));
+    int chain = g.add(new Toy.Add(IntList.of(middle)));
+    int wide = g.add(new Toy.Add(IntList.of(a, b, c, d)));
+    g.merge(chain, wide);
+    g.rebuild();
+    chainTop[0] = middle;
+    return g.find(chain);
+  }
+
+  @Test
+  void astDepthPrefersTheShallowerTermWhereAstSizePrefersTheSmallerOne() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int[] middle = new int[1];
+    int root = chainOrWide(g, middle);
+    Extractor.Best<Toy> bySize = new Extractor<>(g, CostFunction.<Toy>astSize()).best(root);
+    assertEquals(new Toy.Add(IntList.of(g.find(middle[0]))), bySize.node());
+    assertEquals(4.0, bySize.cost());
+    Extractor.Best<Toy> byDepth = new Extractor<>(g, CostFunction.<Toy>astDepth()).best(root);
+    assertEquals(4, byDepth.node().children().size());
+    assertEquals(2.0, byDepth.cost());
+  }
+
+  @Test
+  void extractAllUnderAstDepthSumsNodeCostsNotDepths() {
+    // extractAll's cost is a sum over the selected classes, one per class under astDepth, so
+    // it takes the chain (four classes) where best takes the wide sum (depth two, five classes).
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int[] middle = new int[1];
+    int root = chainOrWide(g, middle);
+    Extractor<Toy, Void> ex = new Extractor<>(g, CostFunction.<Toy>astDepth());
+    assertEquals(4, ex.best(root).node().children().size(), "best is the wide sum");
+    Selection<Toy> all = ex.extractAll(IntList.of(root));
+    assertEquals(1, all.node(root).children().size(), "the descent takes the chain");
+    assertEquals(4, all.size());
+    assertEquals(4.0, all.cost());
+  }
+
   @Test
   void theCheapestTermMatchesBruteForceEnumerationOnSmallGraphs() {
     // Random small graphs: a few leaves, random binary nodes over them, random merges, then
