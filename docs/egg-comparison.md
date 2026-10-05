@@ -109,7 +109,7 @@ The shape of the port in four lines:
 | `ConditionEqual` | `Condition.equal(a, b)` | ported, with both patterns instantiated before either root is read |
 | (none) | `Condition.always()`, `Condition.and(other)` | added |
 | `apply_matches`, `apply_one`, `vars` | `Applier.apply`; `Pattern.subtermVariables()` | one method |
-| `multi_rewrite!` | out by design | multi-patterns: `PLAN.md` 3.1; #34 asks what of egg's `datalog` they would still allow |
+| `multi_rewrite!` | out by design | multi-patterns: `PLAN.md` 3.1; #34 asks what of egg's `datalog` they would still allow; `prop`'s one, `lem_imply`, is a rule with a condition (`PropRulesTest.LEM_IMPLY`), which builds egg's graph but not egg's stop: egg counts every match of a multi-pattern as applied and never reports saturation |
 
 ## `pattern`, `subst`, `machine`, `multipattern`
 
@@ -177,7 +177,7 @@ classes)` records, read by running egg with `RUST_LOG=egg=info`; see
 | egg's test file | jegg | state |
 |---|---|---|
 | `simple.rs` | `SimpleRulesTest` | ported, counts pinned |
-| `prop.rs` | `PropRulesTest` | ported, counts pinned |
+| `prop.rs` | `PropRulesTest` | ported in full (`Bool`, `ConstantFold`, egg's rules and three tests), counts pinned; `prove_chain` ends at egg's 31 nodes and 12 classes in 6 iterations where egg runs 20 (the multi-pattern quirk above) |
 | `lambda.rs` | `LambdaTest` | ported, counts pinned |
 | `math.rs` | `MathTest` | ported, counts pinned |
 | `datalog.rs` | not ported yet | needs multi-patterns: #34 |
