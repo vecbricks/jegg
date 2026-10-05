@@ -5,7 +5,9 @@
 #   dev/egg_counts.sh math math_powers           Stop reason, Iterations, Egraph size
 #   dev/egg_counts.sh lambda lambda_if --log     with egg's per-iteration sizes and bans
 # Needs cargo (https://rustup.rs). egg's "nodes" is jegg's numNodes(); its "memo" is not
-# comparable.
+# comparable. egg's prop tests print no report of their own, so for the suite prop the script
+# runs a copy of tests/prop.rs (tests/prop_report.rs, untracked in the cache) that prints the
+# runner's report after each run and, for const_fold, the size of its graph.
 set -euo pipefail
 EGG_COMMIT=73975c9
 cache="${JEGG_EGG_CACHE:-$HOME/.cache/jegg/egg}"
@@ -19,6 +21,12 @@ fi
 git -C "$cache" fetch -q origin "$EGG_COMMIT" 2>/dev/null || git -C "$cache" fetch -q origin
 git -C "$cache" checkout -q "$EGG_COMMIT"
 cd "$cache"
+if [ "$suite" = "prop" ]; then
+  sed -e 's/let egraph = runner.run(rewrites).egraph;/let runner = runner.run(rewrites); runner.print_report(); let egraph = runner.egraph;/' \
+      -e 's/^    eg.rebuild();$/    eg.rebuild(); println!("Egraph size: {} nodes, {} classes", eg.total_number_of_nodes(), eg.number_of_classes());/' \
+      tests/prop.rs > tests/prop_report.rs
+  suite=prop_report
+fi
 if [ "$log" = "--log" ]; then
   RUST_LOG=egg=info cargo test -q --release --test "$suite" -- --exact "$test" --nocapture 2>&1 \
     | grep -E "Size: n=|Banning|fast-forwarded|Stop reason|Iterations:|Egraph size" \

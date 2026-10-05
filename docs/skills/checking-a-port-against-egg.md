@@ -37,3 +37,13 @@ real divergences were found this way and nowhere else:
    mirror that (`math_associate_adds`).
 5. egg's defaults include a 5-second time limit jegg does not have; if egg's report says
    `TimeLimit`, the counts are not reproducible and the case says so instead of pinning them.
+6. egg's prop tests print no report; `dev/egg_counts.sh prop <test>` runs a copy of
+   `tests/prop.rs` that does (`print_report` after each run, and the graph's size for
+   `const_fold`, which has no runner).
+7. A graph that matches egg's iteration by iteration can still stop at a different iteration.
+   egg's multi-pattern `apply_matches` returns an id per substitution whether or not a union
+   changed anything, so a run with a matching multi-pattern rule is never `Saturated`: egg's
+   `prove_chain` runs 20 iterations over a graph that stops changing in the fifth, where the
+   conditional rule that stands in for its `lem_imply` lets jegg saturate in 6. When the nodes
+   and classes agree after every iteration and only the stop differs, read egg's source for
+   what it counts as applied before calling it a divergence (#64).

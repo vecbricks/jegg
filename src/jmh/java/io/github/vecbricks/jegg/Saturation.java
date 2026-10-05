@@ -95,8 +95,9 @@ final class Saturation {
     Map<String, Workload> out = new LinkedHashMap<>();
     for (PropRulesTest.Case c : PropRulesTest.CASES) {
       out.put(c.name(), (mode, deadline) -> {
-        EGraph<PropRulesTest.Prop, Void> g = EGraph.withoutAnalysis();
-        int root = g.addTree(Term.parse(c.start()), PropRulesTest.BRIDGE);
+        PropRulesTest.Prepared prepared = PropRulesTest.prepare(c);
+        EGraph<PropRulesTest.Prop, Boolean> g = prepared.graph();
+        int root = prepared.root();
         List<Term> goals = c.goals().stream().map(Term::parse).toList();
         // prop's tests check their goals after the run, not during it, so the run goes to
         // saturation or a limit, as theirs do.
