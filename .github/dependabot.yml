@@ -1,0 +1,18 @@
+# One update PR a week at most per ecosystem: the Maven plugins and dependencies together, the
+# Actions together. Weekly, grouped, so a reviewer sees two PRs at the most.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      maven:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
