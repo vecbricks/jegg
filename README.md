@@ -75,6 +75,8 @@ Spark dependency and nothing in it is specific to Varka.
   `Scheduler`, `Extractor`, `Selection`, `CostFunction`.
 - [`PLAN.md`](PLAN.md): where the library came from, the design, egg's
   components mapped to their Java forms, and the outcome of the measurement.
+- [`docs/skills/`](docs/skills/README.md): what this repository learned the
+  hard way, one page per lesson, for whoever touches that area next.
 
 ## Measured
 
