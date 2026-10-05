@@ -73,6 +73,10 @@ public final class EGraph<L extends Language<L>, D> {
   // The classes named by the parent entries this rebuild's repairs processed: the only classes
   // whose node lists can hold a form a merge made stale, re-canonicalised when the rebuild ends.
   private final BitSet staleOwners = new BitSet();
+  // The classes holding a node of each node class (operator), a bit per class id: where a search
+  // for a head that names its node class starts (Pattern.Head.type). A bit goes stale when the
+  // class is merged away or its nodes pruned; that costs a search one look and nothing else.
+  private final Map<Class<?>, BitSet> byNodeClass = new HashMap<>();
   private int parentSerial;
   // Parent entries whose class's fact may have grown because a child's fact did (paper
   // section 4.1, egg's analysis_pending): each is re-made and joined into its class's fact.
@@ -138,6 +142,7 @@ public final class EGraph<L extends Language<L>, D> {
     liveClasses++;
     changes++;
     eclass.addNode(canonical);
+    byNodeClass.computeIfAbsent(canonical.getClass(), k -> new BitSet()).set(id);
     IntList children = canonical.children();
     // One entry, shared by every child's list, so that a repair through any child re-keys the
     // form all of them and the hashcons hold.
@@ -238,6 +243,40 @@ public final class EGraph<L extends Language<L>, D> {
     return classes.size();
   }
 
+  /** Whether a class is rooted at this id now. */
+  boolean isLive(int id) {
+    return id < classes.size() && classes.get(id) != null;
+  }
+
+  /** The smallest live class id at or after {@code from}, or -1. */
+  int nextLiveClass(int from) {
+    for (int id = from; id < classes.size(); id++) {
+      if (classes.get(id) != null) {
+        return id;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * The classes that hold, or held, a node of {@code type}: the set for that node class, or the
+   * union of the sets for the node classes assignable to it. A bit may name a class merged away
+   * or pruned since; the caller checks. Not to be modified; the set for one node class is live.
+   */
+  BitSet classesHolding(Class<?> type) {
+    BitSet exact = byNodeClass.get(type);
+    if (exact != null) {
+      return exact;
+    }
+    BitSet union = new BitSet();
+    for (Map.Entry<Class<?>, BitSet> e : byNodeClass.entrySet()) {
+      if (type.isAssignableFrom(e.getKey())) {
+        union.or(e.getValue());
+      }
+    }
+    return union;
+  }
+
   /** How many classes are live. */
   public int numClasses() {
     return liveClasses;
@@ -293,6 +332,11 @@ public final class EGraph<L extends Language<L>, D> {
     }
     if (!Objects.equals(joined, gone.data())) {
       analysisPending.addAll(gone.mutableParents());
+    }
+    for (L node : gone.mutableNodes()) {
+      BitSet holding = byNodeClass.get(node.getClass());
+      holding.set(root);
+      holding.clear(other);
     }
     kept.mutableNodes().addAll(gone.mutableNodes());
     kept.setMergedNodes(true);

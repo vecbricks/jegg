@@ -77,6 +77,17 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
     default Optional<Set<String>> variables() {
       return Optional.empty();
     }
+
+    /**
+     * The class of e-node this head can match, when it is one class (a record per operator, as
+     * jegg's languages are written): a search then starts at the classes holding such a node
+     * rather than at every class. Empty, the default, means any node may match and every class
+     * is looked at. A head that names a class must match no node outside it; jegg's own heads
+     * name theirs.
+     */
+    default Optional<Class<? extends L>> type() {
+      return Optional.empty();
+    }
   }
 
   /** The subterm variables of this pattern, in first-occurrence order. */
@@ -158,10 +169,17 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
    */
   static <L extends Language<L>> Head<L> head(L prototype) {
     Object key = prototype.head();
+    @SuppressWarnings("unchecked")
+    Class<? extends L> type = (Class<? extends L>) prototype.getClass();
     return new Head<>() {
       @Override
       public Subst match(L node, Subst subst) {
         return key.equals(node.head()) ? subst : null;
+      }
+
+      @Override
+      public Optional<Class<? extends L>> type() {
+        return Optional.of(type);
       }
 
       @Override
@@ -190,6 +208,11 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
   static <L extends Language<L>, N extends L> Head<L> binding(Class<N> type, String variable,
       Function<N, ?> payloadOf, BiFunction<Object, IntList, L> build) {
     return new Head<>() {
+      @Override
+      public Optional<Class<? extends L>> type() {
+        return Optional.of(type);
+      }
+
       @Override
       public Subst match(L node, Subst subst) {
         if (!type.isInstance(node)) {

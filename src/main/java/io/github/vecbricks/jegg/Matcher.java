@@ -10,7 +10,8 @@
 package io.github.vecbricks.jegg;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.BitSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -21,8 +22,10 @@ import java.util.Set;
  * enough at the graph sizes the plan targets (its prediction 5); egg's compiled machine is the
  * replacement if a measurement asks for it.
  *
- * <p>Order is fixed: classes in id order, a class's nodes in insertion order, so the list of
- * matches is a function of the graph.
+ * <p>Order is fixed: classes in id order, a class's nodes in insertion order, a node's children
+ * depth-first, so the list of matches is a function of the graph. A search starts at the classes
+ * holding a node of the root head's class where the head names it, and allocates per match, not
+ * per class visited.
  */
 public final class Matcher {
 
@@ -48,6 +51,9 @@ public final class Matcher {
    * limit is reached: egg's {@code search_with_limit}, which lets a scheduler find out that a
    * rule has more matches than it will apply without paying for all of them. The limit must be
    * positive.
+   *
+   * <p>A root head that names its node class ({@link Pattern.Head#type}) is tried only at the
+   * classes holding such a node; any other root is tried at every class.
    */
   public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
       Pattern<L> pattern, int limit) {
@@ -55,16 +61,33 @@ public final class Matcher {
       throw new IllegalArgumentException("the limit must be positive, not " + limit);
     }
     List<Match> matches = new ArrayList<>();
-    for (EClass<L, D> eclass : graph.classes()) {
-      if (matches.size() >= limit) {
-        break;
+    List<Subst> found = new ArrayList<>();
+    Class<?> type = pattern instanceof Pattern.Node<L> node
+        ? node.head().type().orElse(null) : null;
+    if (type != null) {
+      BitSet classes = graph.classesHolding(type);
+      for (int id = classes.nextSetBit(0); id >= 0 && matches.size() < limit;
+          id = classes.nextSetBit(id + 1)) {
+        if (graph.isLive(id)) {
+          collect(graph, pattern, id, limit, matches, found);
+        }
       }
-      for (Subst subst : matchIn(graph, pattern, eclass.id(), Subst.EMPTY,
-          limit - matches.size())) {
-        matches.add(new Match(eclass.id(), subst));
+    } else {
+      for (int id = graph.nextLiveClass(0); id >= 0 && matches.size() < limit;
+          id = graph.nextLiveClass(id + 1)) {
+        collect(graph, pattern, id, limit, matches, found);
       }
     }
     return matches;
+  }
+
+  private static <L extends Language<L>, D> void collect(EGraph<L, D> graph, Pattern<L> pattern,
+      int id, int limit, List<Match> matches, List<Subst> found) {
+    found.clear();
+    matchIn(graph, pattern, id, Subst.EMPTY, limit - matches.size(), found);
+    for (Subst subst : found) {
+      matches.add(new Match(id, subst));
+    }
   }
 
   /**
@@ -73,33 +96,39 @@ public final class Matcher {
    */
   public static <L extends Language<L>, D> List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
-    return matchIn(graph, pattern, id, subst, Integer.MAX_VALUE);
+    List<Subst> out = new ArrayList<>();
+    matchIn(graph, pattern, id, subst, Integer.MAX_VALUE, out);
+    return out;
   }
 
   /**
-   * The first {@code limit} substitutions of {@link #matchIn(EGraph, Pattern, int, Subst)}, in
-   * its order, the class's nodes left unvisited once the limit is reached. The cut is made
-   * between a node's substitutions and the next node's: a node's own are all computed, since a
-   * cut inside the walk of its children could lose some of them to deduplication and leave the
-   * prefix short.
+   * Appends to {@code out} the first {@code limit} substitutions of
+   * {@link #matchIn(EGraph, Pattern, int, Subst)}, in its order, the class's nodes left
+   * unvisited once the limit is reached. The cut is made between a node's substitutions and the
+   * next node's: a node's own are all computed, since a cut inside the walk of its children
+   * could lose some of them to deduplication and leave the prefix short. Two nodes of the class
+   * can yield one substitution (a head that reads no payload over two nodes differing in
+   * theirs), so the class's results are deduplicated, keeping the first; the set that does it
+   * is made only once a second node yields anything.
    */
-  private static <L extends Language<L>, D> List<Subst> matchIn(EGraph<L, D> graph,
-      Pattern<L> pattern, int id, Subst subst, int limit) {
+  private static <L extends Language<L>, D> void matchIn(EGraph<L, D> graph,
+      Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out) {
     int root = graph.find(id);
     switch (pattern) {
       case Pattern.Var<L>(var name) -> {
         var bound = subst.id(name);
-        if (bound.isPresent()) {
-          return graph.find(bound.getAsInt()) == root ? List.of(subst) : List.of();
+        if (bound.isEmpty()) {
+          out.add(subst.bind(name, root));
+        } else if (graph.find(bound.getAsInt()) == root) {
+          out.add(subst);
         }
-        return List.of(subst.bind(name, root));
       }
       case Pattern.Node<L>(var head, var children) -> {
-        Set<Subst> out = new LinkedHashSet<>();
-        for (L node : graph.classOf(root).nodes()) {
-          if (out.size() >= limit) {
-            break;
-          }
+        int start = out.size();
+        Set<Subst> seen = null;
+        List<L> nodes = graph.classOf(root).mutableNodes();
+        for (int i = 0; i < nodes.size() && out.size() - start < limit; i++) {
+          L node = nodes.get(i);
           if (node.children().size() != children.size()) {
             continue;
           }
@@ -107,18 +136,57 @@ public final class Matcher {
           if (headBound == null) {
             continue;
           }
-          List<Subst> partial = List.of(headBound);
-          for (int i = 0; i < children.size() && !partial.isEmpty(); i++) {
-            List<Subst> next = new ArrayList<>();
-            for (Subst s : partial) {
-              next.addAll(matchIn(graph, children.get(i), node.children().get(i), s));
+          int before = out.size();
+          matchChildren(graph, children, 0, node, headBound, out);
+          if (out.size() > before && before > start) {
+            if (seen == null) {
+              seen = new HashSet<>(out.subList(start, before));
             }
-            partial = next;
+            int kept = before;
+            for (int j = before; j < out.size(); j++) {
+              Subst s = out.get(j);
+              if (seen.add(s)) {
+                out.set(kept++, s);
+              }
+            }
+            out.subList(kept, out.size()).clear();
           }
-          out.addAll(partial);
         }
-        List<Subst> list = new ArrayList<>(out);
-        return list.size() > limit ? list.subList(0, limit) : list;
+        if (out.size() - start > limit) {
+          out.subList(start + limit, out.size()).clear();
+        }
+      }
+    }
+  }
+
+  /**
+   * Matches {@code node}'s children from the {@code i}th on against the child patterns under
+   * {@code subst}, appending each complete substitution to {@code out}: a variable child binds
+   * or agrees in place, a node child's substitutions each continue to the next child.
+   */
+  private static <L extends Language<L>, D> void matchChildren(EGraph<L, D> graph,
+      List<Pattern<L>> children, int i, L node, Subst subst, List<Subst> out) {
+    if (i == children.size()) {
+      out.add(subst);
+      return;
+    }
+    int child = node.children().get(i);
+    switch (children.get(i)) {
+      case Pattern.Var<L>(var name) -> {
+        var bound = subst.id(name);
+        int root = graph.find(child);
+        if (bound.isEmpty()) {
+          matchChildren(graph, children, i + 1, node, subst.bind(name, root), out);
+        } else if (graph.find(bound.getAsInt()) == root) {
+          matchChildren(graph, children, i + 1, node, subst, out);
+        }
+      }
+      case Pattern.Node<L> nested -> {
+        List<Subst> partial = new ArrayList<>();
+        matchIn(graph, nested, child, subst, Integer.MAX_VALUE, partial);
+        for (Subst s : partial) {
+          matchChildren(graph, children, i + 1, node, s, out);
+        }
       }
     }
   }

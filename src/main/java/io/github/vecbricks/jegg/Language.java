@@ -39,7 +39,9 @@ public interface Language<L extends Language<L>> {
    * The operator and payload without the children: what two nodes must share to match up to
    * their arguments. By default the node over no children, which for a record is equal to
    * another's exactly when every component but the children is; a language may override it
-   * with a cheaper key.
+   * with a cheaper key, as long as two nodes of different classes never have equal heads: the
+   * matcher starts a search at the classes holding a node of the pattern head's class
+   * ({@link Pattern.Head#type}), and a head shared across classes would hide matches from it.
    */
   default Object head() {
     return withChildren(IntList.EMPTY);
