@@ -55,6 +55,12 @@
     <maven.surefire.version>3.2.5</maven.surefire.version>
     <!-- JUnit tags to skip, e.g. -Dsurefire.excludedGroups=slow; CI skips none. -->
     <surefire.excludedGroups></surefire.excludedGroups>
+    <!-- The coverage gate over src/main: the lowest line and branch ratios `verify` accepts.
+         A little under the measured numbers (97.7% and 93.4%), so one uncovered branch in a
+         small class does not fail a change, and an untested feature does. A change that moves
+         them says so in its description (CONTRIBUTING.md). -->
+    <coverage.minimum.line>0.97</coverage.minimum.line>
+    <coverage.minimum.branch>0.92</coverage.minimum.branch>
   </properties>
 
   <dependencies>
@@ -155,6 +161,32 @@
               <goal>report</goal>
             </goals>
           </execution>
+          <execution>
+            <id>coverage-gate</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <rule>
+                  <element>BUNDLE</element>
+                  <limits>
+                    <limit>
+                      <counter>LINE</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>${coverage.minimum.line}</minimum>
+                    </limit>
+                    <limit>
+                      <counter>BRANCH</counter>
+                      <value>COVEREDRATIO</value>
+                      <minimum>${coverage.minimum.branch}</minimum>
+                    </limit>
+                  </limits>
+                </rule>
+              </rules>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>
@@ -175,6 +207,35 @@
                 <argument>${project.build.directory}/site/jacoco/jacoco.csv</argument>
               </arguments>
             </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- The Javadoc of the public surface, checked on every verify under doclint with every
+           warning an error, so a broken {@link} fails the change and not the Pages deploy
+           (javadoc.yml runs the same configuration). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.10.1</version>
+        <configuration>
+          <!-- Everything but "missing": the 296 absent @param, @return and comments on main are a
+               follow-up (#57); syntax, HTML, references and accessibility fail now. -->
+          <doclint>all,-missing</doclint>
+          <failOnWarnings>true</failOnWarnings>
+          <failOnError>true</failOnError>
+          <!-- javadoc stops reporting at 100 warnings; a fix should see them all. -->
+          <additionalOptions>
+            <additionalOption>-Xmaxwarns</additionalOption>
+            <additionalOption>10000</additionalOption>
+          </additionalOptions>
+        </configuration>
+        <executions>
+          <execution>
+            <id>javadoc-check</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>javadoc</goal>
+            </goals>
           </execution>
         </executions>
       </plugin>
