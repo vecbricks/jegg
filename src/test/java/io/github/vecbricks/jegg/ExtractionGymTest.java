@@ -21,15 +21,21 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link Extractor#extractAll} on extraction-gym's small graphs (see
+ * {@link Extractor#extractAll} on extraction-gym's graphs of up to 300 nodes (see
  * {@code src/test/resources/extraction-gym/README.md}): against the greedy start it begins from,
  * which it must never make worse, and against the exact optimum by branch and bound where that
  * finishes, which it must never beat and should mostly meet. Issue #12's prediction 3: at
- * least 80% of the graphs the oracle finishes, every miss named.
+ * least 80% of the graphs the oracle finishes, every miss named. The graphs past 150 nodes have a
+ * longer oracle deadline and are counted on their own: where a heuristic starts to miss.
  */
 class ExtractionGymTest {
 
   private static final Path DIR = Path.of("src/test/resources/extraction-gym");
+  /** The graphs past this many nodes are the larger ones, with a deadline of their own. */
+  private static final int LARGE = 150;
+  private static final long SMALL_DEADLINE_SECONDS = 3;
+  /** The oracle's deadline per larger graph; {@code -Dgym.oracle.seconds=N} raises it. */
+  private static final long LARGE_DEADLINE_SECONDS = Long.getLong("gym.oracle.seconds", 10);
 
   @Test
   void theDescentMeetsTheOracleOnMostGymGraphsAndNeverWorsensTheStart() throws IOException {
@@ -38,6 +44,10 @@ class ExtractionGymTest {
     int finished = 0;
     int met = 0;
     int cyclic = 0;
+    int largeGraphs = 0;
+    int largeFinished = 0;
+    int largeMet = 0;
+    List<String> largeTimedOut = new ArrayList<>();
     List<Path> files;
     try (Stream<Path> list = Files.list(DIR)) {
       files = list.filter(p -> p.toString().endsWith(".json")).sorted().toList();
@@ -57,14 +67,21 @@ class ExtractionGymTest {
           + sel.cost() + " from " + start);
       sel.terms();
       OptionalDouble optimum = ExactExtraction.optimum(gym.graph, GymGraph.COST, gym.roots,
-          System.nanoTime() + TimeUnit.SECONDS.toNanos(3));
+          System.nanoTime() + TimeUnit.SECONDS.toNanos(
+              gym.gymNodes > LARGE ? LARGE_DEADLINE_SECONDS : SMALL_DEADLINE_SECONDS));
+      boolean large = gym.gymNodes > LARGE;
+      if (large) {
+        largeGraphs++;
+      }
       String verdict;
       if (optimum.isPresent()) {
         finished++;
+        largeFinished += large ? 1 : 0;
         assertTrue(sel.cost() >= optimum.getAsDouble() - 1e-9, gym.name
             + ": the descent beat the oracle, " + sel.cost() + " under " + optimum.getAsDouble());
         if (sel.cost() <= optimum.getAsDouble() + 1e-9) {
           met++;
+          largeMet += large ? 1 : 0;
           verdict = "optimal";
         } else {
           verdict = String.format("MISS by %.1f%%",
@@ -73,6 +90,9 @@ class ExtractionGymTest {
         }
       } else {
         verdict = "oracle timed out";
+        if (large) {
+          largeTimedOut.add(gym.name);
+        }
       }
       rows.add(String.format("%-70s %4d nodes %4d classes %2d roots  start %9.1f  descent %9.1f"
           + "  optimum %9s  %s", gym.name, gym.gymNodes, gym.gymClasses, gym.roots.size(), start,
@@ -82,6 +102,14 @@ class ExtractionGymTest {
     rows.forEach(System.out::println);
     System.out.printf("GYM %d graphs, %d cyclic skipped, oracle finished %d, met %d, misses %s%n",
         files.size(), cyclic, finished, met, misses);
+    System.out.printf("GYM past %d nodes: %d graphs, oracle finished %d (deadline %d s), met %d,"
+        + " timed out %s%n", LARGE, largeGraphs, largeFinished, LARGE_DEADLINE_SECONDS, largeMet,
+        largeTimedOut);
+    assertTrue(largeGraphs >= 15, "larger graphs present: " + largeGraphs);
+    assertTrue(largeFinished * 2 >= largeGraphs, "the oracle finished on " + largeFinished
+        + " of the " + largeGraphs + " larger graphs");
+    assertTrue(largeMet * 100 >= largeFinished * 80, "met the oracle on " + largeMet + " of "
+        + largeFinished + " larger graphs: " + misses);
     assertTrue(finished >= 20, "the oracle finished on " + finished);
     assertTrue(met * 100 >= finished * 80, "met the oracle on " + met + " of " + finished
         + ": " + misses);
