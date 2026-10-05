@@ -5,7 +5,7 @@
 # file.
 #   dev/bench.sh --idle projection            one benchmark: rebuild | projection | determinism
 #   dev/bench.sh --idle projection,determinism  several in one process (one load check)
-#   dev/bench.sh --idle all --quick           the quick wiring check; its numbers are not for committing
+#   dev/bench.sh --idle all --quick           the quick wiring check; numbers not for committing
 set -euo pipefail
 cd "$(dirname "$0")/.."
 idle=0; quick=false; which=""
