@@ -26,8 +26,50 @@ import java.util.List;
  */
 public final class EClass<L extends Language<L>, D> {
 
-  /** A parent entry: an e-node that has the class as a child, and the class it was added to. */
-  public record Parent<L>(L node, int classId) {
+  /**
+   * A parent entry: an e-node that has the class as a child, and the class it was added to. One
+   * entry stands for the node in the lists of all its children, and {@code rebuild} re-keys it in
+   * place when a child's class is merged, so every list and the hashcons name the node by one
+   * form. Two entries are equal when they name the same node and class.
+   */
+  public static final class Parent<L> {
+    private L node;
+    private int classId;
+
+    public Parent(L node, int classId) {
+      this.node = node;
+      this.classId = classId;
+    }
+
+    /** The node, in the form the hashcons holds it under. */
+    public L node() {
+      return node;
+    }
+
+    /** The class the node was added to, or a root it was merged into since; not always a root. */
+    public int classId() {
+      return classId;
+    }
+
+    void rekey(L node, int classId) {
+      this.node = node;
+      this.classId = classId;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      return o instanceof Parent<?> p && classId == p.classId && node.equals(p.node);
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * node.hashCode() + classId;
+    }
+
+    @Override
+    public String toString() {
+      return "Parent[node=" + node + ", classId=" + classId + "]";
+    }
   }
 
   private final int id;
@@ -83,8 +125,8 @@ public final class EClass<L extends Language<L>, D> {
     nodes.add(node);
   }
 
-  void addParent(L node, int classId) {
-    parents.add(new Parent<>(node, classId));
+  void addParent(Parent<L> entry) {
+    parents.add(entry);
   }
 
   List<L> mutableNodes() {

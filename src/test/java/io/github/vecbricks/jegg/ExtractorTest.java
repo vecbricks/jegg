@@ -288,12 +288,12 @@ class ExtractorTest {
   void aParentAddedBeforeAMergeIsStillOfferedTheSharedForm() {
     // c = Div(u, v), cost 6, is the investment two roots can share: s = Add(c, q) and t = Mul(c,
     // q), cost 1 each; each root also has a direct leaf of cost 5. Alone, each prefers its leaf
-    // (5 against 7); together, both through c cost 8 against 10. After q is merged into r's
-    // class, both entries in c's parent list still read their node as it was added, over q: a
-    // repair canonicalises the parents of the merged class, not c's. r is a root too, so it is
-    // selected throughout and a held root brings in c alone: c's stale entries are then the
-    // only route to the other root, which must be found through its canonical node, or the
-    // sharing is missed from both sides.
+    // (5 against 7); together, both through c cost 8 against 10. q is merged into r's class
+    // after both were added, so the entries in c's parent list were re-keyed by the repair of
+    // r's class, which c's list shares with it (they read the node over r now, not q as added).
+    // r is a root too, so it is selected throughout and a held root brings in c alone: c's
+    // entries are then the only route to the other root, which must be found through the node's
+    // class, or the sharing is missed from both sides.
     CostFunction<Toy> table = node -> switch (node) {
       case Toy.Var v -> v.name().startsWith("direct") ? 5.0 : 0.0;
       case Toy.Div d -> 6.0;
@@ -311,8 +311,9 @@ class ExtractorTest {
     g.merge(t, g.add(new Toy.Var("directT")));
     g.merge(q, r);
     g.rebuild();
-    assertTrue(g.classOf(c).parents().stream().allMatch(p -> p.node().children().get(1) == q),
-        "the stale entries this test is about");
+    assertTrue(g.classOf(c).parents().stream()
+        .allMatch(p -> p.node().children().get(1) == g.find(r)),
+        "the entries were re-keyed through r's class, which shares them");
     Selection<Toy> sel = new Extractor<>(g, table).extractAll(IntList.of(s, t, r));
     assertEquals(8.0, sel.cost(), 1e-9, sel.toString());
     assertEquals(new Toy.Mul(IntList.of(c, g.find(r))), sel.node(g.find(t)));
