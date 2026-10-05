@@ -16,7 +16,9 @@ The 15 larger graphs, by suite: babble (4), eggcc-bril (3), lean-egg (5), egg's 
 `compose_many` and math `simplify_root`) and tensat (1, `resnet50_acyclic`). The gym holds two
 byte-identical copies in that range (`ShapesRerun2` of `Shapes2`, `add_block_indirection.bril` of
 `add.bril`), left out; among the 45 smaller ones `lean-egg__Star_1` is a copy of
-`lean-egg__Basic_1`, kept as the gym has it. The oracle's deadline is 3 s per graph
-(`-Dgym.oracle.seconds=N` sets it; every graph it finishes it finishes within 2 s, and the one
-it does not, `egg__lambda_compose_many`, it does not within 120 s either); the test prints which
-graphs it finished and which timed out.
+`lean-egg__Basic_1`, kept as the gym has it. The oracle's budget is 10 million search
+steps per graph (`-Dgym.oracle.steps=N` sets it), the same on every machine. The most a graph it
+finishes takes is 2,839,044 steps; the one it does not, `egg__lambda_compose_many`, had taken 221
+million at 20 s, so the finished set is 59 of 60 by construction. A wall-clock deadline of 30 s
+(`-Dgym.oracle.seconds=N`) remains as a safety net, never reached today. The test prints the steps
+each graph took and which graphs timed out.
