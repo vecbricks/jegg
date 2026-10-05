@@ -34,12 +34,19 @@ class ExtractionGymTest {
   /** The graphs past this many nodes are the larger ones, counted on their own. */
   private static final int LARGE = 150;
   /**
-   * The oracle's deadline per graph, every size; {@code -Dgym.oracle.seconds=N} sets it. Every
-   * graph the oracle finishes it finishes within 2 s, and the one it does not
-   * ({@code egg__lambda_compose_many}, every cost 1.0, so the bound prunes nothing) it does not
-   * within 120 s either; a longer deadline buys nothing.
+   * The oracle's budget per graph, in search steps: the same on every machine, so the set of
+   * graphs it finishes is too. The largest graph it finishes takes 2,839,044 steps
+   * ({@code babble__list_list_hard_test...bench000_it0}); the budget is 3.5 times that, and the
+   * test asserts the 2x margin. The one graph it does not finish ({@code egg__lambda_compose_many},
+   * every cost 1.0, so the bound prunes nothing) had taken 221 million steps at 20 s.
+   * {@code -Dgym.oracle.steps=N} sets it.
    */
-  private static final long DEADLINE_SECONDS = Long.getLong("gym.oracle.seconds", 3);
+  private static final long MAX_STEPS = Long.getLong("gym.oracle.steps", 10_000_000);
+  /**
+   * The wall-clock deadline per graph, a safety net far above the budget (10 million steps take
+   * about a second); {@code -Dgym.oracle.seconds=N} sets it.
+   */
+  private static final long DEADLINE_SECONDS = Long.getLong("gym.oracle.seconds", 30);
 
   @Test
   void theDescentMeetsTheOracleOnMostGymGraphsAndNeverWorsensTheStart() throws IOException {
@@ -53,6 +60,7 @@ class ExtractionGymTest {
     int largeMet = 0;
     List<String> largeTimedOut = new ArrayList<>();
     List<String> largeMisses = new ArrayList<>();
+    long mostSteps = 0;
     List<Path> files;
     try (Stream<Path> list = Files.list(DIR)) {
       files = list.filter(p -> p.toString().endsWith(".json")).sorted().toList();
@@ -75,8 +83,12 @@ class ExtractionGymTest {
       assertTrue(sel.cost() <= start + 1e-9, gym.name + ": the descent made the start worse, "
           + sel.cost() + " from " + start);
       sel.terms();
-      OptionalDouble optimum = ExactExtraction.optimum(gym.graph, GymGraph.COST, gym.roots,
-          System.nanoTime() + TimeUnit.SECONDS.toNanos(DEADLINE_SECONDS));
+      ExactExtraction.Outcome outcome = ExactExtraction.optimum(gym.graph, GymGraph.COST,
+          gym.roots, MAX_STEPS, System.nanoTime() + TimeUnit.SECONDS.toNanos(DEADLINE_SECONDS));
+      OptionalDouble optimum = outcome.optimum();
+      if (optimum.isPresent()) {
+        mostSteps = Math.max(mostSteps, outcome.steps());
+      }
       String verdict;
       if (optimum.isPresent()) {
         finished++;
@@ -106,16 +118,20 @@ class ExtractionGymTest {
         }
       }
       rows.add(String.format("%-70s %4d nodes %4d classes %2d roots  start %9.1f  descent %9.1f"
-          + "  optimum %9s  %s", gym.name, gym.gymNodes, gym.gymClasses, gym.roots.size(), start,
-          sel.cost(), optimum.isPresent() ? String.format("%.1f", optimum.getAsDouble()) : "-",
-          verdict));
+          + "  optimum %9s  steps %10d  %s", gym.name, gym.gymNodes, gym.gymClasses,
+          gym.roots.size(), start, sel.cost(),
+          optimum.isPresent() ? String.format("%.1f", optimum.getAsDouble()) : "-",
+          outcome.steps(), verdict));
     }
     rows.forEach(System.out::println);
-    System.out.printf("GYM %d graphs, %d cyclic skipped, oracle finished %d, met %d, misses %s%n",
-        files.size(), cyclic, finished, met, misses);
-    System.out.printf("GYM past %d nodes: %d graphs, oracle finished %d (deadline %d s), met %d,"
-        + " timed out %s, misses %s%n", LARGE, largeGraphs, largeFinished, DEADLINE_SECONDS,
-        largeMet, largeTimedOut, largeMisses);
+    System.out.printf("GYM %d graphs, %d cyclic skipped, oracle finished %d (budget %d steps,"
+        + " the most a finished graph took %d), met %d, misses %s%n", files.size(), cyclic,
+        finished, MAX_STEPS, mostSteps, met, misses);
+    System.out.printf("GYM past %d nodes: %d graphs, oracle finished %d, met %d, timed out %s,"
+        + " misses %s%n", LARGE, largeGraphs, largeFinished, largeMet, largeTimedOut,
+        largeMisses);
+    assertTrue(mostSteps * 2 <= MAX_STEPS, "a finished graph took " + mostSteps
+        + " steps, over half the budget of " + MAX_STEPS);
     assertTrue(largeGraphs >= 15, "larger graphs present: " + largeGraphs);
     assertTrue(largeFinished * 2 >= largeGraphs, "the oracle finished on " + largeFinished
         + " of the " + largeGraphs + " larger graphs");

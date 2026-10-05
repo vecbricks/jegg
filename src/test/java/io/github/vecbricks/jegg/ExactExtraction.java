@@ -20,20 +20,34 @@ import java.util.OptionalDouble;
  * The exact extraction over several roots, by branch and bound, for the tests to measure
  * {@link Extractor#extractAll} against: one node per class the roots reach, the sum of the
  * chosen nodes' costs least, the chosen nodes acyclic. The bound is the cost so far plus each
- * open class's cheapest node. Exponential, so it is given a deadline and answers empty past it.
+ * open class's cheapest node. Exponential, so it is given a budget of search steps, and a
+ * deadline as a safety net, and answers empty past either. The steps are the calls of the
+ * recursive search, which depend only on the graph, the node order and the costs: a budget makes
+ * the set of graphs the oracle finishes the same on every machine, which a deadline does not.
  */
 final class ExactExtraction<L extends Language<L>> {
 
   private final EGraph<L, ?> graph;
   private final CostFunction<L> costs;
   private final long deadline;
+  private final long maxSteps;
+  private long steps;
   private final Map<Integer, Double> cheapest = new HashMap<>();
   private double best = Double.POSITIVE_INFINITY;
   private boolean timedOut;
 
-  private ExactExtraction(EGraph<L, ?> graph, CostFunction<L> costs, long deadline) {
+  /**
+   * What a search answered: the optimum, empty if it stopped at the budget or the deadline, and
+   * the steps it took (the budget plus one if it stopped there).
+   */
+  record Outcome(OptionalDouble optimum, long steps) {
+  }
+
+  private ExactExtraction(EGraph<L, ?> graph, CostFunction<L> costs, long maxSteps,
+      long deadline) {
     this.graph = graph;
     this.costs = costs;
+    this.maxSteps = maxSteps;
     this.deadline = deadline;
     for (EClass<L, ?> c : graph.classes()) {
       double min = Double.POSITIVE_INFINITY;
@@ -44,10 +58,13 @@ final class ExactExtraction<L extends Language<L>> {
     }
   }
 
-  /** The optimum, or empty if the search did not finish within the deadline. */
-  static <L extends Language<L>> OptionalDouble optimum(EGraph<L, ?> graph, CostFunction<L> costs,
-      IntList roots, long deadlineNanos) {
-    ExactExtraction<L> e = new ExactExtraction<>(graph, costs, deadlineNanos);
+  /**
+   * The optimum, or empty if the search did not finish within {@code maxSteps} steps and the
+   * deadline, with the steps it took.
+   */
+  static <L extends Language<L>> Outcome optimum(EGraph<L, ?> graph, CostFunction<L> costs,
+      IntList roots, long maxSteps, long deadlineNanos) {
+    ExactExtraction<L> e = new ExactExtraction<>(graph, costs, maxSteps, deadlineNanos);
     Deque<Integer> open = new ArrayDeque<>();
     Map<Integer, L> chosen = new HashMap<>();
     for (int i = 0; i < roots.size(); i++) {
@@ -57,11 +74,13 @@ final class ExactExtraction<L extends Language<L>> {
       }
     }
     e.search(open, chosen, 0.0);
-    return e.timedOut ? OptionalDouble.empty() : OptionalDouble.of(e.best);
+    return new Outcome(e.timedOut ? OptionalDouble.empty() : OptionalDouble.of(e.best),
+        e.steps);
   }
 
   private void search(Deque<Integer> open, Map<Integer, L> chosen, double cost) {
-    if (timedOut || System.nanoTime() > deadline) {
+    steps++;
+    if (timedOut || steps > maxSteps || System.nanoTime() > deadline) {
       timedOut = true;
       return;
     }
