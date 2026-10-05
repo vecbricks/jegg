@@ -35,5 +35,5 @@ echo "What moved against the committed files:"
 git --no-pager diff --stat -- benchmarks/
 for f in $(git diff --name-only -- benchmarks/); do
   echo "== $f"
-  git --no-pager diff -U0 -- "$f" | grep -E "^[-+] *[A-Za-z]+Benchmark\.[a-zA-Z]+ " | head -40
+  git --no-pager diff -U0 -- "$f" | { grep -E "^[-+] *[A-Za-z]+Benchmark\.[a-zA-Z]+ " || true; } | head -40
 done
