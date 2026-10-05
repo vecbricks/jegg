@@ -69,7 +69,7 @@ public final class EGraph<L extends Language<L>, D> {
   // a merge in one iteration leave them as they were.
   private long changes;
   // Roots of classes a merge touched since the last rebuild; repaired in id order.
-  private final List<Integer> worklist = new ArrayList<>();
+  private final IntArray worklist = new IntArray();
   // The classes named by the parent entries this rebuild's repairs processed: the only classes
   // whose node lists can hold a form a merge made stale, re-canonicalised when the rebuild ends.
   private final BitSet staleOwners = new BitSet();
@@ -78,7 +78,7 @@ public final class EGraph<L extends Language<L>, D> {
   // section 4.1, egg's analysis_pending): each is re-made and joined into its class's fact.
   private final List<EClass.Parent<L>> analysisPending = new ArrayList<>();
   // Roots whose fact changed in a merge, owed a call of the analysis's modify hook.
-  private final List<Integer> modifyPending = new ArrayList<>();
+  private final IntArray modifyPending = new IntArray();
 
   public EGraph(Analysis<L, D> analysis) {
     this.analysis = Objects.requireNonNull(analysis, "analysis");
@@ -157,6 +157,11 @@ public final class EGraph<L extends Language<L>, D> {
    * objects hashcons to the same class anyway. The walk recurses once per level of the tree, so
    * its depth is bounded by the thread's stack, and a client structure with a cycle is not a
    * tree: the walk would not end.
+   *
+   * <p>"Reached twice" is by object identity. A client whose tree type is a value class has no
+   * identity to share by: the walk then adds a shared subtree once per path to it, still
+   * correct, but in time proportional to the tree, not the DAG. Such a client shares subterms
+   * through class ids, adding each once and building the parents over the ids.
    */
   public <T> int addTree(T root, TreeBridge<T, L> bridge) {
     return walk(root, bridge, new IdentityHashMap<>(), this::add);
@@ -168,6 +173,8 @@ public final class EGraph<L extends Language<L>, D> {
    * subtree object reached twice is looked up once. Like {@link #lookup} it reads the hashcons,
    * so after a merge it is exact only once the graph is rebuilt: before, a tree whose children
    * were merged can read as missing. The walk's depth is bounded as {@link #addTree}'s is.
+   * Shares subtree objects by identity as {@link #addTree} does, with the same caveat for a
+   * value-class tree type.
    */
   public <T> OptionalInt lookupTree(T root, TreeBridge<T, L> bridge) {
     int id = walk(root, bridge, new IdentityHashMap<>(), node -> idOf(canonicalize(node)));
@@ -224,6 +231,11 @@ public final class EGraph<L extends Language<L>, D> {
       }
     }
     return Collections.unmodifiableList(live);
+  }
+
+  /** One past the largest id issued: the bound for an array indexed by class id. */
+  int idBound() {
+    return classes.size();
   }
 
   /** How many classes are live. */
@@ -343,7 +355,7 @@ public final class EGraph<L extends Language<L>, D> {
     while (isDirty()) {
       touched = true;
       while (!worklist.isEmpty()) {
-        int[] todo = worklist.stream().mapToInt(unionFind::find).distinct().sorted().toArray();
+        int[] todo = worklist.sortedDistinct(unionFind::find);
         worklist.clear();
         for (int id : todo) {
           if (classes.get(id) != null) {
@@ -369,8 +381,7 @@ public final class EGraph<L extends Language<L>, D> {
             modifyPending.add(id);
           }
         }
-        int[] toModify = modifyPending.stream().mapToInt(unionFind::find).distinct().sorted()
-            .toArray();
+        int[] toModify = modifyPending.sortedDistinct(unionFind::find);
         modifyPending.clear();
         for (int id : toModify) {
           if (classes.get(id) != null) {

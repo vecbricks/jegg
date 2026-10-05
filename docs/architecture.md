@@ -1,6 +1,6 @@
 # The code, mapped
 
-One package, `io.github.vecbricks.jegg`, 23 files. The Javadoc of each is at
+One package, `io.github.vecbricks.jegg`, 24 files. The Javadoc of each is at
 https://vecbricks.github.io/jegg/; this page says what each is for, how an iteration flows
 through them, and where the invariants hold and where they may not.
 
@@ -10,6 +10,7 @@ through them, and where the invariants hold and where they may not.
 |---|---|
 | `Language` | what a client's e-node is: `children()` as an `IntList` of class ids, `withChildren`, `head()` (operator and payload without children). A client's language is a sealed set of records. |
 | `IntList` | an immutable `int[]` with value equality; children live here so a record never compares an array by reference. |
+| `IntArray` | package-private: a growable `int[]`, the worklists of `EGraph` and the extractor's newly selected classes, ids kept unboxed. |
 | `UnionFind` | `int` ids, path compression, the smaller id kept as root (one of the fixed orders); refuses an id it never made. |
 | `EClass` | a class: id, nodes in insertion order, parent entries `(node, classId)`, the analysis fact, a flag if it ever pruned. Its views are live. |
 | `EGraph` | the e-graph: hashcons, classes, `add`, `merge`, `rebuild` and `repair`, `addTree`/`lookupTree` through a `TreeBridge`, the analysis's maintenance, `retainNodes` (pruning), the change counter, the invariant checkers. |
