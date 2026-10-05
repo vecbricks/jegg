@@ -158,6 +158,7 @@ public final class Runner<L extends Language<L>, D> {
       }
       int applied = 0;
       int unions = 0;
+      int counted = 0;
       StopReason passed = null;
       Set<String> skipped = new LinkedHashSet<>();
       for (int i = 0; i < rules.size(); i++) {
@@ -166,9 +167,10 @@ public final class Runner<L extends Language<L>, D> {
           continue;
         }
         for (Matcher.Match m : matches.get(i)) {
-          OptionalInt changed = rules.get(i).apply(graph, m);
-          if (changed.isPresent()) {
-            unions += changed.getAsInt();
+          Optional<Applied> done = rules.get(i).apply(graph, m);
+          if (done.isPresent()) {
+            unions += done.get().unions();
+            counted += done.get().counted();
             applied++;
           }
         }
@@ -187,10 +189,12 @@ public final class Runner<L extends Language<L>, D> {
       if (stop == null) {
         stop = passed;
       }
-      // As egg: the scheduler is asked whenever no rule merged two classes, whether or not
+      // As egg: the scheduler is asked whenever nothing was counted as applied, whether or not
       // nodes were added, so it may release its bans then (Scheduler.canStop says so); the
-      // iteration is saturation only if, besides, nothing else changed.
-      boolean canStop = unions == 0 && scheduler.canStop(iteration);
+      // iteration is saturation only if, besides, nothing else changed. A rule counts what
+      // changed the graph, except a multi-pattern, which counts every match, as egg's does
+      // (Applied), so a run in which one matches never saturates.
+      boolean canStop = counted == 0 && scheduler.canStop(iteration);
       if (stop == null && canStop && graph.changes() == changesBefore) {
         stop = new StopReason.Saturated();
       }

@@ -61,7 +61,7 @@ final class Saturation {
       int unions = 0;
       for (int i = 0; i < rules.size() && !timedOut; i++) {
         for (Matcher.Match m : matches.get(i)) {
-          int changed = rules.get(i).apply(graph, m).orElse(0);
+          int changed = rules.get(i).apply(graph, m).map(Applied::unions).orElse(0);
           if (changed > 0) {
             unions += changed;
             if (mode == Mode.EAGER) {

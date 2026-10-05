@@ -7,7 +7,7 @@ statuses, so the list of absences can be read by cause:
 
 | status | meaning |
 |---|---|
-| out by design | a decision of the plan (`PLAN.md` 3.1) or of the design's promises, with its reason: proofs, parsing, Graphviz, an ILP extractor, multi-patterns, a wall-clock limit, mutable access to a class |
+| out by design | a decision of the plan (`PLAN.md` 3.1) or of the design's promises, with its reason: proofs, parsing, Graphviz, an ILP extractor, a wall-clock limit, mutable access to a class |
 | replaced | another jegg mechanism does the job, so the egg item has no counterpart of its own |
 | not needed yet | no client has asked, so it is left out, not ruled out; a reader who needs one should open an issue |
 | not ported yet | the issue that will port it is named |
@@ -15,9 +15,9 @@ statuses, so the list of absences can be read by cause:
 "Added" rows are what egg lacks. `PLAN.md` 3.1 is the design record behind these tables and
 `docs/architecture.md` maps the jegg code.
 
-Of the 28 rows so marked, 15 are out by design (twelve of them proofs, parsing, text output or
-multi-patterns; the other three are `classes_mut`, the time limit and the ILP extractor), 7
-replaced, 5 not needed yet and 1 not ported yet (`datalog.rs`, #34).
+Of the 25 rows so marked, 13 are out by design (ten of them proofs, parsing or text output; the
+other three are `classes_mut`, the time limit and the ILP extractor), 6 replaced, 5 not needed
+yet and 1 not ported yet (`datalog.rs`, #34).
 
 The shape of the port in four lines:
 
@@ -30,7 +30,7 @@ The shape of the port in four lines:
 - One property egg does not promise: the result is a function of the input. Ids are assigned by
   insertion, every map whose order could reach an id is insertion-ordered, and `extractAll` breaks
   ties by node order (`docs/concepts.md`, `docs/skills/a-determinism-test-that-can-fail.md`).
-- Proofs, parsing, ILP extraction, Graphviz output and multi-patterns are out, by design
+- Proofs, parsing, ILP extraction and Graphviz output are out, by design
   (`PLAN.md` 3.1); `Explain`'s absence is the largest.
 
 ## `egraph` (`EGraph`)
@@ -103,13 +103,13 @@ The shape of the port in four lines:
 |---|---|---|
 | `Rewrite::new(name, searcher, applier)` | `new Rewrite<>(name, lhs, rhs, condition)`; `Rewrite.of(...)` | checks at construction that a pattern right-hand side uses only what the left binds, as egg's |
 | `Rewrite::search`, `search_with_limit`, `apply` | `Rewrite.search(graph)`, `search(graph, limit)`, `apply(graph, match)` | ported |
-| `Searcher` trait | replaced | the left-hand side is always a `Pattern`; a custom search belongs in a `Condition` |
+| `Searcher` trait | `Searcher` | the interface a `Rewrite`'s left-hand side is; `Pattern` and `MultiPattern` implement it: `search(graph, limit)` and the variables a match binds |
 | `Applier` trait, dynamic rewrites | `Applier`: `apply(graph, eclass, subst) -> IntList` | a function of the graph, the matched class and the substitution; returns the classes to union with the match |
 | `ConditionalApplier`, `Condition` trait | `Rewrite.when(condition)`, `Condition` | read at apply time, in the write phase, and may add nodes, as egg's `check` may through its `&mut EGraph`; the method is `holds` |
 | `ConditionEqual` | `Condition.equal(a, b)` | ported, with both patterns instantiated before either root is read |
 | (none) | `Condition.always()`, `Condition.and(other)` | added |
-| `apply_matches`, `apply_one`, `vars` | `Applier.apply`; `Pattern.subtermVariables()` | one method |
-| `multi_rewrite!` | out by design | multi-patterns: `PLAN.md` 3.1; #34 asks what of egg's `datalog` they would still allow; `prop`'s one, `lem_imply`, is a rule with a condition (`PropRulesTest.LEM_IMPLY`), which builds egg's graph but not egg's stop: egg counts every match of a multi-pattern as applied and never reports saturation |
+| `apply_matches`, `apply_one`, `vars` | `Applier.apply`, `Applier.applyTo`; `Pattern.subtermVariables()` | `applyTo` is `apply_one`: it builds, unions with the matched class, and says how many unions changed the graph and how many egg counts as applied (`Applied`) |
+| `multi_rewrite!` | `Rewrite.multi(name, lhs, rhs)` | clauses `?var = pattern` built with `MultiPattern.of`; no text syntax in the library; a multi-pattern counts every match as applied, as egg's `apply_matches` does, so a run in which one matches never saturates (`prop`'s `lem_imply`) |
 
 ## `pattern`, `subst`, `machine`, `multipattern`
 
@@ -122,7 +122,7 @@ The shape of the port in four lines:
 | (none) | payload variables | added: a pattern binds an operator's payload as well as subterms (`Subst.payload`), and a head may match a payload by predicate |
 | `Searcher` over `SearchMatches` | `Matcher.search` returning `Match(eclass, subst)` | one record per substitution; a class's matches in node order |
 | the compiled machine (`machine.rs`: `Program`, `compile_from_pat`) | a backtracking matcher (`Matcher.matchIn`) | the machine is deferred behind a measurement: #7 |
-| `MultiPattern` | out by design | see `rewrite` |
+| `MultiPattern` | `MultiPattern`, `Matcher.search(graph, multi, limit)` | a depth-first join in the class order of the first clause, without egg's compilation; a bare variable is refused as a first clause, as egg's |
 | `search_eclass_with_limit`, `search_with_limit` | `Matcher.search(graph, pattern, limit)` | a limit on matches, as the backoff scheduler uses it |
 
 ## `run` (`Runner`, schedulers, limits, reports)
@@ -180,7 +180,7 @@ classes)` records, read by running egg with `RUST_LOG=egg=info`; see
 | `prop.rs` | `PropRulesTest` | ported in full (`Bool`, `ConstantFold`, egg's rules and three tests), counts pinned; `prove_chain` ends at egg's 31 nodes and 12 classes in 6 iterations where egg runs 20 (the multi-pattern quirk above) |
 | `lambda.rs` | `LambdaTest` | ported, counts pinned |
 | `math.rs` | `MathTest` | ported, counts pinned |
-| `datalog.rs` | not ported yet | needs multi-patterns: #34 |
+| `datalog.rs` | not ported yet | multi-patterns are in the library; the port itself is the second pull request of #34 |
 
 jegg's own tests add what egg lacks: `EGraphRebuildTest` (deferred against eager rebuilding on
 random graphs), `DeterminismTest` (the same run in fresh JVMs, byte for byte), the extraction

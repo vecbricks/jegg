@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -97,6 +98,80 @@ public final class Matcher {
       }
     }
     return matches;
+  }
+
+  /**
+   * The first {@code limit} matches of a multi-pattern, in class order of its first clause: a
+   * depth-first join, egg's machine without the compilation. A clause whose variable is bound
+   * is matched in that class only; a clause whose variable is not ranges over the classes
+   * holding a node of the pattern's root class where the head names it, else over every class,
+   * which is egg's {@code Scan}. The match's class is the one the first clause matched in, and
+   * its substitution binds every clause variable and every pattern variable. Substitutions are
+   * distinct.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param graph the graph to search, rebuilt so that its classes are canonical
+   * @param multi the clauses to join
+   * @param limit the most matches to return; at least 1, {@link Integer#MAX_VALUE} for all
+   * @return a fresh list of at most {@code limit} matches, empty if there are none
+   * @throws IllegalArgumentException if {@code limit} is less than 1, or the first clause's
+   *     pattern is a bare variable, which has no class to start from
+   */
+  public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
+      MultiPattern<L> multi, int limit) {
+    if (limit < 1) {
+      throw new IllegalArgumentException("the limit must be positive, not " + limit);
+    }
+    if (multi.startsWithBareVariable()) {
+      throw new IllegalArgumentException(
+          "a multi-pattern cannot start with a bare variable: " + multi);
+    }
+    List<Match> matches = new ArrayList<>();
+    join(graph, multi.clauses(), 0, Subst.EMPTY, -1, limit, matches);
+    return matches;
+  }
+
+  private static <L extends Language<L>, D> void join(EGraph<L, D> graph,
+      List<MultiPattern.Clause<L>> clauses, int index, Subst subst, int first, int limit,
+      List<Match> out) {
+    if (index == clauses.size()) {
+      out.add(new Match(first, subst));
+      return;
+    }
+    MultiPattern.Clause<L> clause = clauses.get(index);
+    OptionalInt named = subst.id(clause.var());
+    if (named.isPresent()) {
+      joinIn(graph, clauses, index, graph.find(named.getAsInt()), subst, first, limit, out);
+      return;
+    }
+    Class<?> type = clause.pattern() instanceof Pattern.Node<L> node
+        ? node.head().type().orElse(null) : null;
+    if (type != null) {
+      BitSet classes = graph.classesHolding(type);
+      for (int id = classes.nextSetBit(0); id >= 0 && out.size() < limit;
+          id = classes.nextSetBit(id + 1)) {
+        joinIn(graph, clauses, index, id, subst, first, limit, out);
+      }
+    } else {
+      for (int id = graph.nextLiveClass(0); id >= 0 && out.size() < limit;
+          id = graph.nextLiveClass(id + 1)) {
+        joinIn(graph, clauses, index, id, subst, first, limit, out);
+      }
+    }
+  }
+
+  private static <L extends Language<L>, D> void joinIn(EGraph<L, D> graph,
+      List<MultiPattern.Clause<L>> clauses, int index, int id, Subst subst, int first, int limit,
+      List<Match> out) {
+    MultiPattern.Clause<L> clause = clauses.get(index);
+    int start = index == 0 ? id : first;
+    for (Subst matched : matchIn(graph, clause.pattern(), id, subst)) {
+      join(graph, clauses, index + 1, matched.bind(clause.var(), id), start, limit, out);
+      if (out.size() >= limit) {
+        return;
+      }
+    }
   }
 
   private static <L extends Language<L>, D> void collect(EGraph<L, D> graph, Pattern<L> pattern,

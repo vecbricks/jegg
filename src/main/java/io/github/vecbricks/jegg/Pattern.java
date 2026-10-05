@@ -28,7 +28,14 @@ import java.util.function.Function;
  *
  * @param <L> the language
  */
-public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Pattern.Node {
+public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
+    permits Pattern.Var, Pattern.Node {
+
+  @Override
+  default <D> List<Matcher.Match> search(EGraph<L, D> graph, int limit) {
+    return Matcher.search(graph, this, limit);
+  }
+
 
   /**
    * A variable: matches any class, binding it; or must agree with its binding.
