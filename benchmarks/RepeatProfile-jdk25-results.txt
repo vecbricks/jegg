@@ -4,49 +4,46 @@ Where a saturation spends its time: lambda_function_repeat, deferred, under JFR
 
 OpenJDK 64-Bit Server VM 25.0.4.1+1-1-26.04.4-Ubuntu on Linux 7.0.0-34-generic
 AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M; pinned to cpus 0-3,12-15 (taskset), governor performance
-commit 2142e96, 2026-10-05T10:51+02:00
-load average before 0.34
+commit 75e3c05, 2026-10-05T13:22+02:00
+load average before 0.30
 taskset -c 0-3,12-15 mvn -B -q test -Dtest='LambdaTest#lambdaFunctionRepeat' \
     -DargLine='-XX:+UnlockDiagnosticVMOptions -XX:+ShowHiddenFrames -XX:FlightRecorderOptions:stackdepth=256 \
                -XX:StartFlightRecording=filename=repeat.jfr,settings=profile'
 jfr print --json --events jdk.ExecutionSample repeat.jfr, the samples grouped by the jegg phase on the stack
 
-Not a benchmark: a profile of one run of the test (58 iterations, 32,636 nodes, 9 s), for the share
+Not a benchmark: a profile of one run of the test (58 iterations, 32,636 nodes, 3 s), for the share
 prediction 5 of PLAN.md 6.1 asks about. JFR samples every 10-20 ms per thread, hence the count.
-Regenerated as the baseline for #45, from the commit RebuildBenchmark and ProjectionBenchmark name.
+Regenerated after #15 (rebuild in time proportional to the work) and #13 (unboxed ids); the previous
+file, from 2142e96, is the baseline #45 scores against: 9 s, matcher 26.5%, rebuild 26.1%, node
+equality 45.5% unattributed.
 
-862 execution samples, by phase (a phase is named when one of its frames is on the stack):
-   45.5%  unattributed (the stack walk stops at a method-handle frame; see the reading below)
-           top of stack: ArraysSupport.mismatch 24.0%, Objects.equals 16.2%, a method-handle guard 2.7%
-   26.5%  matcher (Matcher.search, matchIn)
-           top of stack: Matcher.matchIn 16.9%, Pattern$1.match 3.1%, Matcher.search 0.8%
-   26.1%  rebuild (repair, canonicalizeNodes, the sweep)
-           top of stack: EGraph.repair 18.8%, ArrayList.indexOfRange 2.3%, a method-handle guard 1.2%
-    1.7%  apply (instantiate, add, merge)
-           top of stack: HashMap.getNode 1.0%, Pattern$1.build 0.2%, EGraph.add 0.1%
-    0.2%  the test's goal check
-           top of stack: HashMap.getNode 0.2%
+288 execution samples, by phase (a phase is named when one of its frames is on the stack):
+   81.2%  matcher (Matcher.search, matchIn)
+           top of stack: Matcher.matchIn 57.3%, Pattern$1.match 7.6%, Subst.indexOf 3.8%
+    9.0%  unattributed (the stack walk stops at a method-handle frame; see the reading below)
+           top of stack: HashMap.getNode 1.0%, DirectMethodHandle$Holder.invokeStatic 0.7%, EGraph.checkParentEntries 0.7%
+    6.9%  rebuild (repair, canonicalizeNodes)
+           top of stack: EGraph.repair 1.4%, EGraph.canonicalize 1.0%, EGraph.rebuild 0.7%
+    2.4%  apply (instantiate, add, merge)
+           top of stack: HashMap.getNode 1.0%, AbstractPipeline.evaluate 0.3%, Subst.indexOf 0.3%
+    0.3%  the test's goal check
+           top of stack: Subst.indexOf 0.3%
 
 The innermost jegg frame on the stack, over all samples:
-   24.0%  IntList.equals
-   19.8%  EGraph.repair
-   18.9%  Matcher.matchIn
-    3.1%  Pattern$1.match
-    3.0%  EGraph.canonicalizeNodes
-    2.7%  LambdaTest$Lambda$If.equals
-    1.9%  Subst.bind
-    1.0%  IntList.map
+   63.9%  Matcher.matchIn
+    7.6%  Pattern$1.match
+    4.5%  Subst.indexOf
+    2.8%  EGraph.repair
+    2.4%  Matcher.search
+    1.7%  Language.head
+    1.7%  EGraph.checkParentEntries
+    1.4%  EGraph.canonicalize
 
-Reading: the unattributed samples are node equality, IntList.equals (Arrays.equals) reached through a
-record's generated equals (ObjectMethods, a method handle). JFR's stack walk ends at the method-handle
-frames, so these samples show no caller: 234 of them end in IntList.equals < Objects.equals <
-DirectMethodHandle$Holder.invokeStatic, 118 in two LambdaForm frames. The previous file (70e7016) read
-this as JFR's stack depth of 64; it is not: no sample is marked truncated, none has more than 16
-frames, and neither stackdepth=256 nor -XX:+ShowHiddenFrames changed the share. Node equality is
-called from the hashcons lookups (HashMap.getNode) in repair's re-keying and in add, and from the
-list scans (ArrayList.indexOf) in repair and canonicalizeNodes; the matcher compares heads and
-bindings, not whole nodes. So most of the two fifths belongs to rebuild, which is then the larger
-half of the run, with the matcher at a quarter to a third. The split the profile can give: matcher at
-least 26%, rebuild at least 26%, and node equality 40% that the two share with rebuild the main
-owner. Since 70e7016 the deferred run went from 11.1 s to 9.2 s (RebuildBenchmark, one run) with
-#31's limited search; the matcher's attributed share went from 32.4% to 26.5%.
+Reading: the run is a third of what it was (3 s against 9 s), and the time that left was rebuild's:
+the node equality that was 45% of the samples (IntList.equals through records' method-handle equals,
+from repair's hashcons re-keying and list scans) is gone from the top of the stack, since repair
+re-keys one shared entry per node and the whole-hashcons sweep no longer runs; rebuild is 7% of what
+remains. The matcher is now four fifths of the run, almost all of it in Matcher.matchIn itself (the
+walk over a class's nodes, the per-node allocation of substitution lists and the hash set that
+deduplicates them), with Pattern head matching at 8% and Subst lookups at 4%: that is where #7 looks.
+EGraph.checkParentEntries is the test's checkInvariants after the run, not the saturation.
