@@ -36,3 +36,25 @@ generative AI tooling says so with a `Generated-by:` line naming the tool and it
 template's last section and as the last line of each commit message.
 
 The process was set on 3 October 2026 (https://github.com/vecbricks/jegg/issues/3) after the first steps had gone code-first.
+
+## The practical half
+
+- **One test:** `mvn -q test -Dtest=LambdaTest`, or one method, `-Dtest='LambdaTest#lambdaIf'`;
+  surefire's syntax. The whole suite is `mvn -B verify`, which also prints the coverage.
+- **The slow tests:** `lambda_fib` and `lambda_function_repeat` take most of a run and are tagged
+  `slow`; `-Dsurefire.excludedGroups=slow` skips them locally. CI runs everything.
+- **The counts pinned to egg.** Each ported egg test (`LambdaTest`, `MathTest`) asserts that its
+  run ends at egg's own iteration, node and class counts, read from egg's run of the same test
+  (`cargo test --release --test <suite> -- --exact <name> --nocapture` prints a report; the
+  `Egg` records hold the numbers). A count that differs means the port diverged from egg, and
+  the per-iteration sizes (`RUST_LOG=egg=info` on egg's side, the `RunReport` on jegg's) say
+  where; #19 and #30 record two such hunts. Do not relax a count to make a test pass.
+- **The invariants.** `EGraph.checkInvariants()` and `checkAnalysisInvariant()` throw on a
+  broken hashcons, congruence or analysis invariant; tests call them after every operation
+  worth checking, and a new operation on the graph gets a test that does.
+- **The benchmarks** run only on an idle machine, pinned, and their files name the commit they
+  were measured from; `benchmarks/README.md` has the rules and the command. A pull request that
+  changes performance says what it predicts and leaves the regeneration to an idle window; the
+  prediction is scored when the file lands.
+- **A first pull request:** the issues labelled `good first issue` have their plans written, so
+  the process - issue, plan, pull request with the template - is followed by example.
