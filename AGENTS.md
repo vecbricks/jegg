@@ -69,3 +69,4 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
 | the measurements | `benchmarks/*-results.txt`, each naming its commit, JDK, machine and load |
 | the record | the issues (goal, plan, predictions, departures), `PLAN.md` (design and outcome), the PRs (what was built and how the predictions scored) |
 | for a reader | `README.md`, `docs/concepts.md`, `docs/first-language.md`, the Javadoc at https://vecbricks.github.io/jegg/ |
+| the lessons | `docs/skills/`, one page per thing learned the hard way; read the one for the area you touch |
