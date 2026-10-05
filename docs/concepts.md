@@ -102,8 +102,8 @@ subterm paid once, returned as a `Selection` whose terms share objects where
 they share classes. A compiler with many outputs over shared prefixes needs
 this; egg's per-root extraction can give two outputs two forms of one prefix.
 The exact problem is NP-hard; the heuristic is a greedy start and an
-incremental descent, checked against an exact oracle on extraction-gym's small
-graphs (`ExtractionGymTest`). A `score` hook lets the client price a whole
+incremental descent, checked against an exact oracle on extraction-gym's graphs
+of up to 300 nodes (`ExtractionGymTest`). A `score` hook lets the client price a whole
 selection its own way.
 
 ## Determinism, and the three places it is fixed

@@ -28,8 +28,8 @@ one field to the decomposition costs 11 more until the other follows.
 ## How to apply it
 
 - Judge a change to `extractAll` against three things: the smoke test at 33, the enumeration at
-  100 of 100, and the gym oracle (45 of 45, 6 of them improved over the greedy start); name
-  every miss.
+  100 of 100, and the gym oracle (59 of 59 it finishes, of 60 graphs up to 300 nodes; 8 of them
+  improved over the greedy start); name every miss.
 - A candidate must never close a cycle (the start's check is a gray/black walk; a form-based
   check missed cycles of three), and a parent entry must be canonicalised before it is offered
   (a merge leaves the other child's list stale).
