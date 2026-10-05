@@ -169,8 +169,13 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
    */
   static <L extends Language<L>> Head<L> head(L prototype) {
     Object key = prototype.head();
+    // Equal heads are nodes of one class only when the head is itself a node of the prototype's
+    // class (the default head(), or a key of that class): then a search may start at the classes
+    // holding such a node. A key of another class, a language's cheaper key, could be shared
+    // across node classes, and the head names no type: every class is looked at.
     @SuppressWarnings("unchecked")
-    Class<? extends L> type = (Class<? extends L>) prototype.getClass();
+    Optional<Class<? extends L>> type = key.getClass() == prototype.getClass()
+        ? Optional.of((Class<? extends L>) prototype.getClass()) : Optional.empty();
     return new Head<>() {
       @Override
       public Subst match(L node, Subst subst) {
@@ -179,7 +184,7 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
 
       @Override
       public Optional<Class<? extends L>> type() {
-        return Optional.of(type);
+        return type;
       }
 
       @Override

@@ -68,9 +68,7 @@ public final class Matcher {
       BitSet classes = graph.classesHolding(type);
       for (int id = classes.nextSetBit(0); id >= 0 && matches.size() < limit;
           id = classes.nextSetBit(id + 1)) {
-        if (graph.isLive(id)) {
-          collect(graph, pattern, id, limit, matches, found);
-        }
+        collect(graph, pattern, id, limit, matches, found);
       }
     } else {
       for (int id = graph.nextLiveClass(0); id >= 0 && matches.size() < limit;
@@ -102,14 +100,15 @@ public final class Matcher {
   }
 
   /**
-   * Appends to {@code out} the first {@code limit} substitutions of
+   * Fills the empty {@code out} with the first {@code limit} substitutions of
    * {@link #matchIn(EGraph, Pattern, int, Subst)}, in its order, the class's nodes left
    * unvisited once the limit is reached. The cut is made between a node's substitutions and the
    * next node's: a node's own are all computed, since a cut inside the walk of its children
-   * could lose some of them to deduplication and leave the prefix short. Two nodes of the class
-   * can yield one substitution (a head that reads no payload over two nodes differing in
-   * theirs), so the class's results are deduplicated, keeping the first; the set that does it
-   * is made only once a second node yields anything.
+   * could lose some of them to deduplication and leave the prefix short. One substitution can
+   * come up twice, from two nodes of the class (a head that reads no payload over two nodes
+   * differing in theirs) or within one node's walk (a child head that binds a payload for some
+   * nodes and not others), so the results are deduplicated, keeping the first; the set that does
+   * it is made only once a node yields more than one result or a second node yields any.
    */
   private static <L extends Language<L>, D> void matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out) {
@@ -124,10 +123,9 @@ public final class Matcher {
         }
       }
       case Pattern.Node<L>(var head, var children) -> {
-        int start = out.size();
         Set<Subst> seen = null;
         List<L> nodes = graph.classOf(root).mutableNodes();
-        for (int i = 0; i < nodes.size() && out.size() - start < limit; i++) {
+        for (int i = 0; i < nodes.size() && out.size() < limit; i++) {
           L node = nodes.get(i);
           if (node.children().size() != children.size()) {
             continue;
@@ -138,9 +136,10 @@ public final class Matcher {
           }
           int before = out.size();
           matchChildren(graph, children, 0, node, headBound, out);
-          if (out.size() > before && before > start) {
+          int added = out.size() - before;
+          if (added > 1 || (added > 0 && before > 0)) {
             if (seen == null) {
-              seen = new HashSet<>(out.subList(start, before));
+              seen = new HashSet<>(out.subList(0, before));
             }
             int kept = before;
             for (int j = before; j < out.size(); j++) {
@@ -152,8 +151,8 @@ public final class Matcher {
             out.subList(kept, out.size()).clear();
           }
         }
-        if (out.size() - start > limit) {
-          out.subList(start + limit, out.size()).clear();
+        if (out.size() > limit) {
+          out.subList(limit, out.size()).clear();
         }
       }
     }
