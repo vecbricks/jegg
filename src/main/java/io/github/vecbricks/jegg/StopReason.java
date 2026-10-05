@@ -16,19 +16,35 @@ public sealed interface StopReason {
   record Saturated() implements StopReason {
   }
 
-  /** The iteration limit was reached. */
+  /**
+   * The iteration limit was reached.
+   *
+   * @param iterations the number of iterations run
+   */
   record IterationLimit(int iterations) implements StopReason {
   }
 
-  /** The graph grew past the node limit. */
+  /**
+   * The graph grew past the node limit.
+   *
+   * @param nodes the number of nodes in the graph when the run stopped
+   */
   record NodeLimit(int nodes) implements StopReason {
   }
 
-  /** The graph grew past the class limit. */
+  /**
+   * The graph grew past the class limit.
+   *
+   * @param classes the number of classes in the graph when the run stopped
+   */
   record ClassLimit(int classes) implements StopReason {
   }
 
-  /** A {@link Runner.Hook} stopped the run, for the reason it gave (egg's {@code Other}). */
+  /**
+   * A {@link Runner.Hook} stopped the run, for the reason it gave (egg's {@code Other}).
+   *
+   * @param reason the text the hook returned, never null
+   */
   record Other(String reason) implements StopReason {
   }
 }

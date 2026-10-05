@@ -13,9 +13,11 @@ package io.github.vecbricks.jegg;
  * A rewrite's side condition: whether a match may be applied, read from the graph - the facts
  * of the bound classes, their nodes - and the substitution. It is evaluated at apply time, in
  * the iteration's write phase and just before its match is applied, never during the search:
- * a condition may add nodes to the graph, as {@link #equal} does, though never merge, and its
- * additions count against saturation like a right-hand side's. A scheduler must not evaluate
- * conditions while searching.
+ * a condition may add nodes to the graph, as {@link #equal} does, and never merges classes
+ * itself, though an analysis's {@code modify} hook that an added node runs may, so a root read
+ * before an add is read again after it with {@link EGraph#find}; its additions count against
+ * saturation like a right-hand side's. A scheduler must not evaluate conditions while
+ * searching.
  *
  * @param <L> the language
  * @param <D> the analysis fact
@@ -23,9 +25,25 @@ package io.github.vecbricks.jegg;
 @FunctionalInterface
 public interface Condition<L extends Language<L>, D> {
 
+  /**
+   * Whether the match may be applied.
+   *
+   * @param graph the graph, which a condition may add nodes to; an analysis hook run by an add
+   *     may merge classes, so roots read before an add are found again after it
+   * @param eclass the class the left-hand side matched, an id of the graph, not necessarily
+   *     canonical
+   * @param subst the match's bindings for the left-hand side's variables
+   * @return {@code true} if the match may be applied
+   */
   boolean holds(EGraph<L, D> graph, int eclass, Subst subst);
 
-  /** The condition that always holds. */
+  /**
+   * The condition that always holds.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @return a condition that is true for every match
+   */
   static <L extends Language<L>, D> Condition<L, D> always() {
     return (_, _, _) -> true;
   }
@@ -35,6 +53,12 @@ public interface Condition<L extends Language<L>, D> {
    * in one class. Instantiating adds what the graph lacks, as egg's does; since conditions are
    * read at apply time, that is an addition like a right-hand side's, and the graph is not
    * rebuilt in between, so an equality only congruence would show is not seen.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param a the first pattern, over variables the match binds
+   * @param b the second pattern, over variables the match binds
+   * @return a condition that holds when {@code a} and {@code b} instantiate to one class
    */
   static <L extends Language<L>, D> Condition<L, D> equal(Pattern<L> a, Pattern<L> b) {
     return (graph, eclass, subst) -> {
@@ -46,7 +70,12 @@ public interface Condition<L extends Language<L>, D> {
     };
   }
 
-  /** Both conditions. */
+  /**
+   * Both conditions.
+   *
+   * @param other the condition tested after this one, only if this one holds
+   * @return a condition that holds when this one and {@code other} both do
+   */
   default Condition<L, D> and(Condition<L, D> other) {
     return (graph, eclass, subst) -> holds(graph, eclass, subst) && other.holds(graph, eclass,
         subst);

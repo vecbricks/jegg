@@ -89,25 +89,50 @@ public final class EGraph<L extends Language<L>, D> {
   // Roots whose fact changed in a merge, owed a call of the analysis's modify hook.
   private final IntArray modifyPending = new IntArray();
 
+  /**
+   * An empty graph whose class facts are kept by {@code analysis}.
+   *
+   * @param analysis the analysis that makes, joins and modifies facts; not null
+   */
   public EGraph(Analysis<L, D> analysis) {
     this.analysis = Objects.requireNonNull(analysis, "analysis");
   }
 
-  /** A graph with no analysis. */
+  /**
+   * A graph with no analysis.
+   *
+   * @param <L> the language
+   * @return a new empty graph whose class facts are all {@code null}
+   */
   public static <L extends Language<L>> EGraph<L, Void> withoutAnalysis() {
     return new EGraph<L, Void>(Analysis.<L>none());
   }
 
+  /**
+   * The analysis this graph keeps facts with.
+   *
+   * @return the analysis given at construction
+   */
   public Analysis<L, D> analysis() {
     return analysis;
   }
 
-  /** The root id of {@code id}'s class. */
+  /**
+   * The root id of {@code id}'s class.
+   *
+   * @param id an e-class id this graph issued, root or not
+   * @return the canonical id of that class
+   */
   public int find(int id) {
     return unionFind.find(id);
   }
 
-  /** {@code node} with every child replaced by its class's root. */
+  /**
+   * {@code node} with every child replaced by its class's root.
+   *
+   * @param node an e-node whose children are ids this graph issued
+   * @return the canonical form of {@code node}; {@code node} itself if its children are roots
+   */
   public L canonicalize(L node) {
     return node.withChildren(node.children().map(unionFind::find));
   }
@@ -115,6 +140,10 @@ public final class EGraph<L extends Language<L>, D> {
   /**
    * The class {@code node} is in, if it is in the graph; {@code node} need not be canonical.
    * Reads the hashcons and changes nothing.
+   *
+   * @param node an e-node whose children are ids this graph issued
+   * @return the root id of the node's class, or empty if the graph holds no such node; a node
+   *     {@link #retainNodes} dropped from its class is still found, with that class
    */
   public OptionalInt lookup(L node) {
     int id = idOf(canonicalize(node));
@@ -134,6 +163,9 @@ public final class EGraph<L extends Language<L>, D> {
    * Adds {@code node} and returns its class: the class already holding an equal canonical node,
    * or a new class of this node alone, recorded as a parent of each child's class (paper
    * Figure 4, lines 1-11). The children must be ids this graph issued.
+   *
+   * @param node the e-node to add; not necessarily canonical
+   * @return the canonical id of the class now holding the node
    */
   public int add(L node) {
     L canonical = canonicalize(node);
@@ -172,6 +204,11 @@ public final class EGraph<L extends Language<L>, D> {
    * identity to share by: the walk then adds a shared subtree once per path to it, still
    * correct, but in time proportional to the tree, not the DAG. Such a client shares subterms
    * through class ids, adding each once and building the parents over the ids.
+   *
+   * @param <T> the client's tree type
+   * @param root the root of the client's tree
+   * @param bridge how to read a tree's subtrees and build its e-node over their class ids
+   * @return the canonical id of the class holding the whole tree
    */
   public <T> int addTree(T root, TreeBridge<T, L> bridge) {
     return walk(root, bridge, new IdentityHashMap<>(), this::add);
@@ -185,6 +222,12 @@ public final class EGraph<L extends Language<L>, D> {
    * were merged can read as missing. The walk's depth is bounded as {@link #addTree}'s is.
    * Shares subtree objects by identity as {@link #addTree} does, with the same caveat for a
    * value-class tree type.
+   *
+   * @param <T> the client's tree type
+   * @param root the root of the client's tree
+   * @param bridge how to read a tree's subtrees and build its e-node over their class ids
+   * @return the canonical id of the class holding the whole tree, or empty if any subtree is
+   *     missing; as for {@link #lookup}, a node {@link #retainNodes} dropped still counts
    */
   public <T> OptionalInt lookupTree(T root, TreeBridge<T, L> bridge) {
     int id = walk(root, bridge, new IdentityHashMap<>(), node -> idOf(canonicalize(node)));
@@ -218,7 +261,12 @@ public final class EGraph<L extends Language<L>, D> {
     return id;
   }
 
-  /** The class with this root id. */
+  /**
+   * The class with this root id.
+   *
+   * @param id an e-class id this graph issued; a non-root is resolved to its root
+   * @return the live class holding {@code id}, not a copy
+   */
   public EClass<L, D> classOf(int id) {
     EClass<L, D> eclass = classes.get(unionFind.find(id));
     if (eclass == null) {
@@ -227,12 +275,21 @@ public final class EGraph<L extends Language<L>, D> {
     return eclass;
   }
 
-  /** The analysis fact of {@code id}'s class. */
+  /**
+   * The analysis fact of {@code id}'s class.
+   *
+   * @param id an e-class id this graph issued, root or not
+   * @return the class's fact; {@code null} under {@link Analysis#none}
+   */
   public D data(int id) {
     return classOf(id).data();
   }
 
-  /** The live classes, in id order, read-only. */
+  /**
+   * The live classes, in id order, read-only.
+   *
+   * @return a fresh unmodifiable list, a snapshot: later merges do not change it
+   */
   public List<EClass<L, D>> classes() {
     List<EClass<L, D>> live = new ArrayList<>();
     for (EClass<L, D> eclass : classes) {
@@ -313,26 +370,41 @@ public final class EGraph<L extends Language<L>, D> {
     }
   }
 
-  /** How many classes are live. */
+  /**
+   * How many classes are live.
+   *
+   * @return the number of classes that are roots of the union-find
+   */
   public int numClasses() {
     return liveClasses;
   }
 
   /**
-   * How many times the graph has changed: a class made by {@link #add}, or two roots joined by
-   * {@link #merge}, including the merges a {@link #rebuild} makes. Two readings that agree mean
-   * nothing happened in between; sizes cannot say that, since an add and a merge cancel out.
+   * How many times the graph has changed: a class made by {@link #add}, two roots joined by
+   * {@link #merge}, including the merges a {@link #rebuild} makes, or nodes dropped by
+   * {@link #retainNodes}. Two readings that agree mean nothing happened in between; sizes cannot
+   * say that, since an add and a merge cancel out.
+   *
+   * @return a count that never decreases
    */
   public long changes() {
     return changes;
   }
 
-  /** How many distinct canonical e-nodes the graph holds, once rebuilt. */
+  /**
+   * How many distinct canonical e-nodes the graph holds, once rebuilt.
+   *
+   * @return the number of entries in the hashcons
+   */
   public int numNodes() {
     return hashcons.size();
   }
 
-  /** Whether a merge since the last {@link #rebuild} has left work to do. */
+  /**
+   * Whether a merge since the last {@link #rebuild} has left work to do.
+   *
+   * @return true if the graph needs a {@link #rebuild} to be congruent again
+   */
   public boolean isDirty() {
     return !worklist.isEmpty() || !analysisPending.isEmpty() || !modifyPending.isEmpty();
   }
@@ -342,6 +414,10 @@ public final class EGraph<L extends Language<L>, D> {
    * The surviving root is the smaller id. The other class's nodes and parents move to it and its
    * facts are joined; the root goes on the worklist and nothing is repaired until
    * {@link #rebuild}. Returns the root even when the two were one class already.
+   *
+   * @param a an e-class id this graph issued, root or not
+   * @param b an e-class id this graph issued, root or not
+   * @return the canonical id of the joined class, the smaller of the two roots
    */
   public int merge(int a, int b) {
     int ra = unionFind.find(a);
@@ -397,6 +473,10 @@ public final class EGraph<L extends Language<L>, D> {
    * folded forms saturate - and it stays in its children's parent lists, as egg's does: a later
    * merge of a child can make it congruent with a live node, and {@link #rebuild} then unions
    * the two classes. A class cannot be emptied. Returns how many nodes were dropped.
+   *
+   * @param eclass an e-class id this graph issued, root or not
+   * @param keep the test for a node to keep; at least one node of the class must pass it
+   * @return the number of nodes removed from the class, 0 if every node passed
    */
   public int retainNodes(int eclass, Predicate<L> keep) {
     EClass<L, D> c = classOf(eclass);
@@ -433,6 +513,8 @@ public final class EGraph<L extends Language<L>, D> {
    * lines 27-53): takes the worklist, deduplicates it by root, repairs each class, and repeats
    * while repairs merged more classes. Returns how many classes were repaired. The order is fixed:
    * each pass repairs its roots in ascending id order.
+   *
+   * @return the number of class repairs done, 0 if the graph was already clean
    */
   public int rebuild() {
     int repaired = 0;

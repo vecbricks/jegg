@@ -21,10 +21,25 @@ package io.github.vecbricks.jegg;
 @FunctionalInterface
 public interface Applier<L extends Language<L>, D> {
 
-  /** The classes to union with {@code eclass}; empty if nothing was added. */
+  /**
+   * The classes to union with {@code eclass}; empty if nothing was added.
+   *
+   * @param graph the graph to add to
+   * @param eclass the class the left-hand side matched, an id of the graph, not necessarily
+   *     canonical
+   * @param subst the match's bindings for the left-hand side's variables
+   * @return the ids of the classes the applier built, each to be unioned with {@code eclass}
+   */
   IntList apply(EGraph<L, D> graph, int eclass, Subst subst);
 
-  /** The applier that instantiates {@code rhs} under the match's substitution. */
+  /**
+   * The applier that instantiates {@code rhs} under the match's substitution.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param rhs the pattern to instantiate; its variables must be bound by the match
+   * @return an applier that returns the one class {@code rhs} instantiates to
+   */
   static <L extends Language<L>, D> Applier<L, D> pattern(Pattern<L> rhs) {
     return new PatternApplier<>(rhs);
   }
@@ -32,6 +47,10 @@ public interface Applier<L extends Language<L>, D> {
   /**
    * A right-hand side that is a pattern, kept as one so a {@link Rewrite} can check its
    * variables against the left-hand side's when it is made.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param rhs the pattern to instantiate under the match's substitution
    */
   record PatternApplier<L extends Language<L>, D>(Pattern<L> rhs) implements Applier<L, D> {
     @Override

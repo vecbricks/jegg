@@ -35,11 +35,23 @@ public final class Matcher {
   /**
    * One match: the class the pattern's root matched in, and what its variables stand for. A
    * value candidate (PLAN.md 3.1): immutable, compared by content.
+   *
+   * @param eclass the class the pattern's root matched in, as the id the search visited it by,
+   *     which is a canonical id in a rebuilt graph
+   * @param subst the bindings of the pattern's variables, extending the empty substitution
    */
   public record Match(int eclass, Subst subst) {
   }
 
-  /** Every match of {@code pattern} anywhere in {@code graph}, in class order. */
+  /**
+   * Every match of {@code pattern} anywhere in {@code graph}, in class order.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param graph the graph to search, rebuilt so that its classes are canonical
+   * @param pattern the pattern to match at each class
+   * @return a fresh list of the matches, empty if there are none
+   */
   public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
       Pattern<L> pattern) {
     return search(graph, pattern, Integer.MAX_VALUE);
@@ -54,6 +66,14 @@ public final class Matcher {
    *
    * <p>A root head that names its node class ({@link Pattern.Head#type}) is tried only at the
    * classes holding such a node; any other root is tried at every class.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param graph the graph to search, rebuilt so that its classes are canonical
+   * @param pattern the pattern to match at each class
+   * @param limit the most matches to return; at least 1, {@link Integer#MAX_VALUE} for all
+   * @return a fresh list of at most {@code limit} matches, empty if there are none
+   * @throws IllegalArgumentException if {@code limit} is less than 1
    */
   public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
       Pattern<L> pattern, int limit) {
@@ -91,6 +111,15 @@ public final class Matcher {
   /**
    * The substitutions under which {@code pattern} matches class {@code id}, extending
    * {@code subst}.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param graph the graph holding the class
+   * @param pattern the pattern to match
+   * @param id the class to match in; any id of it, which is canonicalised
+   * @param subst the bindings the matches must agree with, {@link Subst#EMPTY} for none
+   * @return a fresh list of the distinct substitutions, each extending {@code subst}, in match
+   *     order; empty if the pattern does not match
    */
   public static <L extends Language<L>, D> List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
@@ -193,6 +222,14 @@ public final class Matcher {
   /**
    * The class of {@code pattern} instantiated under {@code subst}: a variable is its binding, a
    * node is added over its instantiated children. This is a right-hand side's application.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param graph the graph the nodes are added to
+   * @param pattern the pattern to instantiate
+   * @param subst the bindings of the pattern's variables; each must be bound, or the call throws
+   *     an {@link IllegalArgumentException}
+   * @return the canonical id of the class the instantiated pattern is in
    */
   public static <L extends Language<L>, D> int instantiate(EGraph<L, D> graph,
       Pattern<L> pattern, Subst subst) {

@@ -218,9 +218,9 @@
         <artifactId>maven-javadoc-plugin</artifactId>
         <version>3.12.0</version>
         <configuration>
-          <!-- Everything but "missing": the 296 absent @param, @return and comments on main are a
-               follow-up (#57); syntax, HTML, references and accessibility fail now. -->
-          <doclint>all,-missing</doclint>
+          <!-- Every check, "missing" included: a public member without its @param, @return or
+               comment fails the build, as does a broken {@link} or bad HTML. -->
+          <doclint>all</doclint>
           <failOnWarnings>true</failOnWarnings>
           <failOnError>true</failOnError>
           <!-- javadoc stops reporting at 100 warnings; a fix should see them all. -->

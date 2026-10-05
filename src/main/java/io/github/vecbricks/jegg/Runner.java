@@ -55,9 +55,24 @@ public final class Runner<L extends Language<L>, D> {
    */
   @FunctionalInterface
   public interface Hook<L extends Language<L>, D> {
+    /**
+     * Called before an iteration, on the rebuilt graph.
+     *
+     * @param graph the runner's graph, which the hook may change
+     * @return the reason to stop the run, or empty to go on; never null
+     */
     Optional<String> beforeIteration(EGraph<L, D> graph);
   }
 
+  /**
+   * A runner over a graph with its own limits and scheduler.
+   *
+   * @param graph the graph to saturate, changed in place by {@link #run()}
+   * @param rules the rules, searched and applied in this order; copied, and their names must
+   *     differ
+   * @param limits where the run stops if it has not saturated
+   * @param scheduler decides which matches each iteration applies; reset at the start of a run
+   */
   public Runner(EGraph<L, D> graph, List<Rewrite<L, D>> rules, RunLimits limits,
       Scheduler<L, D> scheduler) {
     this.graph = Objects.requireNonNull(graph, "graph");
@@ -73,23 +88,45 @@ public final class Runner<L extends Language<L>, D> {
     this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
   }
 
-  /** A runner with the default limits and the backoff scheduler, as egg's. */
+  /**
+   * A runner with the default limits and the backoff scheduler, as egg's.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param graph the graph to saturate, changed in place by {@link #run()}
+   * @param rules the rules, searched and applied in this order; their names must differ
+   * @return a new runner
+   */
   public static <L extends Language<L>, D> Runner<L, D> of(EGraph<L, D> graph,
       List<Rewrite<L, D>> rules) {
     return new Runner<>(graph, rules, RunLimits.DEFAULT, new BackoffScheduler<>());
   }
 
+  /**
+   * The graph this runner saturates.
+   *
+   * @return the graph given to the constructor, not a copy
+   */
   public EGraph<L, D> graph() {
     return graph;
   }
 
-  /** Adds a hook, run before each iteration in the order added; returns this runner. */
+  /**
+   * Adds a hook, run before each iteration in the order added; returns this runner.
+   *
+   * @param hook the hook to add, not null
+   * @return this runner, for chaining
+   */
   public Runner<L, D> withHook(Hook<L, D> hook) {
     hooks.add(Objects.requireNonNull(hook, "hook"));
     return this;
   }
 
-  /** Runs to saturation or a limit and returns the report. */
+  /**
+   * Runs to saturation or a limit and returns the report.
+   *
+   * @return what each iteration did and why the run stopped
+   */
   public RunReport run() {
     List<RunReport.Iteration> iterations = new ArrayList<>();
     graph.rebuild();

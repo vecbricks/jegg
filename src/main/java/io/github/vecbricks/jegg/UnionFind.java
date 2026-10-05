@@ -25,7 +25,15 @@ public final class UnionFind {
   private int[] parent = new int[16];
   private int size = 0;
 
-  /** A new set of one element; its id, which is the next unused one. */
+  /** An empty union-find: no ids yet. */
+  public UnionFind() {
+  }
+
+  /**
+   * A new set of one element; its id, which is the next unused one.
+   *
+   * @return the new id, equal to {@link #size()} before the call
+   */
   public int makeSet() {
     if (size == parent.length) {
       parent = Arrays.copyOf(parent, size * 2);
@@ -34,15 +42,22 @@ public final class UnionFind {
     return size++;
   }
 
-  /** How many ids have been made, merged or not. */
+  /**
+   * How many ids have been made, merged or not.
+   *
+   * @return one past the largest id made; the valid ids are 0 up to it
+   */
   public int size() {
     return size;
   }
 
   /**
    * The root of {@code id}'s set, with the path to it compressed. An id this union-find never
-   * made - negative, or past {@link #size} - is refused: an unmade slot below the array's
+   * made - negative, or past {@link #size()} - is refused: an unmade slot below the array's
    * capacity would otherwise read as a member of set 0, silently.
+   *
+   * @param id an id made by {@link #makeSet}
+   * @return the root id of its set
    */
   public int find(int id) {
     if (id < 0 || id >= size) {
@@ -63,6 +78,10 @@ public final class UnionFind {
   /**
    * Joins the sets of {@code a} and {@code b} and returns the root of the joined set, which is
    * the smaller of the two roots. The two may already share a set.
+   *
+   * @param a an id made by {@link #makeSet}
+   * @param b an id made by {@link #makeSet}
+   * @return the root of the joined set
    */
   public int union(int a, int b) {
     int ra = find(a);

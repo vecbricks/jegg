@@ -41,7 +41,11 @@ public final class Selection<L extends Language<L>> {
     this.cost = cost;
   }
 
-  /** The roots the selection was made for, as root ids. */
+  /**
+   * The roots the selection was made for, as root ids.
+   *
+   * @return the canonical ids of the roots, in the order given to the extractor
+   */
   public IntList roots() {
     return roots;
   }
@@ -60,12 +64,22 @@ public final class Selection<L extends Language<L>> {
     return index;
   }
 
-  /** The node chosen for this class; the class must be one the roots reach. */
+  /**
+   * The node chosen for this class; the class must be one the roots reach.
+   *
+   * @param eclass the canonical id of a class in the selection
+   * @return the node chosen for the class
+   * @throws IllegalArgumentException if the class is not in the selection
+   */
   public L node(int eclass) {
     return at(indexOf(eclass));
   }
 
-  /** The classes the selection covers, in id order, with their nodes, read-only. */
+  /**
+   * The classes the selection covers, in id order, with their nodes, read-only.
+   *
+   * @return a fresh unmodifiable map from class id to its chosen node
+   */
   public Map<Integer, L> nodes() {
     LinkedHashMap<Integer, L> out = LinkedHashMap.newLinkedHashMap(ids.length);
     for (int i = 0; i < ids.length; i++) {
@@ -74,17 +88,29 @@ public final class Selection<L extends Language<L>> {
     return Collections.unmodifiableMap(out);
   }
 
-  /** The sum of the chosen nodes' own costs, each class once. */
+  /**
+   * The sum of the chosen nodes' own costs, each class once.
+   *
+   * @return the selection's cost, finite and non-negative
+   */
   public double cost() {
     return cost;
   }
 
-  /** How many classes the selection covers. */
+  /**
+   * How many classes the selection covers.
+   *
+   * @return the number of classes, which is also the number of chosen nodes
+   */
   public int size() {
     return ids.length;
   }
 
-  /** The selection's terms, one per root, sharing subterm objects where the roots share classes. */
+  /**
+   * The selection's terms, one per root, sharing subterm objects where the roots share classes.
+   *
+   * @return a fresh list with the term of each root, in the order of {@link #roots()}
+   */
   public List<Extracted<L>> terms() {
     Object[] built = new Object[ids.length];
     List<Extracted<L>> out = new ArrayList<>();

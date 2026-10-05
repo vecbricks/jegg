@@ -34,6 +34,8 @@ public final class EClass<L extends Language<L>, D> {
    * for both from then on, and a repair drops the newer from each list it repairs. Two entries
    * are equal when they name the same node and class; since a rebuild changes both in place, an
    * entry is not a stable key for a hash table while the graph changes.
+   *
+   * @param <L> the language
    */
   public static final class Parent<L> {
     private L node;
@@ -42,6 +44,12 @@ public final class EClass<L extends Language<L>, D> {
     // survives in every list, which is what keeps one entry shared by all of a node's lists.
     private final int serial;
 
+    /**
+     * A parent entry with serial 0, for a caller outside the e-graph.
+     *
+     * @param node the e-node, which has the class as a child
+     * @param classId the id of the class the node was added to
+     */
     public Parent(L node, int classId) {
       this(node, classId, 0);
     }
@@ -56,12 +64,20 @@ public final class EClass<L extends Language<L>, D> {
       return serial;
     }
 
-    /** The node, in the form the hashcons holds it under. */
+    /**
+     * The node, in the form the hashcons holds it under.
+     *
+     * @return the e-node; canonical once the graph is rebuilt
+     */
     public L node() {
       return node;
     }
 
-    /** The class the node was added to, or a root it was merged into since; not always a root. */
+    /**
+     * The class the node was added to, or a root it was merged into since; not always a root.
+     *
+     * @return an e-class id; pass it through {@code find} for the canonical id
+     */
     public int classId() {
       return classId;
     }
@@ -105,7 +121,11 @@ public final class EClass<L extends Language<L>, D> {
     this.data = data;
   }
 
-  /** The class's id, which is a root of the union-find while the class is live. */
+  /**
+   * The class's id, which is a root of the union-find while the class is live.
+   *
+   * @return the canonical e-class id
+   */
   public int id() {
     return id;
   }
@@ -114,17 +134,27 @@ public final class EClass<L extends Language<L>, D> {
    * The nodes, in insertion order, as a read-only view of the live list: {@code add},
    * {@code merge} and {@code rebuild} change it, so a caller that will change the graph while
    * iterating - an applier, a condition - copies it first.
+   *
+   * @return the class's e-nodes, never empty for a live class
    */
   public List<L> nodes() {
     return Collections.unmodifiableList(nodes);
   }
 
-  /** The parent entries, in insertion order, a read-only view of the live list, as above. */
+  /**
+   * The parent entries, in insertion order, a read-only view of the live list, as above.
+   *
+   * @return the e-nodes having this class as a child, each with the class it was added to
+   */
   public List<Parent<L>> parents() {
     return Collections.unmodifiableList(parents);
   }
 
-  /** The analysis fact, {@code null} under {@link Analysis#none}. */
+  /**
+   * The analysis fact, {@code null} under {@link Analysis#none}.
+   *
+   * @return the fact of this class as last joined
+   */
   public D data() {
     return data;
   }

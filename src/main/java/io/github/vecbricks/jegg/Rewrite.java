@@ -23,10 +23,22 @@ import java.util.Set;
  *
  * @param <L> the language
  * @param <D> the analysis fact
+ * @param name the rule's name, as {@link #toString} shows it; not null
+ * @param lhs the left-hand pattern to search for; not null
+ * @param rhs what to add for each match; not null. A pattern applier's variables are checked
+ *     against {@code lhs}'s on construction
+ * @param condition whether a match may be applied, read at apply time; not null
  */
 public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, Applier<L, D> rhs,
     Condition<L, D> condition) {
 
+  /**
+   * Checks that no component is null and that a pattern right-hand side uses only variables the
+   * left-hand side binds.
+   *
+   * @throws IllegalArgumentException if the right-hand side has a subterm or payload variable the
+   *     left-hand side does not bind
+   */
   public Rewrite {
     Objects.requireNonNull(name, "name");
     Objects.requireNonNull(lhs, "lhs");
@@ -58,19 +70,43 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
     }
   }
 
-  /** A rewrite from one pattern to another, unconditional. */
+  /**
+   * A rewrite from one pattern to another, unconditional.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param name the rule's name
+   * @param lhs the pattern to search for
+   * @param rhs the pattern to instantiate for each match, over variables {@code lhs} binds
+   * @return the rewrite, whose condition always holds
+   */
   public static <L extends Language<L>, D> Rewrite<L, D> of(String name, Pattern<L> lhs,
       Pattern<L> rhs) {
     return new Rewrite<>(name, lhs, Applier.pattern(rhs), Condition.always());
   }
 
-  /** A rewrite from a pattern to a computed right-hand side, unconditional. */
+  /**
+   * A rewrite from a pattern to a computed right-hand side, unconditional.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param name the rule's name
+   * @param lhs the pattern to search for
+   * @param rhs computes the classes to union with each match, whose variables are not checked
+   * @return the rewrite, whose condition always holds
+   */
   public static <L extends Language<L>, D> Rewrite<L, D> dynamic(String name, Pattern<L> lhs,
       Applier<L, D> rhs) {
     return new Rewrite<>(name, lhs, rhs, Condition.always());
   }
 
-  /** This rewrite under a further condition. */
+  /**
+   * This rewrite under a further condition.
+   *
+   * @param extra a condition that must hold as well as this rewrite's own
+   * @return a new rewrite, equal to this one but for the condition, which is this one's and
+   *     {@code extra}
+   */
   public Rewrite<L, D> when(Condition<L, D> extra) {
     return new Rewrite<>(name, lhs, rhs, condition.and(extra));
   }
@@ -78,6 +114,9 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
   /**
    * The matches of the left-hand side, in the matcher's order. The condition is not read here
    * but in {@link #apply}, as egg's {@code ConditionalApplier} reads it.
+   *
+   * @param graph the graph to search; not changed
+   * @return a fresh list of matches, empty if there are none
    */
   public List<Matcher.Match> search(EGraph<L, D> graph) {
     return Matcher.search(graph, lhs);
@@ -86,6 +125,10 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
   /**
    * The first {@code limit} matches, the search stopped within the node that reached the limit
    * ({@link Matcher#search(EGraph, Pattern, int)}).
+   *
+   * @param graph the graph to search; not changed
+   * @param limit the most matches to return; must be positive
+   * @return a fresh list of at most {@code limit} matches, in the matcher's order
    */
   public List<Matcher.Match> search(EGraph<L, D> graph, int limit) {
     return Matcher.search(graph, lhs, limit);
@@ -99,6 +142,12 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
    * <p>The condition is read here, at apply time, not at search: the runner applies a match
    * only after the matches before it in the iteration, whose merges may have made the
    * condition false since the search.
+   *
+   * @param graph the graph to write to; the match must come from a search of it
+   * @param match a match of this rewrite's left-hand side: the matched class and the
+   *     substitution for the variables
+   * @return the number of unions that changed the graph, which may be zero, or empty if the
+   *     condition did not hold
    */
   public OptionalInt apply(EGraph<L, D> graph, Matcher.Match match) {
     if (!condition.holds(graph, match.eclass(), match.subst())) {

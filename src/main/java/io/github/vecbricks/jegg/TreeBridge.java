@@ -21,12 +21,29 @@ import java.util.List;
  */
 public interface TreeBridge<T, L extends Language<L>> {
 
-  /** The subtrees of {@code tree}, in the operator's argument order; empty for a leaf. */
+  /**
+   * The subtrees of {@code tree}, in the operator's argument order; empty for a leaf.
+   *
+   * @param tree a node of the client's tree
+   * @return its children, empty if it has none
+   */
   List<T> childrenOf(T tree);
 
-  /** The e-node for {@code tree}'s operator and payload over these children's class ids. */
+  /**
+   * The e-node for {@code tree}'s operator and payload over these children's class ids.
+   *
+   * @param tree a node of the client's tree, whose own children are not read here
+   * @param children the class ids of the tree's children, in argument order
+   * @return the e-node, with {@code children} as its children
+   */
   L node(T tree, IntList children);
 
-  /** The tree for this e-node over these subtrees, already built, in argument order. */
+  /**
+   * The tree for this e-node over these subtrees, already built, in argument order.
+   *
+   * @param node the e-node whose operator and payload the tree node takes
+   * @param children the client's trees for the node's children, in argument order
+   * @return the client's tree node
+   */
   T build(L node, List<T> children);
 }

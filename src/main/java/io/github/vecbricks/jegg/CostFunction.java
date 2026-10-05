@@ -26,10 +26,22 @@ import java.util.function.IntToDoubleFunction;
 @FunctionalInterface
 public interface CostFunction<L extends Language<L>> {
 
-  /** The cost of this one node, its children not counted. */
+  /**
+   * The cost of this one node, its children not counted.
+   *
+   * @param node the e-node to price
+   * @return the node's own cost, finite and non-negative
+   */
   double nodeCost(L node);
 
-  /** The cost of a term rooted at {@code node} whose children cost {@code childCost} each. */
+  /**
+   * The cost of a term rooted at {@code node} whose children cost {@code childCost} each.
+   *
+   * @param node the e-node at the term's root
+   * @param childCost the best cost of the tree for a child class, given the child's class id
+   * @return the cost of the tree rooted at {@code node}, finite and non-negative; the sum of
+   *     {@link #nodeCost} and the children's costs unless overridden
+   */
   default double cost(L node, IntToDoubleFunction childCost) {
     double total = nodeCost(node);
     IntList children = node.children();
@@ -39,12 +51,23 @@ public interface CostFunction<L extends Language<L>> {
     return total;
   }
 
-  /** egg's {@code AstSize}: every node costs one, so the cheapest term is the smallest. */
+  /**
+   * egg's {@code AstSize}: every node costs one, so the cheapest term is the smallest.
+   *
+   * @param <L> the language
+   * @return a cost function pricing every node at 1
+   */
   static <L extends Language<L>> CostFunction<L> astSize() {
     return node -> 1.0;
   }
 
-  /** egg's {@code AstDepth}: the cheapest term is the shallowest. */
+  /**
+   * egg's {@code AstDepth}: the cheapest term is the shallowest.
+   *
+   * @param <L> the language
+   * @return a cost function whose tree cost is 1 plus the deepest child's, so a term costs its
+   *     depth; its {@link #nodeCost} is 1
+   */
   static <L extends Language<L>> CostFunction<L> astDepth() {
     return new CostFunction<>() {
       @Override

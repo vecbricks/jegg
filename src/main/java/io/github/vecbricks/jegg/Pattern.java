@@ -30,7 +30,12 @@ import java.util.function.Function;
  */
 public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Pattern.Node {
 
-  /** A variable: matches any class, binding it; or must agree with its binding. */
+  /**
+   * A variable: matches any class, binding it; or must agree with its binding.
+   *
+   * @param <L> the language
+   * @param name the variable's name, without the {@code ?} that {@link #toString} prefixes
+   */
   record Var<L extends Language<L>>(String name) implements Pattern<L> {
     @Override
     public String toString() {
@@ -38,9 +43,18 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
     }
   }
 
-  /** An operator with its payload constraint, over child patterns in argument order. */
+  /**
+   * An operator with its payload constraint, over child patterns in argument order.
+   *
+   * @param <L> the language
+   * @param head matches the e-node's operator and payload, and builds a node on the right-hand
+   *     side
+   * @param children the child patterns in argument order, copied on construction so the list is
+   *     immutable; empty for a leaf
+   */
   record Node<L extends Language<L>>(Head<L> head, List<Pattern<L>> children)
       implements Pattern<L> {
+    /** Copies {@code children} so the pattern is immutable. */
     public Node {
       children = List.copyOf(children);
     }
@@ -62,10 +76,23 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
      * The substitution extended by whatever this head binds if {@code node}'s operator and
      * payload match under {@code subst}, or {@code null} if they do not. Children are not
      * looked at here.
+     *
+     * @param node the e-node to test; its operator and payload are read, its children are not
+     * @param subst the bindings so far, which this head must agree with for any payload variable
+     *     it has already bound
+     * @return {@code subst} or an extension of it with this head's payload bindings, or
+     *     {@code null} (not an empty substitution) if the node does not match
      */
     Subst match(L node, Subst subst);
 
-    /** The e-node with this head over these children, payload variables read from the subst. */
+    /**
+     * The e-node with this head over these children, payload variables read from the subst.
+     *
+     * @param subst the match's substitution, which must bind every payload variable this head
+     *     reads
+     * @param children the ids of the child classes, in argument order
+     * @return a new e-node, not yet in any graph
+     */
     L build(Subst subst, IntList children);
 
     /**
@@ -73,6 +100,9 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
      * does not say. {@link Rewrite} checks a right-hand side's payload variables against the
      * left's only when every head on both sides declares, so a head that binds without saying
      * so is never wrongly refused, only unchecked. jegg's own heads declare.
+     *
+     * @return the declared payload variable names, empty if the head does not say; an empty set
+     *     inside means it declares that it binds none
      */
     default Optional<Set<String>> variables() {
       return Optional.empty();
@@ -84,13 +114,19 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
      * rather than at every class. Empty, the default, means any node may match and every class
      * is looked at. A head that names a class must match no node outside it; jegg's own heads
      * name theirs.
+     *
+     * @return the one node class this head matches, or empty if any node may match
      */
     default Optional<Class<? extends L>> type() {
       return Optional.empty();
     }
   }
 
-  /** The subterm variables of this pattern, in first-occurrence order. */
+  /**
+   * The subterm variables of this pattern, in first-occurrence order.
+   *
+   * @return a fresh set of variable names, without the {@code ?}, empty if there are none
+   */
   default Set<String> subtermVariables() {
     Set<String> out = new LinkedHashSet<>();
     switch (this) {
@@ -107,6 +143,9 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
   /**
    * The payload variables of this pattern's heads, in first-occurrence order, or empty if a
    * head does not declare its variables ({@link Head#variables}).
+   *
+   * @return a fresh set of payload variable names, or empty if some head does not declare; an
+   *     empty set inside means every head declares and none binds a payload
    */
   default Optional<Set<String>> payloadVariables() {
     Set<String> out = new LinkedHashSet<>();
@@ -134,7 +173,14 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
     }
   }
 
-  /** A variable pattern. */
+  /**
+   * A variable pattern.
+   *
+   * @param <L> the language
+   * @param name the variable's name, without the {@code ?}; the same name in two places must
+   *     bind the same class
+   * @return the variable pattern
+   */
   static <L extends Language<L>> Pattern<L> var(String name) {
     return new Var<>(name);
   }
@@ -142,6 +188,11 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
   /**
    * A node pattern with this head over these children. The varargs array is read element by
    * element and never handed on, which is what makes the {@code @SafeVarargs} true.
+   *
+   * @param <L> the language
+   * @param head the head the node matches or builds by
+   * @param children the child patterns in argument order; none for a leaf
+   * @return the node pattern, over a copy of {@code children}
    */
   @SafeVarargs
   static <L extends Language<L>> Pattern<L> node(Head<L> head, Pattern<L>... children) {
@@ -152,7 +203,14 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
     return new Node<>(head, list);
   }
 
-  /** A node pattern with {@code prototype}'s operator and payload over these children. */
+  /**
+   * A node pattern with {@code prototype}'s operator and payload over these children.
+   *
+   * @param <L> the language
+   * @param prototype a node supplying the operator and payload; its own children are ignored
+   * @param children the child patterns in argument order; none for a leaf
+   * @return the node pattern, over a copy of {@code children}
+   */
   @SafeVarargs
   static <L extends Language<L>> Pattern<L> of(L prototype, Pattern<L>... children) {
     List<Pattern<L>> list = new java.util.ArrayList<>(children.length);
@@ -166,6 +224,11 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
    * A head that matches exactly {@code prototype}'s operator and payload - its
    * {@link Language#head} - and builds with {@link Language#withChildren}. The prototype's
    * own children are ignored.
+   *
+   * @param <L> the language
+   * @param prototype a node supplying the operator and payload to match and to build with
+   * @return a head that declares no payload variables and names the prototype's class when its
+   *     head is a node of that class
    */
   static <L extends Language<L>> Head<L> head(L prototype) {
     Object key = prototype.head();
@@ -209,6 +272,16 @@ public sealed interface Pattern<L extends Language<L>> permits Pattern.Var, Patt
    * {@code payloadOf}, to the payload variable {@code variable} - or requires it to equal the
    * variable's binding if there is one - and builds through {@code build} from the bound
    * payload and the children.
+   *
+   * @param <L> the language
+   * @param <N> the node class the head matches
+   * @param type the node class matched; a node of another class does not match
+   * @param variable the payload variable's name, without the {@code ?}
+   * @param payloadOf reads the payload from a node of {@code type}, compared by {@code equals}
+   *     with the variable's binding
+   * @param build builds an e-node from the payload bound to {@code variable} and the child
+   *     class ids
+   * @return a head that declares {@code variable} as its one payload variable
    */
   static <L extends Language<L>, N extends L> Head<L> binding(Class<N> type, String variable,
       Function<N, ?> payloadOf, BiFunction<Object, IntList, L> build) {
