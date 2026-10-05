@@ -66,6 +66,8 @@ Spark dependency and nothing in it is specific to Varka.
 
 - [`docs/concepts.md`](docs/concepts.md): the ideas, each with the jegg type
   that embodies it and the paper's section, for a reader new to e-graphs.
+- [`docs/egg-comparison.md`](docs/egg-comparison.md): for a reader who knows egg, what is and is
+  not ported, module by module, and what jegg adds.
 - [`docs/first-language.md`](docs/first-language.md): a language with a
   payload, a bridge from your own tree, a rule that binds a payload, and an
   extraction over several roots.
