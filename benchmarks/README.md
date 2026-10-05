@@ -1,11 +1,29 @@
 # Measurements
 
 The measurement harness of `PLAN.md` 6 lives under `src/jmh/java` and compiles with the tests
-on every build. It runs under the `bench` profile:
+on every build. It runs under the `bench` profile; `-Dbench=help` prints this text, as the
+harness's `--help` does:
 
     mvn -Pbench -q test-compile exec:exec -Dbench=<rebuild|projection|determinism|all>[,<name>]
 
-and writes one file per benchmark here, `<Name>-jdk<N>-results.txt`, with the header
+    Benchmarks (-Dbench=, comma separated, default all):
+      rebuild      deferred against eager rebuilding, one saturation of each ported test
+      projection   a projection of 64 nodes over the toy date language: saturation, extraction
+      determinism  DeterminismProbe in ten fresh JVMs, the renderings compared byte for byte
+      all          the three above
+
+    Properties:
+      -Dbench.quick=true    a short run that checks the harness; its numbers are not for
+                            committing (default false)
+      -Dbench.force=true    run although the one-minute load average is above 1.0 (default
+                            false)
+      -Dbench.pin=<auto|none|cpu list>
+                            the cores to pin to: the fast cores sharing cpu0's L3, none, or
+                            a taskset list such as 0-3,12-15 (default auto)
+
+    --help, -h, or -Dbench=help prints this text.
+
+It writes one file per benchmark here, `<Name>-jdk<N>-results.txt`, with the header
 `CONTRIBUTING.md` asks for: the JVM and OS, the processor, the commit (marked `+dirty` when the
 tree had uncommitted changes, which makes the file a draft), the date, the load average before
 and after the run, and the JMH settings of each section. `-Dbench.quick=true` runs a short

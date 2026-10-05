@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.results.RunResult;
 import org.openjdk.jmh.results.format.ResultFormatFactory;
@@ -61,9 +62,68 @@ public final class Benchmarks {
   private Benchmarks() {
   }
 
+  /** The benchmarks the harness runs, in the order {@code all} runs them. */
+  private static final List<String> NAMES = List.of("rebuild", "projection", "determinism");
+
+  /**
+   * What {@code --help} prints, and what the README's command block quotes: a test holds each
+   * line of it to the README.
+   */
+  static final String USAGE = """
+      mvn -Pbench -q test-compile exec:exec -Dbench=<rebuild|projection|determinism|all>[,<name>]
+
+      Benchmarks (-Dbench=, comma separated, default all):
+        rebuild      deferred against eager rebuilding, one saturation of each ported test
+        projection   a projection of 64 nodes over the toy date language: saturation, extraction
+        determinism  DeterminismProbe in ten fresh JVMs, the renderings compared byte for byte
+        all          the three above
+
+      Properties:
+        -Dbench.quick=true    a short run that checks the harness; its numbers are not for
+                              committing (default false)
+        -Dbench.force=true    run although the one-minute load average is above 1.0 (default
+                              false)
+        -Dbench.pin=<auto|none|cpu list>
+                              the cores to pin to: the fast cores sharing cpu0's L3, none, or
+                              a taskset list such as 0-3,12-15 (default auto)
+
+      --help, -h, or -Dbench=help prints this text.""";
+
+  /**
+   * Checks the arguments before anything is started: an empty result means run; otherwise the
+   * usage has been printed and the value is the exit status. {@code --help}, {@code -h} and
+   * {@code -Dbench=help} are a request, answered on {@code out} with status 0; a benchmark name
+   * that is not known is an error, named on {@code err} with the usage, status 2.
+   */
+  static OptionalInt check(String[] args, String bench, PrintStream out, PrintStream err) {
+    for (String a : args) {
+      if (a.equals("--help") || a.equals("-h")) {
+        out.println(USAGE);
+        return OptionalInt.of(0);
+      }
+    }
+    if (bench.equals("help")) {
+      out.println(USAGE);
+      return OptionalInt.of(0);
+    }
+    for (String name : bench.split(",", -1)) {
+      if (!name.equals("all") && !NAMES.contains(name)) {
+        err.println("unknown benchmark '" + name + "'");
+        err.println();
+        err.println(USAGE);
+        return OptionalInt.of(2);
+      }
+    }
+    return OptionalInt.empty();
+  }
+
   public static void main(String[] args) throws Exception {
-    java.util.Set<String> which = java.util.Set.of(System.getProperty("bench", "all")
-        .split(","));
+    String bench = System.getProperty("bench", "all");
+    OptionalInt status = check(args, bench, System.out, System.err);
+    if (status.isPresent()) {
+      System.exit(status.getAsInt());
+    }
+    java.util.Set<String> which = java.util.Set.of(bench.split(","));
     boolean quick = Boolean.getBoolean("bench.quick");
     if (Machine.relaunchPinned(args)) {
       return;
