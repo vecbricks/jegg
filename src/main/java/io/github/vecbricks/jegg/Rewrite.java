@@ -19,7 +19,8 @@ import java.util.Set;
  * A named rewrite: a left-hand {@link Searcher} (a pattern, or several joined in a
  * {@link MultiPattern}), a right-hand {@link Applier} and a {@link Condition}.
  * Searching finds the matches; applying one adds the right-hand side and unions it with the
- * matched class. The runner does both for every rule each iteration, reading all matches
+ * matched class, or, for a multi-pattern right-hand side, with the classes its clause variables
+ * name. The runner does both for every rule each iteration, reading all matches
  * before writing any, which is the equality-saturation loop of the paper's Figure 5b.
  *
  * @param <L> the language
@@ -38,7 +39,9 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
    * left-hand side binds.
    *
    * @throws IllegalArgumentException if the right-hand side has a subterm or payload variable the
-   *     left-hand side does not bind
+   *     left-hand side does not bind (or, for a multi-pattern right-hand side, no earlier clause
+   *     binds), or if the left-hand side is a multi-pattern whose first clause is a bare
+   *     variable; egg refuses that one only when it searches
    */
   public Rewrite {
     Objects.requireNonNull(name, "name");
@@ -121,13 +124,14 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
   }
 
   /**
-   * A rewrite from a pattern to a computed right-hand side, unconditional.
+   * A rewrite from a pattern or multi-pattern to a computed right-hand side, unconditional.
    *
    * @param <L> the language
    * @param <D> the analysis fact
    * @param name the rule's name
-   * @param lhs the pattern to search for
-   * @param rhs computes the classes to union with each match, whose variables are not checked
+   * @param lhs the pattern or multi-pattern to search for
+   * @param rhs computes the classes to union with each match; a function's variables are not
+   *     checked, a pattern's or a multi-pattern's ({@link Applier#multi}) are
    * @return the rewrite, whose condition always holds
    */
   public static <L extends Language<L>, D> Rewrite<L, D> dynamic(String name, Searcher<L> lhs,
@@ -158,8 +162,9 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
   }
 
   /**
-   * The first {@code limit} matches, the search stopped within the node that reached the limit
-   * ({@link Searcher#search}).
+   * The first {@code limit} matches, a prefix of all of them ({@link Searcher#search}); a
+   * pattern's search stops within the node that reached the limit, a multi-pattern's within the
+   * class of its first clause.
    *
    * @param graph the graph to search; not changed
    * @param limit the most matches to return; must be positive
@@ -189,8 +194,21 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
     if (!condition.holds(graph, match.eclass(), match.subst())) {
       return Optional.empty();
     }
-    return Optional.of(rhs.applyTo(graph, match));
+    Applied done = rhs.applyTo(graph, match);
+    // The common results are shared, so an application allocates nothing for them.
+    if (done == Applied.NOTHING) {
+      return NOTHING;
+    } else if (done == Applied.ONE_UNION) {
+      return ONE_UNION;
+    } else if (done == Applied.COUNTED_ONLY) {
+      return COUNTED_ONLY;
+    }
+    return Optional.of(done);
   }
+
+  private static final Optional<Applied> NOTHING = Optional.of(Applied.NOTHING);
+  private static final Optional<Applied> ONE_UNION = Optional.of(Applied.ONE_UNION);
+  private static final Optional<Applied> COUNTED_ONLY = Optional.of(Applied.COUNTED_ONLY);
 
   @Override
   public String toString() {

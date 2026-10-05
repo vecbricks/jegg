@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 
@@ -102,12 +103,27 @@ public final class Matcher {
 
   /**
    * The first {@code limit} matches of a multi-pattern, in class order of its first clause: a
-   * depth-first join, egg's machine without the compilation. A clause whose variable is bound
-   * is matched in that class only; a clause whose variable is not ranges over the classes
-   * holding a node of the pattern's root class where the head names it, else over every class,
-   * which is egg's {@code Scan}. The match's class is the one the first clause matched in, and
-   * its substitution binds every clause variable and every pattern variable. Substitutions are
-   * distinct.
+   * depth-first join, egg's machine without the compilation. For each clause, in order:
+   * <ul>
+   *   <li>a pattern that is ground under the bindings so far, and not a leaf, is looked up in the
+   *       hashcons, as egg's compiled {@code Lookup} does; so it finds a node that
+   *       {@link EGraph#retainNodes} dropped from its class, which a walk of the class's nodes
+   *       would not;
+   *   <li>otherwise a clause whose variable is bound is matched in that class only, and so is a
+   *       clause whose pattern is a bare variable already bound;
+   *   <li>otherwise the clause ranges over the classes holding a node of the pattern's root
+   *       class where its head names one, else over every class, which is egg's {@code Scan}.
+   * </ul>
+   * A pattern variable named like its clause variable ({@code ?x = (f ?x)}) is a join, as in
+   * egg: the clause variable is bound before the pattern is matched. The match's class is the
+   * one the first clause matched in, and its substitution binds every clause variable and every
+   * pattern variable. Substitutions are distinct: two partial matches that differ only in a
+   * payload variable some heads bind and others do not can extend to one substitution, which
+   * is kept once.
+   *
+   * <p>One difference from egg remains: a ground subterm inside a clause that is not ground
+   * itself is matched by walking its class's nodes, as a single pattern's is, where egg looks it
+   * up; the two differ only for a node {@code retainNodes} dropped.
    *
    * @param <L> the language
    * @param <D> the analysis fact
@@ -128,55 +144,138 @@ public final class Matcher {
           "a multi-pattern cannot start with a bare variable: " + multi);
     }
     List<Match> matches = new ArrayList<>();
-    join(graph, multi.clauses(), 0, Subst.EMPTY, -1, limit, matches);
+    new Join<>(graph, multi.clauses(), limit, matches).join(0, Subst.EMPTY, -1);
     return matches;
   }
 
-  private static <L extends Language<L>, D> void join(EGraph<L, D> graph,
-      List<MultiPattern.Clause<L>> clauses, int index, Subst subst, int first, int limit,
-      List<Match> out) {
-    if (index == clauses.size()) {
-      out.add(new Match(first, subst));
-      return;
-    }
-    MultiPattern.Clause<L> clause = clauses.get(index);
-    OptionalInt named = subst.id(clause.var());
-    if (named.isPresent()) {
-      joinIn(graph, clauses, index, graph.find(named.getAsInt()), subst, first, limit, out);
-      return;
-    }
-    Class<?> type = clause.pattern() instanceof Pattern.Node<L> node
-        ? node.head().type().orElse(null) : null;
-    if (type != null) {
-      BitSet classes = graph.classesHolding(type);
-      for (int id = classes.nextSetBit(0); id >= 0 && out.size() < limit;
-          id = classes.nextSetBit(id + 1)) {
-        joinIn(graph, clauses, index, id, subst, first, limit, out);
-      }
-    } else {
-      for (int id = graph.nextLiveClass(0); id >= 0 && out.size() < limit;
-          id = graph.nextLiveClass(id + 1)) {
-        joinIn(graph, clauses, index, id, subst, first, limit, out);
-      }
-    }
-  }
+  /** The state of one multi-pattern search: the clauses, a buffer per clause, the leaves seen. */
+  private static final class Join<L extends Language<L>, D> {
+    private final EGraph<L, D> graph;
+    private final List<MultiPattern.Clause<L>> clauses;
+    private final int limit;
+    private final List<Match> out;
+    private final Set<Subst> seen = new HashSet<>();
+    // One reusable list per clause: the substitutions a clause yields in one class are read
+    // while the clauses after it fill their own, so a search allocates per match, not per class.
+    private final List<List<Subst>> buffers;
+    private final List<Set<String>> variables;
+    private final List<Optional<Set<String>>> payloads;
 
-  private static <L extends Language<L>, D> void joinIn(EGraph<L, D> graph,
-      List<MultiPattern.Clause<L>> clauses, int index, int id, Subst subst, int first, int limit,
-      List<Match> out) {
-    MultiPattern.Clause<L> clause = clauses.get(index);
-    int start = index == 0 ? id : first;
-    for (Subst matched : matchIn(graph, clause.pattern(), id, subst)) {
-      // A pattern variable named like the clause variable is a join, as egg's Compare: the two
-      // must be the same class, and binding the clause variable must not overwrite the match.
-      OptionalInt prior = matched.id(clause.var());
-      if (prior.isPresent() && graph.find(prior.getAsInt()) != id) {
-        continue;
+    Join(EGraph<L, D> graph, List<MultiPattern.Clause<L>> clauses, int limit, List<Match> out) {
+      this.graph = graph;
+      this.clauses = clauses;
+      this.limit = limit;
+      this.out = out;
+      this.buffers = new ArrayList<>(clauses.size());
+      this.variables = new ArrayList<>(clauses.size());
+      this.payloads = new ArrayList<>(clauses.size());
+      for (MultiPattern.Clause<L> clause : clauses) {
+        buffers.add(new ArrayList<>());
+        variables.add(clause.pattern().subtermVariables());
+        payloads.add(clause.pattern().payloadVariables());
       }
-      join(graph, clauses, index + 1, matched.bind(clause.var(), id), start, limit, out);
-      if (out.size() >= limit) {
+    }
+
+    void join(int index, Subst subst, int first) {
+      if (index == clauses.size()) {
+        if (seen.add(subst)) {
+          out.add(new Match(first, subst));
+        }
         return;
       }
+      MultiPattern.Clause<L> clause = clauses.get(index);
+      OptionalInt named = subst.id(clause.var());
+      if (clause.pattern() instanceof Pattern.Node<L> node && !node.children().isEmpty()
+          && isGround(index, subst)) {
+        OptionalInt found = lookUp(node, subst);
+        if (found.isEmpty()) {
+          return;
+        }
+        int id = graph.find(found.getAsInt());
+        if (named.isPresent() && graph.find(named.getAsInt()) != id) {
+          return;
+        }
+        join(index + 1, subst.bind(clause.var(), id), index == 0 ? id : first);
+        return;
+      }
+      if (named.isPresent()) {
+        joinIn(index, graph.find(named.getAsInt()), subst, first);
+        return;
+      }
+      if (clause.pattern() instanceof Pattern.Var<L>(var name) && subst.id(name).isPresent()) {
+        joinIn(index, graph.find(subst.id(name).getAsInt()), subst, first);
+        return;
+      }
+      Class<?> type = clause.pattern() instanceof Pattern.Node<L> node
+          ? node.head().type().orElse(null) : null;
+      if (type != null) {
+        BitSet classes = graph.classesHolding(type);
+        for (int id = classes.nextSetBit(0); id >= 0 && out.size() < limit;
+            id = classes.nextSetBit(id + 1)) {
+          joinIn(index, id, subst, first);
+        }
+      } else {
+        for (int id = graph.nextLiveClass(0); id >= 0 && out.size() < limit;
+            id = graph.nextLiveClass(id + 1)) {
+          joinIn(index, id, subst, first);
+        }
+      }
+    }
+
+    private void joinIn(int index, int id, Subst subst, int first) {
+      MultiPattern.Clause<L> clause = clauses.get(index);
+      int start = index == 0 ? id : first;
+      // Bound first when the pattern names its own clause variable, so the pattern's ?x and the
+      // clause's ?x are one class (egg's compiler binds the clause register before the pattern);
+      // otherwise bound after, which costs nothing for the classes that do not match.
+      boolean self = variables.get(index).contains(clause.var());
+      Subst given = self ? subst.bind(clause.var(), id) : subst;
+      List<Subst> found = buffers.get(index);
+      found.clear();
+      matchIn(graph, clause.pattern(), id, given, Integer.MAX_VALUE, found);
+      for (int i = 0; i < found.size() && out.size() < limit; i++) {
+        Subst matched = found.get(i);
+        join(index + 1, self ? matched : matched.bind(clause.var(), id), start);
+      }
+    }
+
+    /**
+     * Whether every variable of the clause's pattern, subterm and payload, is bound; a head that
+     * does not declare its payload variables makes the pattern not ground, so it is walked.
+     */
+    private boolean isGround(int index, Subst subst) {
+      for (String v : variables.get(index)) {
+        if (subst.id(v).isEmpty()) {
+          return false;
+        }
+      }
+      if (payloads.get(index).isEmpty()) {
+        return false;
+      }
+      for (String v : payloads.get(index).get()) {
+        if (!subst.hasPayload(v)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    /** The class of a ground pattern through the hashcons, or empty if the graph lacks it. */
+    private OptionalInt lookUp(Pattern<L> pattern, Subst subst) {
+      return switch (pattern) {
+        case Pattern.Var<L>(var name) -> subst.id(name);
+        case Pattern.Node<L>(var head, var children) -> {
+          int[] ids = new int[children.size()];
+          for (int i = 0; i < ids.length; i++) {
+            OptionalInt child = lookUp(children.get(i), subst);
+            if (child.isEmpty()) {
+              yield OptionalInt.empty();
+            }
+            ids[i] = child.getAsInt();
+          }
+          yield graph.lookup(head.build(subst, IntList.of(ids)));
+        }
+      };
     }
   }
 

@@ -6,10 +6,11 @@
  * express or implied. See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.github.vecbricks.jegg;
 
-import java.util.LinkedHashSet;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -46,8 +47,8 @@ public record MultiPattern<L extends Language<L>>(List<Clause<L>> clauses)
   public record Clause<L extends Language<L>>(String var, Pattern<L> pattern) {
     /** Checks that neither component is null. */
     public Clause {
-      java.util.Objects.requireNonNull(var, "var");
-      java.util.Objects.requireNonNull(pattern, "pattern");
+      Objects.requireNonNull(var, "var");
+      Objects.requireNonNull(pattern, "pattern");
     }
 
     @Override

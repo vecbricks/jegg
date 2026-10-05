@@ -14,8 +14,9 @@ terms) then kept jegg from asking, its bans were released an iteration later tha
 - A call that looks like a predicate may be a mutation; the order of `&&` operands is then part
   of the algorithm, and a "simplification" that reorders them changes results. `Runner.run` now
   hoists the call into its own statement and `Scheduler.canStop`'s Javadoc states the contract:
-  asked after every iteration in which no rule merged two classes, whether or not nodes were
-  added.
+  asked after every iteration in which nothing was counted as applied - no rule merged two
+  classes, and no rule whose right-hand side is a multi-pattern matched (egg counts each of its
+  matches, #34) - whether or not nodes were added.
 - Sizes cannot tell an iteration that changed nothing: an add and a merge in one iteration leave
   the node and class counts as they were. `EGraph.changes()` counts both, and the runner reads it
   before the hooks run, so a hook's edits count too.
@@ -24,7 +25,8 @@ terms) then kept jegg from asking, its bans were released an iteration later tha
 
 ## How to apply it
 
-- Any change to `Runner.run`'s stop rule must keep: the scheduler asked whenever no rule merged;
+- Any change to `Runner.run`'s stop rule must keep: the scheduler asked whenever nothing was
+  counted as applied (`Applied.counted`: the unions, plus a multi-pattern right-hand side's matches);
   the change counter read before the hooks; a passed limit kept. `RunnerTest` has a test for each,
   and the egg-pinned suites must still end at egg's counts.
 - When porting a condition from another codebase, write down which operands have effects.

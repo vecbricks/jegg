@@ -132,10 +132,13 @@ class MultiPatternTest {
     List<Rewrite<Sym, Void>> rules = List.of(
         rule("rule1", "?x = (x)", "?y = (y), ?y = (z)"),
         rule("rule2", "?x = (x), ?y = (y), ?z = (z)", "?y = (y), ?y = (z)"));
-    Runner.of(g, rules).run();
+    RunReport report = Runner.of(g, rules).run();
     int y = add(g, "(y)");
     int z = add(g, "(z)");
     assertEquals(g.find(y), g.find(z));
+    // rule2 fired too, once rule1 had made (y) and (z).
+    assertTrue(report.iterations().stream().anyMatch(it -> it.matches().get("rule2") > 0),
+        report.toString());
   }
 
   @Test
@@ -251,17 +254,22 @@ class MultiPatternTest {
   }
 
   @Test
-  void aMultiPatternApplierDoesItsOwnUnionsThroughApplyToo() {
-    // Called through the interface, apply still writes, and has nothing to union with the
-    // matched class.
+  void aMultiPatternApplierRefusesApplyAndCountsEachMatchThroughApplyTo() {
+    // apply would hide its unions and its count from whoever called it, so it is refused, as
+    // egg's apply_one panics; applyTo reports the unions and counts the match once.
     EGraph<Sym, Void> g = graph();
     int x = add(g, "(x)");
     g.rebuild();
     Applier<Sym, Void> applier = Applier.multi(multi("?y = (y), ?y = (z)"));
-    assertEquals(IntList.EMPTY, applier.apply(g, x, Subst.EMPTY));
-    int y = add(g, "(y)");
-    int z = add(g, "(z)");
-    assertEquals(g.find(y), g.find(z));
+    assertThrows(UnsupportedOperationException.class, () -> applier.apply(g, x, Subst.EMPTY));
+    Matcher.Match match = new Matcher.Match(x, Subst.EMPTY.bind("x", x));
+    assertEquals(new Applied(1, 1), applier.applyTo(g, match));
+    assertEquals(new Applied(0, 1), applier.applyTo(g, match));
+    // A lambda that forwards to it through apply fails loudly, not with a wrong count.
+    Rewrite<Sym, Void> forwarding = Rewrite.dynamic("forwarding", multi("?x = (x)"),
+        (graph, eclass, subst) -> applier.apply(graph, eclass, subst));
+    assertThrows(UnsupportedOperationException.class,
+        () -> forwarding.apply(g, forwarding.search(g).get(0)));
   }
 
   @Test
@@ -278,5 +286,109 @@ class MultiPatternTest {
     List<Matcher.Match> found = Matcher.search(g, self, Integer.MAX_VALUE);
     assertEquals(1, found.size());
     assertEquals(g.find(fa), found.get(0).subst().idOf("x"));
+  }
+
+  @Test
+  void twoPartialMatchesThatMeetInOneSubstitutionAreOneMatch() {
+    // A head that binds the payload variable p for Div(true, ..) and nothing for Div(false, ..),
+    // over a class holding both: the first clause yields {u, x, y, p} and {u, x, y}, and the
+    // second extends both to {u, v, x, y, p}. It is one match, so there are two, not three.
+    Pattern.Head<Toy> some = new Pattern.Head<>() {
+      @Override
+      public Subst match(Toy node, Subst subst) {
+        if (!(node instanceof Toy.Div d)) {
+          return null;
+        }
+        if (!d.checked()) {
+          return subst;
+        }
+        return subst.hasPayload("p") ? subst : subst.bindPayload("p", true);
+      }
+
+      @Override
+      public Toy build(Subst subst, IntList children) {
+        return new Toy.Div(subst.hasPayload("p"), children);
+      }
+    };
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int c = g.add(new Toy.Div(true, IntList.of(a, b)));
+    g.merge(c, g.add(new Toy.Div(false, IntList.of(a, b))));
+    g.rebuild();
+    MultiPattern<Toy> twice = MultiPattern.of(
+        MultiPattern.clause("u", Pattern.node(some, Pattern.var("x"), Pattern.var("y"))),
+        MultiPattern.clause("v", Pattern.node(some, Pattern.var("x"), Pattern.var("y"))));
+    List<Matcher.Match> found = Matcher.search(g, twice, Integer.MAX_VALUE);
+    assertEquals(2, found.size(), found.toString());
+    assertEquals(2, new java.util.HashSet<>(found).size());
+    assertEquals(found.subList(0, 2), Matcher.search(g, twice, 2));
+  }
+
+  @Test
+  void aGroundClauseIsLookedUpSoAPrunedNodeStillMatches() {
+    // egg compiles a ground clause to a lookup in its memo, which keeps a node pruning dropped:
+    // (g a) is merged into b's class and pruned from it, and still matches, as in egg 73975c9.
+    EGraph<Sym, Void> g = graph();
+    add(g, "a");
+    int ga = add(g, "(g a)");
+    int b = add(g, "b");
+    add(g, "(f a)");
+    g.merge(ga, b);
+    g.rebuild();
+    g.retainNodes(g.find(b), node -> node.children().isEmpty());
+    g.rebuild();
+    assertTrue(g.lookupTree(Term.parse("(g a)"), BRIDGE).isPresent());
+    assertEquals(1, matches(g, "?y = (g a)"));
+    assertEquals(1, matches(g, "?x = (f ?a), ?y = (g ?a)"));
+    assertEquals(0, matches(g, "?x = (f ?a), ?y = (g ?a), ?y = (f ?a)"));
+  }
+
+  @Test
+  void aClauseWhosePatternIsABoundVariableNamesOneClass() {
+    EGraph<Sym, Void> g = graph();
+    for (int i = 0; i < 20; i++) {
+      add(g, "(p a" + i + ")");
+    }
+    g.rebuild();
+    List<Matcher.Match> byPattern = Matcher.search(g, multi("?x = (p ?a), ?y = ?a"),
+        Integer.MAX_VALUE);
+    List<Matcher.Match> byVariable = Matcher.search(g, multi("?x = (p ?a), ?a = ?y"),
+        Integer.MAX_VALUE);
+    assertEquals(20, byPattern.size());
+    assertEquals(byVariable.size(), byPattern.size());
+    for (Matcher.Match m : byPattern) {
+      assertEquals(m.subst().idOf("a"), m.subst().idOf("y"));
+    }
+  }
+
+  @Test
+  void theReportShowsWhatIsCountedWhereItIsNotTheUnions() {
+    EGraph<Sym, Void> g = graph();
+    add(g, "(x)");
+    RunReport report = Runner.of(g, List.of(rule("noop", "?x = (x)", "?x = (x)"))).run();
+    RunReport.Iteration first = report.iterations().get(0);
+    assertEquals(0, first.unions());
+    assertEquals(1, first.counted());
+    assertTrue(report.toString().contains("0 unions, 1 counted"), report.toString());
+  }
+
+  @Test
+  void theMeasurementHarnessStopsAsTheRunnerDoes() {
+    // Saturation's copy of the loop must read the same count: a no-op multi-pattern rule runs to
+    // the iteration limit in both, where a no-op pattern rule saturates in both.
+    EGraph<Sym, Void> viaHarness = graph();
+    add(viaHarness, "(x)");
+    Saturation.Outcome multi = Saturation.run(Saturation.Mode.DEFERRED, viaHarness,
+        List.of(rule("noop", "?x = (x)", "?x = (x)")), RunLimits.DEFAULT,
+        new BackoffScheduler<>(), graph -> false, Long.MAX_VALUE);
+    assertEquals("IterationLimit", multi.stop());
+    assertEquals(30, multi.iterations());
+    EGraph<Sym, Void> plain = graph();
+    add(plain, "(x)");
+    Saturation.Outcome pattern = Saturation.run(Saturation.Mode.DEFERRED, plain,
+        List.of(Rewrite.<Sym, Void>of("noop", pattern("(x)"), pattern("(x)"))),
+        RunLimits.DEFAULT, new BackoffScheduler<>(), graph -> false, Long.MAX_VALUE);
+    assertEquals("Saturated", pattern.stop());
   }
 }

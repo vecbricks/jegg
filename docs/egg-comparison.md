@@ -109,7 +109,7 @@ The shape of the port in four lines:
 | `ConditionEqual` | `Condition.equal(a, b)` | ported, with both patterns instantiated before either root is read |
 | (none) | `Condition.always()`, `Condition.and(other)` | added |
 | `apply_matches`, `apply_one`, `vars` | `Applier.apply`, `Applier.applyTo`; `Pattern.subtermVariables()` | `applyTo` is `apply_one`: it builds, unions with the matched class, and says how many unions changed the graph and how many egg counts as applied (`Applied`) |
-| `multi_rewrite!` | `Rewrite.multi(name, lhs, rhs)` | clauses `?var = pattern` built with `MultiPattern.of`; no text syntax in the library; a multi-pattern counts every match as applied, as egg's `apply_matches` does, so a run in which one matches never saturates (egg's `prop` `lem_imply`; jegg's port of it still stands in a conditional rule until the second pull request of #34) |
+| `multi_rewrite!` | `Rewrite.multi(name, lhs, rhs)` | clauses `?var = pattern` built with `MultiPattern.of`; no text syntax in the library; a rule whose right-hand side is a multi-pattern (`Applier.multi`) counts every match as applied, as egg's `apply_matches` does, so a run in which one matches never saturates; a multi-pattern searched with a pattern applied counts unions, as egg's does (egg's `prop` `lem_imply`; jegg's port of it still stands in a conditional rule until the second pull request of #34) |
 
 ## `pattern`, `subst`, `machine`, `multipattern`
 

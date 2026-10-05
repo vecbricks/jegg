@@ -72,9 +72,10 @@ Spark dependency and nothing in it is specific to Varka.
   payload, a bridge from your own tree, a rule that binds a payload, and an
   extraction over several roots.
 - [Javadoc](https://vecbricks.github.io/jegg/) of the public surface:
-  `EGraph`, `Language`, `TreeBridge`, `Analysis`, `Pattern`, `Subst`,
-  `Rewrite`, `Condition`, `Applier`, `Runner`, `RunLimits`, `RunReport`,
-  `Scheduler`, `Extractor`, `Selection`, `CostFunction`.
+  `EGraph`, `Language`, `TreeBridge`, `Analysis`, `Pattern`, `MultiPattern`,
+  `Searcher`, `Subst`, `Rewrite`, `Condition`, `Applier`, `Applied`, `Runner`,
+  `RunLimits`, `RunReport`, `Scheduler`, `Extractor`, `Selection`,
+  `CostFunction`.
 - [`PLAN.md`](PLAN.md): where the library came from, the design, egg's
   components mapped to their Java forms, and the outcome of the measurement.
 - [`docs/skills/`](docs/skills/README.md): what this repository learned the

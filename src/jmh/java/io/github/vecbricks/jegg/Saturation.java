@@ -58,13 +58,13 @@ final class Saturation {
       for (int i = 0; i < rules.size(); i++) {
         matches.add(scheduler.search(iteration, i, rules.get(i), graph));
       }
-      int unions = 0;
+      int counted = 0;
       for (int i = 0; i < rules.size() && !timedOut; i++) {
         for (Matcher.Match m : matches.get(i)) {
-          int changed = rules.get(i).apply(graph, m).map(Applied::unions).orElse(0);
-          if (changed > 0) {
-            unions += changed;
-            if (mode == Mode.EAGER) {
+          Optional<Applied> done = rules.get(i).apply(graph, m);
+          if (done.isPresent()) {
+            counted += done.get().counted();
+            if (done.get().unions() > 0 && mode == Mode.EAGER) {
               repaired += graph.rebuild();
             }
           }
@@ -79,7 +79,7 @@ final class Saturation {
         stop = "TimedOut";
       } else if (graph.numNodes() > limits.nodes()) {
         stop = "NodeLimit";
-      } else if (unions == 0 && scheduler.canStop(iteration)
+      } else if (counted == 0 && scheduler.canStop(iteration)
           && graph.numNodes() == nodesBefore && graph.numClasses() == classesBefore) {
         stop = "Saturated";
       } else if (iteration >= limits.iterations()) {

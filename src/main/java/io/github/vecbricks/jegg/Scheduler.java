@@ -36,9 +36,10 @@ public interface Scheduler<L extends Language<L>, D> {
       EGraph<L, D> graph);
 
   /**
-   * Called after every iteration in which no rule merged two classes, whether or not nodes were
-   * added - a condition or an applier may add without merging - as egg calls its
-   * {@code can_stop}. A scheduler that held a rule back may release it here, and says no; the
+   * Called after every iteration in which nothing was counted as applied ({@link Applied}): no
+   * rule merged two classes, and no rule whose right-hand side is a multi-pattern matched,
+   * whether or not nodes were added - a condition or an applier may add without merging - as
+   * egg calls its {@code can_stop}. A scheduler that held a rule back may release it here, and says no; the
    * runner then continues, and the run saturates only once an iteration with no rule held back
    * changes nothing. A scheduler that holds nothing back says yes; the runner reports
    * saturation only if, besides, the iteration added nothing.

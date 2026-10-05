@@ -28,8 +28,9 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
    * One iteration: the graph's size after its rebuild, the matches each rule was given to
    * apply, the rules the scheduler held back (whose matches read zero for that reason), the
    * rules whose matches were not applied because a limit was passed before their turn, how
-   * many matches were applied (their condition held at apply time), how many applications
-   * merged two classes that were different, and how many classes the rebuild repaired.
+   * many matches were applied (their condition held at apply time), how many unions merged two
+   * classes that were different, how many applications egg would count as applied (the input
+   * of the stop rule, {@link Applied}), and how many classes the rebuild repaired.
    *
    * @param number the iteration's position in the run, counted from 1
    * @param classes the number of e-classes after the rebuild
@@ -39,11 +40,15 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
    * @param banned the names of the rules the scheduler held back
    * @param skipped the names of the rules not applied because a limit was passed first
    * @param applied the number of matches applied
-   * @param unions the number of applications that merged two different classes
+   * @param unions the number of unions that merged two different classes
+   * @param counted what egg counts as applied: the unions, plus one per match of a rule whose
+   *     right-hand side is a multi-pattern; the run saturates only after an iteration where it
+   *     is zero
    * @param repaired the number of classes the rebuild repaired
    */
   public record Iteration(int number, int classes, int nodes, Map<String, Integer> matches,
-      Set<String> banned, Set<String> skipped, int applied, int unions, int repaired) {
+      Set<String> banned, Set<String> skipped, int applied, int unions, int counted,
+      int repaired) {
     /** Copies the collections, so an iteration cannot change after it is made. */
     public Iteration {
       matches = Collections.unmodifiableMap(new LinkedHashMap<>(matches));
@@ -72,7 +77,11 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
     for (Iteration it : iterations) {
       b.append("iteration ").append(it.number()).append(": ").append(it.classes())
           .append(" classes, ").append(it.nodes()).append(" nodes, ").append(it.applied())
-          .append(" applied, ").append(it.unions()).append(" unions, ").append(it.repaired())
+          .append(" applied, ").append(it.unions()).append(" unions, ")
+          // What egg counts as applied, shown only where it is not the unions: a multi-pattern
+          // right-hand side's matches, which keep a run from saturating.
+          .append(it.counted() != it.unions() ? it.counted() + " counted, " : "")
+          .append(it.repaired())
           .append(" repaired; matches ").append(it.matches())
           .append(it.banned().isEmpty() ? "" : ", banned " + it.banned())
           .append(it.skipped().isEmpty() ? "" : ", skipped " + it.skipped()).append('\n');

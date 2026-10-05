@@ -220,8 +220,9 @@ class PropRulesTest {
   /**
    * One of egg's {@code prove_something} tests: its rules, start term, goals and egg's counts,
    * every goal to be in the start's class after the run. {@code egg} is null for a case that is
-   * not egg's. {@code iterations} is the iterations this run takes: egg's, except where egg's
-   * stop rule differs from ours (see {@link #CHAIN_CASE}). The cases are data so the
+   * not egg's. {@code iterations} is the iterations this run takes: egg's, except where the
+   * conditional rule standing in for egg's multi-pattern {@code lem_imply} stops sooner (see
+   * {@link #CHAIN_CASE}). The cases are data so the
    * measurement harness (PLAN.md 6) can run the same suite.
    */
   record Case(String name, List<Rewrite<Prop, Boolean>> rules, String start, List<String> goals,

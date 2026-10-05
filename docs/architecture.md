@@ -35,16 +35,19 @@ hooks                            each may stop the run (StopReason.Other) or cha
 rebuild                          after the hooks
 for each rule: scheduler.search  all matches read before any is applied (a banned rule: none)
 for each rule, each match:       condition read now; right-hand side added; unioned with the match
+                                 (a multi-pattern: with the classes its clause variables name)
    after each rule: limits       a passed limit skips the rules after it (report.skipped)
 rebuild                          congruence restored once, repairs counted
 report the iteration
-stop if: a limit passed | unions == 0 && scheduler.canStop && changes unchanged (saturated)
+stop if: a limit passed | counted == 0 && scheduler.canStop && changes unchanged (saturated)
        | the iteration limit
 ```
 
-Two orders matter and are egg's: the scheduler is asked whenever no rule merged, even if nodes
-were added (its bans are released there); and the limits are checked between rules, not only
-after the iteration.
+Two orders matter and are egg's: the scheduler is asked whenever nothing was counted as applied,
+even if nodes were added (its bans are released there); and the limits are checked between rules,
+not only after the iteration. `counted` is the unions, plus one for every match of a rule whose
+right-hand side is a multi-pattern, as egg counts them (`Applied`), so a run in which such a rule
+matches never saturates.
 
 ## Where the invariants hold, and where they do not
 

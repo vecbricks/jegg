@@ -22,8 +22,9 @@ import java.util.Set;
 /**
  * Equality saturation (the paper's Figure 5b): each iteration searches every rule over the
  * graph as it stands, then applies every match found, then rebuilds once; it stops when an
- * iteration changes nothing, a {@link RunLimits} limit is hit or a {@link Hook} asks, and
- * reports what it did.
+ * iteration changes nothing and counts nothing as applied (a multi-pattern right-hand side counts
+ * every match, as egg's does; see {@link Applied}), a {@link RunLimits} limit is hit or a
+ * {@link Hook} asks, and reports what it did.
  *
  * <p>Two things are fixed that egg leaves to chance. Rules are searched and applied in the
  * order they were given, and each rule's matches are applied in the matcher's order (class id,
@@ -180,7 +181,7 @@ public final class Runner<L extends Language<L>, D> {
       }
       int repaired = graph.rebuild();
       iterations.add(new RunReport.Iteration(iteration, graph.numClasses(), graph.numNodes(),
-          counts, banned, skipped, applied, unions, repaired));
+          counts, banned, skipped, applied, unions, counted, repaired));
       // A limit passed stops the run even if the rebuild's merges brought the size back under
       // it, as egg's does: rules were skipped on its account. The reason carries the settled
       // size when that still shows it, else the size that passed.
@@ -190,9 +191,10 @@ public final class Runner<L extends Language<L>, D> {
       }
       // As egg: the scheduler is asked whenever nothing was counted as applied, whether or not
       // nodes were added, so it may release its bans then (Scheduler.canStop says so); the
-      // iteration is saturation only if, besides, nothing else changed. A rule counts what
-      // changed the graph, except a multi-pattern, which counts every match, as egg's does
-      // (Applied), so a run in which one matches never saturates.
+      // iteration is saturation only if, besides, nothing else changed. A rule counts the unions
+      // that changed the graph, except one whose right-hand side is a multi-pattern
+      // (Applier.multi), which counts every match, as egg's does (Applied), so a run in which
+      // such a rule matches never saturates.
       boolean canStop = counted == 0 && scheduler.canStop(iteration);
       if (stop == null && canStop && graph.changes() == changesBefore) {
         stop = new StopReason.Saturated();

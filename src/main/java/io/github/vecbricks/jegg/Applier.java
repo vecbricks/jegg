@@ -37,12 +37,13 @@ public interface Applier<L extends Language<L>, D> {
   /**
    * Applies this right-hand side to one match: adds what {@link #apply} builds and unions each
    * class it returns with the matched class. This is egg's {@code apply_one}; a right-hand side
-   * that does its own unions, as a {@link MultiPattern} does, overrides it.
+   * that does its own unions, as {@link #multi}'s does, overrides it. An applier that wraps
+   * another must call the wrapped one's {@code applyTo}, not its {@code apply}, or the unions a
+   * wrapped multi-pattern makes go uncounted; a lambda cannot, so a lambda must not wrap one.
    *
    * @param graph the graph to write to; the match must come from a search of it
    * @param match the match: the matched class and the left-hand side's bindings
-   * @return the unions that changed the graph, and the same number as what egg counts as
-   *     applied
+   * @return the unions that changed the graph, each counted as applied
    */
   default Applied applyTo(EGraph<L, D> graph, Matcher.Match match) {
     IntList added = apply(graph, match.eclass(), match.subst());
@@ -53,7 +54,7 @@ public interface Applier<L extends Language<L>, D> {
         changed++;
       }
     }
-    return new Applied(changed, changed);
+    return Applied.unions(changed);
   }
 
   /**
@@ -86,7 +87,10 @@ public interface Applier<L extends Language<L>, D> {
   /**
    * The applier of a multi-pattern right-hand side: each clause, in order, instantiates its
    * pattern and either binds its variable (new) or unions the instance with the class the
-   * variable names.
+   * variable names, so its unions are with the classes its clause variables name, which are
+   * the matched class only where a clause names the first left-hand clause's variable. Unlike
+   * egg's, it may sit under a {@link Condition} ({@link Rewrite#when}), which egg's
+   * {@code ConditionalApplier} refuses for a multi-pattern.
    *
    * @param <L> the language
    * @param <D> the analysis fact
@@ -100,9 +104,8 @@ public interface Applier<L extends Language<L>, D> {
 
   /**
    * A multi-pattern right-hand side, kept as one so a {@link Rewrite} can check its variables
-   * when it is made. egg's {@code MultiPattern::apply_matches}: it counts an id per match
-   * whether or not a union changed anything, which the runner counts as applied, so a run with
-   * a matching multi-pattern rule is never saturated.
+   * when it is made. egg's {@code MultiPattern::apply_matches}: it counts every match as applied
+   * whether or not a union changed anything, so a run in which it matches is never saturated.
    *
    * @param <L> the language
    * @param <D> the analysis fact
@@ -110,25 +113,29 @@ public interface Applier<L extends Language<L>, D> {
    */
   record MultiApplier<L extends Language<L>, D>(MultiPattern<L> rhs) implements Applier<L, D> {
     /**
-     * Applies the clauses, whose unions are not with the matched class, so nothing is left to
-     * union with it.
+     * Refused, as egg's {@code apply_one} for a multi-pattern panics: a caller that applies it
+     * through {@code apply} would see no class to union and no count, so its unions would go
+     * unreported and a run would saturate where egg's does not. Use {@link #applyTo}.
      *
-     * @return the empty list
+     * @throws UnsupportedOperationException always
      */
     @Override
     public IntList apply(EGraph<L, D> graph, int eclass, Subst subst) {
-      applyClauses(graph, subst);
-      return IntList.EMPTY;
+      throw new UnsupportedOperationException(
+          "a multi-pattern right-hand side applies through applyTo, not apply");
     }
 
+    /**
+     * Applies the clauses to one match, in order: each instantiates its pattern and binds its
+     * variable if it is new, or unions the instance with the class the variable names.
+     *
+     * @param graph the graph to write to; the match must come from a search of it
+     * @param match the match whose bindings the clauses read
+     * @return the unions that changed the graph, and a count of one whatever they were
+     */
     @Override
     public Applied applyTo(EGraph<L, D> graph, Matcher.Match match) {
-      return new Applied(applyClauses(graph, match.subst()), 1);
-    }
-
-    /** Each clause in order: bind a new variable, or union with the class a bound one names. */
-    private int applyClauses(EGraph<L, D> graph, Subst start) {
-      Subst subst = start;
+      Subst subst = match.subst();
       int unions = 0;
       for (MultiPattern.Clause<L> clause : rhs.clauses()) {
         int id = Matcher.instantiate(graph, clause.pattern(), subst);
@@ -142,7 +149,7 @@ public interface Applier<L extends Language<L>, D> {
           subst = subst.bind(clause.var(), id);
         }
       }
-      return unions;
+      return Applied.countedOnce(unions);
     }
   }
 }
