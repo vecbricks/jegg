@@ -36,24 +36,50 @@ public final class IntList {
     this.elements = elements;
   }
 
-  /** A list of these elements; the array is copied, so the caller may keep mutating it. */
+  /**
+   * A list of these elements; the array is copied, so the caller may keep mutating it.
+   *
+   * @param elements the e-class ids, in order; may be empty
+   * @return the list, {@link #EMPTY} if there are no elements
+   */
   public static IntList of(int... elements) {
     return elements.length == 0 ? EMPTY : new IntList(elements.clone());
   }
 
+  /**
+   * The number of elements.
+   *
+   * @return the length of the list, 0 for {@link #EMPTY}
+   */
   public int size() {
     return elements.length;
   }
 
+  /**
+   * Whether the list has no elements.
+   *
+   * @return true if {@link #size} is 0
+   */
   public boolean isEmpty() {
     return elements.length == 0;
   }
 
+  /**
+   * The element at a position.
+   *
+   * @param index a position from 0 up to {@link #size} exclusive
+   * @return the element there
+   */
   public int get(int index) {
     return elements[index];
   }
 
-  /** A list with {@code f} applied to every element; this one if nothing changed. */
+  /**
+   * A list with {@code f} applied to every element; this one if nothing changed.
+   *
+   * @param f the function applied to each element, in order, without side effects
+   * @return the mapped list, which is this list when {@code f} returned every element unchanged
+   */
   public IntList map(IntUnaryOperator f) {
     int[] mapped = null;
     for (int i = 0; i < elements.length; i++) {
@@ -68,11 +94,20 @@ public final class IntList {
     return mapped == null ? this : new IntList(mapped);
   }
 
+  /**
+   * The elements as a stream.
+   *
+   * @return a sequential stream of the elements in order
+   */
   public IntStream stream() {
     return Arrays.stream(elements);
   }
 
-  /** A copy of the elements, for a caller that wants an array. */
+  /**
+   * A copy of the elements, for a caller that wants an array.
+   *
+   * @return a fresh array the caller may modify
+   */
   public int[] toArray() {
     return elements.clone();
   }

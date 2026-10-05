@@ -26,9 +26,14 @@ import java.util.Map;
  * walks the term by class id, which {@link #eclass()} gives for every subterm.
  *
  * @param <L> the language
+ * @param eclass the id of the class the node was chosen for, as the extractor saw it
+ * @param node the chosen node
+ * @param children the terms chosen for the node's children, in argument order; copied, so
+ *     immutable
  */
 public record Extracted<L extends Language<L>>(int eclass, L node, List<Extracted<L>> children) {
 
+  /** Keeps an immutable copy of the children. */
   public Extracted {
     children = List.copyOf(children);
   }
@@ -36,6 +41,10 @@ public record Extracted<L extends Language<L>>(int eclass, L node, List<Extracte
   /**
    * The term as a client's tree, through {@code bridge}, bottom-up; a subterm object reached
    * twice is built once, and the client's tree shares it.
+   *
+   * @param <T> the client's tree node
+   * @param bridge builds a client node from an e-node and the already built children
+   * @return the client's tree for this term
    */
   public <T> T toTree(TreeBridge<T, L> bridge) {
     return toTree(bridge, new IdentityHashMap<>());
@@ -55,7 +64,11 @@ public record Extracted<L extends Language<L>>(int eclass, L node, List<Extracte
     return tree;
   }
 
-  /** How many nodes the term has as a tree, shared subterms counted each time. */
+  /**
+   * How many nodes the term has as a tree, shared subterms counted each time.
+   *
+   * @return the node count, at least 1; can exceed the number of distinct subterm objects
+   */
   public long treeSize() {
     return treeSize(new IdentityHashMap<>());
   }

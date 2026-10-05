@@ -33,6 +33,10 @@ public final class Extractor<L extends Language<L>, D> {
   /**
    * A class's best node and the cost of the tree rooted there. A value candidate (PLAN.md 3.1):
    * immutable, compared by content.
+   *
+   * @param <L> the language
+   * @param node the cheapest node of the class
+   * @param cost the cost of the tree rooted at {@code node}, finite and non-negative
    */
   public record Best<L extends Language<L>>(L node, double cost) {
   }
@@ -56,6 +60,11 @@ public final class Extractor<L extends Language<L>, D> {
    * graph as it is now: after the graph changes, build a new one. A call that sees the graph's
    * size changed refuses with an {@link IllegalStateException}; a change that keeps the size
    * goes unseen.
+   *
+   * @param graph the graph to extract from, rebuilt; the constructor throws
+   *     {@link IllegalStateException} if it is not
+   * @param costs the cost function that prices each node; its costs must be finite and
+   *     non-negative
    */
   public Extractor(EGraph<L, D> graph, CostFunction<L> costs) {
     if (graph.isDirty()) {
@@ -86,7 +95,13 @@ public final class Extractor<L extends Language<L>, D> {
     }
   }
 
-  /** The best node of a class and its tree cost; every class reachable from leaves has one. */
+  /**
+   * The best node of a class and its tree cost; every class reachable from leaves has one.
+   *
+   * @param eclass the id of the class, canonical or not
+   * @return the class's cheapest node and the cost of the tree rooted there
+   * @throws IllegalStateException if the class has no finite-cost term
+   */
   public Best<L> best(int eclass) {
     checkUnchanged();
     int root = graph.find(eclass);
@@ -99,6 +114,10 @@ public final class Extractor<L extends Language<L>, D> {
   /**
    * The cheapest term in the class, as a tree. A class the tree reaches more than once is one
    * object, so a tree exponentially larger than the graph is built in time linear in it.
+   *
+   * @param eclass the id of the class to extract from, canonical or not
+   * @return the term, whose root is the class's best node
+   * @throws IllegalStateException if the class has no finite-cost term
    */
   public Extracted<L> extract(int eclass) {
     checkUnchanged();
@@ -184,7 +203,13 @@ public final class Extractor<L extends Language<L>, D> {
     return cost;
   }
 
-  /** {@link #extractAll(IntList, ToDoubleFunction)} minimising the selection's summed cost. */
+  /**
+   * {@link #extractAll(IntList, ToDoubleFunction)} minimising the selection's summed cost.
+   *
+   * @param roots the ids of the classes to extract, canonical or not, in the order of the terms
+   *     wanted back
+   * @return the selection covering every class the roots reach
+   */
   public Selection<L> extractAll(IntList roots) {
     return extractAll(roots, null);
   }
@@ -211,6 +236,13 @@ public final class Extractor<L extends Language<L>, D> {
    * not used here. A cost that is not a sum over nodes belongs in {@code score}, which is then
    * applied to each candidate selection; the default sum is kept incrementally and costs each
    * candidate only what it changes.
+   *
+   * @param roots the ids of the classes to extract, canonical or not, in the order of the terms
+   *     wanted back
+   * @param score the cost of a whole candidate selection, lower being better, or null for the
+   *     sum of the chosen nodes' own costs
+   * @return the selection covering every class the roots reach
+   * @throws IllegalStateException if a root has no finite-cost term
    */
   public Selection<L> extractAll(IntList roots, ToDoubleFunction<Selection<L>> score) {
     checkUnchanged();

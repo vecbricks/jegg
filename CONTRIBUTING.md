@@ -28,9 +28,9 @@ and branch totals, with the least covered classes, at the end; the report is not
 `verify` fails when the line coverage of `src/main` falls under 97% or the branch coverage under
 92% (`coverage.minimum.line` and `coverage.minimum.branch` in `pom.xml`, a little under the
 measured 97.7% and 93.4%); a change that moves a threshold says so in its description. It also
-fails on a Javadoc warning of the public surface (`-Xdoclint:all,-missing`: a broken `{@link}`, bad
-HTML), as CI and the Pages build do. Dependabot opens one grouped pull request a week for the
-Maven plugins and one for the Actions (`.github/dependabot.yml`).
+fails on a Javadoc warning of the public surface (`-Xdoclint:all`: a broken `{@link}`, bad HTML, a
+missing `@param`, `@return` or comment), as CI and the Pages build do. Dependabot opens one grouped
+pull request a week for the Maven plugins and one for the Actions (`.github/dependabot.yml`).
 Two of egg's ported tests (`lambda_fib`, `lambda_function_repeat`), which egg runs only in release
 builds, take most of a run's time and are tagged `slow`; `mvn -Dsurefire.excludedGroups=slow verify`
 skips them locally, while CI runs everything.

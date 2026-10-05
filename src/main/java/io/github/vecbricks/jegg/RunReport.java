@@ -30,9 +30,21 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
    * rules whose matches were not applied because a limit was passed before their turn, how
    * many matches were applied (their condition held at apply time), how many applications
    * merged two classes that were different, and how many classes the rebuild repaired.
+   *
+   * @param number the iteration's position in the run, counted from 1
+   * @param classes the number of e-classes after the rebuild
+   * @param nodes the number of e-nodes after the rebuild
+   * @param matches the number of matches each rule was given to apply, by rule name; zero for a
+   *     rule held back
+   * @param banned the names of the rules the scheduler held back
+   * @param skipped the names of the rules not applied because a limit was passed first
+   * @param applied the number of matches applied
+   * @param unions the number of applications that merged two different classes
+   * @param repaired the number of classes the rebuild repaired
    */
   public record Iteration(int number, int classes, int nodes, Map<String, Integer> matches,
       Set<String> banned, Set<String> skipped, int applied, int unions, int repaired) {
+    /** Copies the collections, so an iteration cannot change after it is made. */
     public Iteration {
       matches = Collections.unmodifiableMap(new LinkedHashMap<>(matches));
       banned = Collections.unmodifiableSet(new LinkedHashSet<>(banned));
@@ -40,11 +52,16 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
     }
   }
 
+  /** Copies the list of iterations, so a report cannot change after it is made. */
   public RunReport {
     iterations = List.copyOf(iterations);
   }
 
-  /** How many iterations ran. */
+  /**
+   * How many iterations ran.
+   *
+   * @return the number of entries in {@link #iterations()}
+   */
   public int size() {
     return iterations.size();
   }

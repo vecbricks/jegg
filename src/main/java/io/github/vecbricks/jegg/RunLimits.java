@@ -26,6 +26,7 @@ public record RunLimits(int iterations, int nodes, int classes) {
   /** egg's defaults, less its five seconds: thirty iterations, ten thousand nodes. */
   public static final RunLimits DEFAULT = new RunLimits(30, 10_000, Integer.MAX_VALUE);
 
+  /** Checks the limits; each must be at least one. */
   public RunLimits {
     if (iterations < 1 || nodes < 1 || classes < 1) {
       throw new IllegalArgumentException("limits must be positive: " + iterations + ", " + nodes
@@ -33,14 +34,32 @@ public record RunLimits(int iterations, int nodes, int classes) {
     }
   }
 
+  /**
+   * A copy with another iteration limit.
+   *
+   * @param n the new limit, at least one
+   * @return the limits with {@code iterations} replaced, the others as they were
+   */
   public RunLimits withIterations(int n) {
     return new RunLimits(n, nodes, classes);
   }
 
+  /**
+   * A copy with another node limit.
+   *
+   * @param n the new limit, at least one
+   * @return the limits with {@code nodes} replaced, the others as they were
+   */
   public RunLimits withNodes(int n) {
     return new RunLimits(iterations, n, classes);
   }
 
+  /**
+   * A copy with another class limit.
+   *
+   * @param n the new limit, at least one
+   * @return the limits with {@code classes} replaced, the others as they were
+   */
   public RunLimits withClasses(int n) {
     return new RunLimits(iterations, nodes, n);
   }

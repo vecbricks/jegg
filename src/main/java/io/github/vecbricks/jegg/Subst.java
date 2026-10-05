@@ -58,6 +58,10 @@ public final class Subst {
   /**
    * This substitution with {@code variable} bound to {@code id}; a variable bound already is
    * rebound in place, keeping its position.
+   *
+   * @param variable the name of a subterm variable of the pattern
+   * @param id the e-class id the variable stands for; the matcher binds canonical ids
+   * @return the new substitution, or this one if the variable is bound to {@code id} already
    */
   public Subst bind(String variable, int id) {
     int i = indexOf(names, variable);
@@ -79,6 +83,10 @@ public final class Subst {
   /**
    * This substitution with the payload variable {@code variable} bound to {@code value}; a
    * variable bound already is rebound in place, keeping its position.
+   *
+   * @param variable the name of a payload variable of the pattern
+   * @param value the payload value, compared by {@code equals}; may be null
+   * @return the new substitution, or this one if the variable is bound to an equal value already
    */
   public Subst bindPayload(String variable, Object value) {
     int i = indexOf(payloadNames, variable);
@@ -97,13 +105,24 @@ public final class Subst {
     return new Subst(names, ids, nextNames, nextValues);
   }
 
-  /** The class a subterm variable is bound to, if it is. */
+  /**
+   * The class a subterm variable is bound to, if it is.
+   *
+   * @param variable the name of a subterm variable
+   * @return the id as it was bound, empty if the variable is unbound
+   */
   public OptionalInt id(String variable) {
     int i = indexOf(names, variable);
     return i < 0 ? OptionalInt.empty() : OptionalInt.of(ids[i]);
   }
 
-  /** The class a subterm variable is bound to; it must be. */
+  /**
+   * The class a subterm variable is bound to; it must be.
+   *
+   * @param variable the name of a subterm variable, which must be bound
+   * @return the id as it was bound
+   * @throws IllegalArgumentException if the variable is unbound
+   */
   public int idOf(String variable) {
     int i = indexOf(names, variable);
     if (i < 0) {
@@ -112,12 +131,23 @@ public final class Subst {
     return ids[i];
   }
 
-  /** Whether the payload variable is bound. */
+  /**
+   * Whether the payload variable is bound.
+   *
+   * @param variable the name of a payload variable
+   * @return true if it is bound, even to null
+   */
   public boolean hasPayload(String variable) {
     return indexOf(payloadNames, variable) >= 0;
   }
 
-  /** The value a payload variable is bound to; it must be. */
+  /**
+   * The value a payload variable is bound to; it must be.
+   *
+   * @param variable the name of a payload variable, which must be bound
+   * @return the bound value, which may be null
+   * @throws IllegalArgumentException if the variable is unbound
+   */
   public Object payload(String variable) {
     int i = indexOf(payloadNames, variable);
     if (i < 0) {
@@ -126,7 +156,11 @@ public final class Subst {
     return payloads[i];
   }
 
-  /** The subterm bindings, in binding order, read-only; built on request. */
+  /**
+   * The subterm bindings, in binding order, read-only; built on request.
+   *
+   * @return a fresh unmodifiable map from variable name to e-class id
+   */
   public Map<String, Integer> ids() {
     LinkedHashMap<String, Integer> out = LinkedHashMap.newLinkedHashMap(names.length);
     for (int i = 0; i < names.length; i++) {
@@ -135,7 +169,11 @@ public final class Subst {
     return Collections.unmodifiableMap(out);
   }
 
-  /** The payload bindings, in binding order, read-only; built on request. */
+  /**
+   * The payload bindings, in binding order, read-only; built on request.
+   *
+   * @return a fresh unmodifiable map from variable name to payload value
+   */
   public Map<String, Object> payloads() {
     LinkedHashMap<String, Object> out = LinkedHashMap.newLinkedHashMap(payloadNames.length);
     for (int i = 0; i < payloadNames.length; i++) {

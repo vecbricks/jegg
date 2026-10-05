@@ -25,6 +25,12 @@ public interface Scheduler<L extends Language<L>, D> {
   /**
    * The matches of {@code rule} to apply this iteration: usually {@code rule.search(graph)},
    * possibly empty when the rule is held back, possibly a prefix of the matches.
+   *
+   * @param iteration the iteration being run, counted from 1
+   * @param ruleIndex the rule's position in the runner's rule list, counted from 0
+   * @param rule the rule to search
+   * @param graph the rebuilt graph to search, which the scheduler must not change
+   * @return the matches to apply, in the matcher's order; empty if none or if the rule is held back
    */
   List<Matcher.Match> search(int iteration, int ruleIndex, Rewrite<L, D> rule,
       EGraph<L, D> graph);
@@ -36,12 +42,21 @@ public interface Scheduler<L extends Language<L>, D> {
    * runner then continues, and the run saturates only once an iteration with no rule held back
    * changes nothing. A scheduler that holds nothing back says yes; the runner reports
    * saturation only if, besides, the iteration added nothing.
+   *
+   * @param iteration the iteration just run, counted from 1
+   * @return true if the scheduler holds no rule back, so the run may stop; false to run on
    */
   default boolean canStop(int iteration) {
     return true;
   }
 
-  /** Whether the rule is held back this iteration, for the report; false unless held. */
+  /**
+   * Whether the rule is held back this iteration, for the report; false unless held.
+   *
+   * @param iteration the iteration being run, counted from 1
+   * @param ruleIndex the rule's position in the runner's rule list, counted from 0
+   * @return true if {@link #search} returned nothing for the rule because it is held back
+   */
   default boolean isBanned(int iteration, int ruleIndex) {
     return false;
   }
@@ -54,7 +69,13 @@ public interface Scheduler<L extends Language<L>, D> {
   default void reset() {
   }
 
-  /** The scheduler that applies every match of every rule. */
+  /**
+   * The scheduler that applies every match of every rule.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @return a scheduler that holds no rule back
+   */
   static <L extends Language<L>, D> Scheduler<L, D> simple() {
     return (_, _, rule, graph) -> rule.search(graph);
   }

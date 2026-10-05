@@ -42,6 +42,13 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
     this(1000, 5);
   }
 
+  /**
+   * A scheduler with its own thresholds.
+   *
+   * @param matchLimit the most matches a rule may have before its first ban, at least one; it
+   *     doubles with each ban
+   * @param banLength the iterations of the first ban, at least one; it doubles with each ban
+   */
   public BackoffScheduler(int matchLimit, int banLength) {
     if (matchLimit < 1 || banLength < 1) {
       throw new IllegalArgumentException("the match limit and the ban must be positive");
@@ -64,7 +71,12 @@ public final class BackoffScheduler<L extends Language<L>, D> implements Schedul
         && stats.get(ruleIndex).bannedUntil > iteration;
   }
 
-  /** How many times the rule has been banned so far; a rule never searched, none. */
+  /**
+   * How many times the rule has been banned so far; a rule never searched, none.
+   *
+   * @param ruleIndex the rule's position in the runner's rule list, counted from 0
+   * @return the number of bans, zero for an index not yet searched or out of range
+   */
   public int timesBanned(int ruleIndex) {
     return ruleIndex >= 0 && ruleIndex < stats.size() ? stats.get(ruleIndex).timesBanned : 0;
   }

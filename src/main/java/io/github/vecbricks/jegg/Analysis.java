@@ -25,17 +25,40 @@ package io.github.vecbricks.jegg;
  */
 public interface Analysis<L extends Language<L>, D> {
 
-  /** The fact for {@code node}, whose children's facts are readable through {@code graph}. */
+  /**
+   * The fact for {@code node}, whose children's facts are readable through {@code graph}.
+   *
+   * @param graph the graph the node is being added to
+   * @param node the e-node, whose children are ids of classes of {@code graph}
+   * @return the node's fact; {@code null} only if the analysis allows it, as {@link #none} does
+   */
   D make(EGraph<L, D> graph, L node);
 
-  /** The fact for a class made of two classes with these facts. */
+  /**
+   * The fact for a class made of two classes with these facts.
+   *
+   * @param a the fact of one class
+   * @param b the fact of the other
+   * @return the semilattice join of {@code a} and {@code b}
+   */
   D join(D a, D b);
 
-  /** A hook after a class's fact changes: add nodes to it or merge, or do nothing. */
+  /**
+   * A hook after a class's fact changes: add nodes to it or merge, or do nothing.
+   *
+   * @param graph the graph to change
+   * @param id the class whose fact is known or changed, an id of the graph, not necessarily
+   *     canonical
+   */
   default void modify(EGraph<L, D> graph, int id) {
   }
 
-  /** The analysis that knows nothing: every fact is {@code null} and nothing is modified. */
+  /**
+   * The analysis that knows nothing: every fact is {@code null} and nothing is modified.
+   *
+   * @param <L> the language
+   * @return an analysis whose fact type is {@link Void}
+   */
   static <L extends Language<L>> Analysis<L, Void> none() {
     return new Analysis<>() {
       @Override

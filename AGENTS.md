@@ -21,7 +21,8 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
 - `mvn -B verify` must be clean under `-Xlint:all -Werror`; it prints the coverage of
   `src/main` at the end (98% of lines as of October 2026) and fails under 97% of lines or 92% of
   branches (`coverage.minimum.*` in `pom.xml`); a Javadoc warning of the public surface fails it
-  too (`-Xdoclint:all,-missing`), so run it before pushing a change that touches a `{@link}`.
+  too (`-Xdoclint:all`, a missing `@param` or `@return` included), so run it before pushing a
+  change that touches a public signature or a `{@link}`.
 - One test: `mvn -q test -Dtest=LambdaTest`; one method: `-Dtest='LambdaTest#lambdaIf'`.
 - The two slow tests (`lambda_fib`, `lambda_function_repeat`) are tagged `slow`:
   `-Dsurefire.excludedGroups=slow` skips them locally; CI runs everything.

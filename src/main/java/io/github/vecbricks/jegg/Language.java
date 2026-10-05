@@ -29,12 +29,19 @@ package io.github.vecbricks.jegg;
  */
 public interface Language<L extends Language<L>> {
 
-  /** The children, as e-class ids, in the operator's argument order. */
+  /**
+   * The children, as e-class ids, in the operator's argument order.
+   *
+   * @return the child ids; {@link IntList#EMPTY} for a leaf
+   */
   IntList children();
 
   /**
    * The same operator and payload over these children: a node of the same class as this one,
    * which the e-graph's index from node class to classes relies on.
+   *
+   * @param children the child e-class ids, as many as this node's operator takes
+   * @return a node over {@code children}
    */
   L withChildren(IntList children);
 
@@ -45,6 +52,8 @@ public interface Language<L extends Language<L>> {
    * with a cheaper key. A pattern head built from a prototype ({@link Pattern#head}) starts its
    * searches at the classes holding a node of the prototype's class only when the head is such
    * a node itself, so a cheaper key costs a look at every class and never a match.
+   *
+   * @return a key equal for two nodes exactly when their operator and payload are equal
    */
   default Object head() {
     return withChildren(IntList.EMPTY);
