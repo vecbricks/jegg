@@ -251,9 +251,32 @@ class MultiPatternTest {
   }
 
   @Test
-  void aMultiPatternApplierDoesItsOwnUnionsAndRefusesApply() {
-    Applier<Sym, Void> applier = Applier.multi(multi("?y = (y)"));
-    assertThrows(UnsupportedOperationException.class,
-        () -> applier.apply(graph(), 0, Subst.EMPTY));
+  void aMultiPatternApplierDoesItsOwnUnionsThroughApplyToo() {
+    // Called through the interface, apply still writes, and has nothing to union with the
+    // matched class.
+    EGraph<Sym, Void> g = graph();
+    int x = add(g, "(x)");
+    g.rebuild();
+    Applier<Sym, Void> applier = Applier.multi(multi("?y = (y), ?y = (z)"));
+    assertEquals(IntList.EMPTY, applier.apply(g, x, Subst.EMPTY));
+    int y = add(g, "(y)");
+    int z = add(g, "(z)");
+    assertEquals(g.find(y), g.find(z));
+  }
+
+  @Test
+  void aPatternVariableNamedLikeTheClauseVariableIsAJoin() {
+    // ?x = (f ?x) matches a class only if the class holds a node over itself: the clause
+    // variable must not overwrite the pattern's binding of ?x.
+    EGraph<Sym, Void> g = graph();
+    int fa = add(g, "(f a)");
+    g.rebuild();
+    MultiPattern<Sym> self = multi("?x = (f ?x)");
+    assertEquals(0, Matcher.search(g, self, Integer.MAX_VALUE).size());
+    g.merge(fa, add(g, "a"));
+    g.rebuild();
+    List<Matcher.Match> found = Matcher.search(g, self, Integer.MAX_VALUE);
+    assertEquals(1, found.size());
+    assertEquals(g.find(fa), found.get(0).subst().idOf("x"));
   }
 }

@@ -9,6 +9,8 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.OptionalInt;
+
 /**
  * A rewrite's right-hand side: given a match, adds whatever it adds to the graph and returns the
  * classes to make equal to the matched class. A pattern is the common case
@@ -98,7 +100,7 @@ public interface Applier<L extends Language<L>, D> {
 
   /**
    * A multi-pattern right-hand side, kept as one so a {@link Rewrite} can check its variables
-   * when it is made. egg's {@code MultiPattern::apply_matches}: it returns an id per match
+   * when it is made. egg's {@code MultiPattern::apply_matches}: it counts an id per match
    * whether or not a union changed anything, which the runner counts as applied, so a run with
    * a matching multi-pattern rule is never saturated.
    *
@@ -108,23 +110,29 @@ public interface Applier<L extends Language<L>, D> {
    */
   record MultiApplier<L extends Language<L>, D>(MultiPattern<L> rhs) implements Applier<L, D> {
     /**
-     * Not supported, as egg's {@code apply_one} for a multi-pattern: its unions are not with the
-     * matched class.
+     * Applies the clauses, whose unions are not with the matched class, so nothing is left to
+     * union with it.
      *
-     * @throws UnsupportedOperationException always; use {@link #applyTo}
+     * @return the empty list
      */
     @Override
     public IntList apply(EGraph<L, D> graph, int eclass, Subst subst) {
-      throw new UnsupportedOperationException("a multi-pattern applies through applyTo");
+      applyClauses(graph, subst);
+      return IntList.EMPTY;
     }
 
     @Override
     public Applied applyTo(EGraph<L, D> graph, Matcher.Match match) {
-      Subst subst = match.subst();
+      return new Applied(applyClauses(graph, match.subst()), 1);
+    }
+
+    /** Each clause in order: bind a new variable, or union with the class a bound one names. */
+    private int applyClauses(EGraph<L, D> graph, Subst start) {
+      Subst subst = start;
       int unions = 0;
       for (MultiPattern.Clause<L> clause : rhs.clauses()) {
         int id = Matcher.instantiate(graph, clause.pattern(), subst);
-        java.util.OptionalInt named = subst.id(clause.var());
+        OptionalInt named = subst.id(clause.var());
         if (named.isPresent()) {
           if (graph.find(named.getAsInt()) != graph.find(id)) {
             graph.merge(named.getAsInt(), id);
@@ -134,7 +142,7 @@ public interface Applier<L extends Language<L>, D> {
           subst = subst.bind(clause.var(), id);
         }
       }
-      return new Applied(unions, 1);
+      return unions;
     }
   }
 }

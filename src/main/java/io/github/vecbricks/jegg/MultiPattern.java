@@ -9,7 +9,9 @@
 package io.github.vecbricks.jegg;
 
 import java.util.LinkedHashSet;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -76,7 +78,7 @@ public record MultiPattern<L extends Language<L>>(List<Clause<L>> clauses)
    */
   @SafeVarargs
   public static <L extends Language<L>> MultiPattern<L> of(Clause<L>... clauses) {
-    List<Clause<L>> list = new java.util.ArrayList<>(clauses.length);
+    List<Clause<L>> list = new ArrayList<>(clauses.length);
     for (Clause<L> clause : clauses) {
       list.add(clause);
     }

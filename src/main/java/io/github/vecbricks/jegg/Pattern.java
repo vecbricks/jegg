@@ -36,7 +36,6 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
     return Matcher.search(graph, this, limit);
   }
 
-
   /**
    * A variable: matches any class, binding it; or must agree with its binding.
    *

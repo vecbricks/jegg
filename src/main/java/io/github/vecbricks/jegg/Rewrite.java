@@ -9,6 +9,7 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -57,7 +58,7 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
       // A multi-pattern right-hand side binds each clause's variable for the clauses after it
       // ("?z = (baz ?y), ?x = ?z"), so a variable is checked against the left's and the
       // earlier clauses'.
-      Set<String> bound = new java.util.LinkedHashSet<>(lhs.subtermVariables());
+      Set<String> bound = new LinkedHashSet<>(lhs.subtermVariables());
       for (MultiPattern.Clause<L> clause : multi.clauses()) {
         checkBound(name, lhs, bound, clause.pattern());
         bound.add(clause.var());

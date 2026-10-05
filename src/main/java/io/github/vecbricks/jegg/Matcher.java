@@ -167,6 +167,12 @@ public final class Matcher {
     MultiPattern.Clause<L> clause = clauses.get(index);
     int start = index == 0 ? id : first;
     for (Subst matched : matchIn(graph, clause.pattern(), id, subst)) {
+      // A pattern variable named like the clause variable is a join, as egg's Compare: the two
+      // must be the same class, and binding the clause variable must not overwrite the match.
+      OptionalInt prior = matched.id(clause.var());
+      if (prior.isPresent() && graph.find(prior.getAsInt()) != id) {
+        continue;
+      }
       join(graph, clauses, index + 1, matched.bind(clause.var(), id), start, limit, out);
       if (out.size() >= limit) {
         return;
