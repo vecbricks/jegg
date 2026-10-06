@@ -9,8 +9,6 @@
 
 package io.github.vecbricks.jegg;
 
-import java.util.OptionalInt;
-
 /**
  * A rewrite's right-hand side: given a match, adds whatever it adds to the graph and returns the
  * classes to make equal to the matched class. A pattern is the common case
@@ -70,21 +68,6 @@ public interface Applier<L extends Language<L>, D> {
   }
 
   /**
-   * A right-hand side that is a pattern, kept as one so a {@link Rewrite} can check its
-   * variables against the left-hand side's when it is made.
-   *
-   * @param <L> the language
-   * @param <D> the analysis fact
-   * @param rhs the pattern to instantiate under the match's substitution
-   */
-  record PatternApplier<L extends Language<L>, D>(Pattern<L> rhs) implements Applier<L, D> {
-    @Override
-    public IntList apply(EGraph<L, D> graph, int eclass, Subst subst) {
-      return IntList.of(Matcher.instantiate(graph, rhs, subst));
-    }
-  }
-
-  /**
    * The applier of a multi-pattern right-hand side: each clause, in order, instantiates its
    * pattern and either binds its variable (new) or unions the instance with the class the
    * variable names, so its unions are with the classes its clause variables name, which are
@@ -100,56 +83,5 @@ public interface Applier<L extends Language<L>, D> {
    */
   static <L extends Language<L>, D> Applier<L, D> multi(MultiPattern<L> rhs) {
     return new MultiApplier<>(rhs);
-  }
-
-  /**
-   * A multi-pattern right-hand side, kept as one so a {@link Rewrite} can check its variables
-   * when it is made. egg's {@code MultiPattern::apply_matches}: it counts every match as applied
-   * whether or not a union changed anything, so a run in which it matches is never saturated.
-   *
-   * @param <L> the language
-   * @param <D> the analysis fact
-   * @param rhs the clauses to apply for each match
-   */
-  record MultiApplier<L extends Language<L>, D>(MultiPattern<L> rhs) implements Applier<L, D> {
-    /**
-     * Refused, as egg's {@code apply_one} for a multi-pattern panics: a caller that applies it
-     * through {@code apply} would see no class to union and no count, so its unions would go
-     * unreported and a run would saturate where egg's does not. Use {@link #applyTo}.
-     *
-     * @throws UnsupportedOperationException always
-     */
-    @Override
-    public IntList apply(EGraph<L, D> graph, int eclass, Subst subst) {
-      throw new UnsupportedOperationException(
-          "a multi-pattern right-hand side applies through applyTo, not apply");
-    }
-
-    /**
-     * Applies the clauses to one match, in order: each instantiates its pattern and binds its
-     * variable if it is new, or unions the instance with the class the variable names.
-     *
-     * @param graph the graph to write to; the match must come from a search of it
-     * @param match the match whose bindings the clauses read
-     * @return the unions that changed the graph, and a count of one whatever they were
-     */
-    @Override
-    public Applied applyTo(EGraph<L, D> graph, Matcher.Match match) {
-      Subst subst = match.subst();
-      int unions = 0;
-      for (MultiPattern.Clause<L> clause : rhs.clauses()) {
-        int id = Matcher.instantiate(graph, clause.pattern(), subst);
-        OptionalInt named = subst.id(clause.var());
-        if (named.isPresent()) {
-          if (graph.find(named.getAsInt()) != graph.find(id)) {
-            graph.merge(named.getAsInt(), id);
-            unions++;
-          }
-        } else {
-          subst = subst.bind(clause.var(), id);
-        }
-      }
-      return Applied.countedOnce(unions);
-    }
   }
 }

@@ -26,6 +26,29 @@ through them, and where the invariants hold and where they may not.
 | `Runner` | equality saturation: the loop below, with hooks. |
 | `CostFunction`, `Extractor`, `Extracted`, `Selection` | extraction: tree costs by fixed point, `extract(root)` a tree, `extractAll(roots)` one node per class with sharing (greedy start, incremental descent with targeted holding), a `Selection` whose terms share objects. |
 
+## The public surface
+
+One package, 26 public top-level types and the nested types below. A type is public because a
+client names it, implements it, or meets it in a signature it uses; everything else is
+package-private (the tests and the measurement harness share the package, so they still see it).
+Cut for 0.1.0 (#47): `UnionFind` (no signature mentions it), `EClass.Parent` and
+`EClass.parents()` (the repair's entries, which no client reads), and `PatternApplier` and
+`MultiApplier` (what `Applier.pattern` and `Applier.multi` return, now package-private classes
+instead of public nested records). `IntList` stays public although it is an implementation of
+sorts: `Language.children()` returns it.
+
+| group | types | public because |
+|---|---|---|
+| the graph | `EGraph`, `EClass`, `Language`, `IntList`, `TreeBridge`, `Analysis` | a client builds a graph, implements a language, a bridge and an analysis, and reads classes; `children()` returns an `IntList` |
+| patterns and rules | `Pattern` (`Var`, `Node`, `Head`), `MultiPattern` (`Clause`), `Subst`, `Matcher` (`Match`), `Searcher`, `Rewrite`, `Applier`, `Applied`, `Condition` | a client writes rules, and implements heads, conditions and appliers; `Rewrite.search` and `Scheduler.search` return `Matcher.Match`, `Applier.applyTo` returns `Applied` |
+| running | `Runner` (`Hook`), `RunLimits`, `RunReport` (`Iteration`), `StopReason`, `Scheduler`, `BackoffScheduler` | a client runs, bounds, observes and may replace the scheduler |
+| extraction | `CostFunction`, `Extractor` (`Best`), `Extracted`, `Selection` | a client prices and extracts |
+
+Closed by `sealed`: `Pattern` (`Var`, `Node`) and `StopReason`, which a client matches
+exhaustively. Open on purpose: `Language`, `Analysis`, `Searcher`, `Applier`, `Condition`,
+`Scheduler`, `CostFunction`, `TreeBridge`, `Pattern.Head` and `Runner.Hook`, which clients
+implement. Threads: `docs/concepts.md`.
+
 ## One iteration of the runner
 
 ```

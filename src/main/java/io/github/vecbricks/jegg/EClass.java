@@ -37,7 +37,7 @@ public final class EClass<L extends Language<L>, D> {
    *
    * @param <L> the language
    */
-  public static final class Parent<L> {
+  static final class Parent<L> {
     private L node;
     private int classId;
     // The order the entries were made in: of two entries a merge makes congruent, the older
@@ -146,7 +146,7 @@ public final class EClass<L extends Language<L>, D> {
    *
    * @return the e-nodes having this class as a child, each with the class it was added to
    */
-  public List<Parent<L>> parents() {
+  List<Parent<L>> parents() {
     return Collections.unmodifiableList(parents);
   }
 

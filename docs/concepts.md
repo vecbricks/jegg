@@ -110,6 +110,21 @@ incremental descent, checked against an exact oracle on extraction-gym's graphs
 of up to 300 nodes (`ExtractionGymTest`). A `score` hook lets the client price a whole
 selection its own way.
 
+## Threads
+
+An `EGraph` is confined to one thread at a time: nothing in it is synchronized, so another thread
+may use it only after a handover that makes its writes visible (a `Future`, an executor's
+`submit`, a lock, a volatile write and read), as for any object that is not thread-safe. The same
+holds for a `Runner` and an `Extractor` built over it and for a `BackoffScheduler`, which holds
+one run's bans. Separate e-graphs share no state (the only statics are immutable constants), so
+one graph per thread needs no coordination. The values that cross the API are immutable and safe
+to share: language nodes (they are hashcons keys, so a language must make them immutable),
+`IntList`, `Subst`, `Pattern`, `MultiPattern`, `RunLimits`, `Extracted`, `Selection`,
+`RunReport` and `StopReason`; a `Rewrite` is as safe as the `Applier`, `Condition` and `Searcher`
+it was given. A client's `Analysis`, `Condition`, `Applier` and `CostFunction` are called from
+the thread that calls the graph, and need to be thread-safe only if one instance is given to
+graphs that run at the same time.
+
 ## Determinism, and the three places it is fixed
 
 egg does not promise that two runs give the same ids. jegg does: ids are
