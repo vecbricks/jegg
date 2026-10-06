@@ -2,7 +2,7 @@
 
 For a reader who knows [egg](https://github.com/egraphs-good/egg) (commit 73975c9, the one jegg's
 tests are pinned to) and asks what is and is not ported. One table per egg module: the egg item,
-what jegg has in its place, and a note. An egg item that jegg lacks is marked with one of four
+what jegg has in its place, and a note. An egg item that jegg lacks is marked with one of three
 statuses, so the list of absences can be read by cause:
 
 | status | meaning |
@@ -10,14 +10,13 @@ statuses, so the list of absences can be read by cause:
 | out by design | a decision of the plan (`PLAN.md` 3.1) or of the design's promises, with its reason: proofs, parsing, Graphviz, an ILP extractor, a wall-clock limit, mutable access to a class |
 | replaced | another jegg mechanism does the job, so the egg item has no counterpart of its own |
 | not needed yet | no client has asked, so it is left out, not ruled out; a reader who needs one should open an issue |
-| not ported yet | the issue that will port it is named |
 
 "Added" rows are what egg lacks. `PLAN.md` 3.1 is the design record behind these tables and
 `docs/architecture.md` maps the jegg code.
 
-Of the 25 rows so marked, 13 are out by design (ten of them proofs, parsing or text output; the
-other three are `classes_mut`, the time limit and the ILP extractor), 6 replaced, 5 not needed
-yet and 1 not ported yet (`datalog.rs`, #34).
+Of the 24 rows so marked, 13 are out by design (ten of them proofs, parsing or text output; the
+other three are `classes_mut`, the time limit and the ILP extractor), 6 replaced and 5 not
+needed yet.
 
 The shape of the port in four lines:
 
@@ -109,7 +108,7 @@ The shape of the port in four lines:
 | `ConditionEqual` | `Condition.equal(a, b)` | ported, with both patterns instantiated before either root is read |
 | (none) | `Condition.always()`, `Condition.and(other)` | added |
 | `apply_matches`, `apply_one`, `vars` | `Applier.apply`, `Applier.applyTo`; `Pattern.subtermVariables()` | `applyTo` is `apply_one`: it builds, unions with the matched class, and says how many unions changed the graph and how many egg counts as applied (`Applied`) |
-| `multi_rewrite!` | `Rewrite.multi(name, lhs, rhs)` | clauses `?var = pattern` built with `MultiPattern.of`; no text syntax in the library; a rule whose right-hand side is a multi-pattern (`Applier.multi`) counts every match as applied, as egg's `apply_matches` does, so a run in which one matches never saturates; a multi-pattern searched with a pattern applied counts unions, as egg's does (egg's `prop` `lem_imply`; jegg's port of it still stands in a conditional rule until the second pull request of #34) |
+| `multi_rewrite!` | `Rewrite.multi(name, lhs, rhs)` | clauses `?var = pattern` built with `MultiPattern.of`; no text syntax in the library; a rule whose right-hand side is a multi-pattern (`Applier.multi`) counts every match as applied, as egg's `apply_matches` does, so a run in which one matches never saturates; a multi-pattern searched with a pattern applied counts unions, as egg's does (egg's `prop` `lem_imply`, `PropRulesTest.LEM_IMPLY`: `prove_chain` runs egg's 20 iterations) |
 
 ## `pattern`, `subst`, `machine`, `multipattern`
 
@@ -170,17 +169,17 @@ The shape of the port in four lines:
 
 ## What the ports show
 
-egg's four ported test suites each run against egg's own counts (`Egg(iterations, nodes,
+egg's five ported test suites each run against egg's own counts (`Egg(iterations, nodes,
 classes)` records, read by running egg with `RUST_LOG=egg=info`; see
 `docs/skills/checking-a-port-against-egg.md`):
 
 | egg's test file | jegg | state |
 |---|---|---|
 | `simple.rs` | `SimpleRulesTest` | ported, counts pinned |
-| `prop.rs` | `PropRulesTest` | ported in full (`Bool`, `ConstantFold`, egg's rules and three tests), counts pinned; `prove_chain` ends at egg's 31 nodes and 12 classes in 6 iterations where egg runs 20 (the multi-pattern quirk above) |
+| `prop.rs` | `PropRulesTest` | ported in full (`Bool`, `ConstantFold`, egg's rules including the multi-pattern `lem_imply`, three tests), counts pinned, `prove_chain` at egg's 20 iterations |
 | `lambda.rs` | `LambdaTest` | ported, counts pinned |
 | `math.rs` | `MathTest` | ported, counts pinned |
-| `datalog.rs` | not ported yet | multi-patterns are in the library; the port itself is the second pull request of #34 |
+| `datalog.rs` | `DatalogTest` | ported: `path` and `path2` with multi-patterns, counts pinned (both run to the iteration limit, as egg's do) |
 
 jegg's own tests add what egg lacks: `EGraphRebuildTest` (deferred against eager rebuilding on
 random graphs), `DeterminismTest` (the same run in fresh JVMs, byte for byte), the extraction

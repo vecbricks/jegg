@@ -43,7 +43,9 @@ real divergences were found this way and nowhere else:
 7. A graph that matches egg's iteration by iteration can still stop at a different iteration.
    egg's multi-pattern `apply_matches` returns an id per substitution whether or not a union
    changed anything, so a run with a matching multi-pattern rule is never `Saturated`: egg's
-   `prove_chain` runs 20 iterations over a graph that stops changing in the fifth, where the
-   conditional rule that stands in for its `lem_imply` lets jegg saturate in 6. When the nodes
-   and classes agree after every iteration and only the stop differs, read egg's source for
-   what it counts as applied before calling it a divergence (#64).
+   `prove_chain` runs 20 iterations over a graph that stops changing in the fifth, and both
+   `datalog` tests run to the iteration limit. A conditional rule standing in for the multi-pattern
+   built the same graph and saturated in 6 (#65); `Applier.multi` counts every match as applied
+   (`Applied.counted`), and `prove_chain` and `datalog` now end at egg's counts (#34). When the
+   nodes and classes agree after every iteration and only the stop differs, read egg's source for
+   what it counts as applied before calling it a divergence.

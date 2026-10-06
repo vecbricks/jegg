@@ -193,22 +193,14 @@ class PropRulesTest {
       rule("contrapositive", "(-> ?a ?b)", "(-> (~ ?b) (~ ?a))");
 
   /**
-   * egg's {@code lem_imply}, a multi-pattern there: {@code ?value = true = (& (-> ?a ?b) (-> (~ ?a)
+   * egg's {@code lem_imply}, a multi-pattern: {@code ?value = true = (& (-> ?a ?b) (-> (~ ?a)
    * ?c)) => ?value = (| ?b ?c)}, which must be one because the conjunction is not equal to the
-   * disjunction in general. {@code ?value = true = P} says the class matched by {@code P} is the
-   * class of {@code true}, and a graph has one such class, so it is the rule {@code P => (| ?b
-   * ?c)} under the condition that the matched class is {@code true}'s. The graph it builds is
-   * egg's, iteration by iteration. One observable differs, and it is egg's: a multi-pattern's
-   * {@code apply_matches} returns an id for every substitution whether or not a union changed
-   * anything ("the ids returned are kinda garbage" in its source), so egg counts the rule as
-   * applied in every iteration it matches and never reports saturation, where a rule that
-   * applies only changes, this one included, lets the run saturate. See {@link #CHAIN_CASE}.
+   * disjunction in general. Its right-hand side counts every match as applied, as egg's does, so
+   * a run in which it matches never saturates: {@link #CHAIN_CASE} ends at egg's iteration limit.
    */
-  static final Rewrite<Prop, Boolean> LEM_IMPLY = rule("lem_imply",
-      "(& (-> ?a ?b) (-> (~ ?a) ?c))", "(| ?b ?c)").when((graph, eclass, subst) -> {
-        OptionalInt truth = graph.lookup(new Prop.Bool(true));
-        return truth.isPresent() && graph.find(truth.getAsInt()) == graph.find(eclass);
-      });
+  static final Rewrite<Prop, Boolean> LEM_IMPLY = Rewrite.multi("lem_imply",
+      MultiTerm.parse("?value = true = (& (-> ?a ?b) (-> (~ ?a) ?c))", BRIDGE),
+      MultiTerm.parse("?value = (| ?b ?c)", BRIDGE));
 
   /** egg's limits for this suite. */
   static final RunLimits LIMITS = RunLimits.DEFAULT.withIterations(20).withNodes(5_000);
@@ -220,34 +212,31 @@ class PropRulesTest {
   /**
    * One of egg's {@code prove_something} tests: its rules, start term, goals and egg's counts,
    * every goal to be in the start's class after the run. {@code egg} is null for a case that is
-   * not egg's. {@code iterations} is the iterations this run takes: egg's, except where the
-   * conditional rule standing in for egg's multi-pattern {@code lem_imply} stops sooner (see
-   * {@link #CHAIN_CASE}). The cases are data so the
-   * measurement harness (PLAN.md 6) can run the same suite.
+   * not egg's. The cases are data so the measurement harness (PLAN.md 6) can run the same
+   * suite.
    */
   record Case(String name, List<Rewrite<Prop, Boolean>> rules, String start, List<String> goals,
-      Egg egg, int iterations) {
+      Egg egg) {
   }
 
   static final Case CONTRAPOSITIVE_CASE = new Case("prove_contrapositive",
       List.of(DEF_IMPLY, DEF_IMPLY_FLIP, DOUBLE_NEG_FLIP, COMM_OR), "(-> x y)",
       List.of("(-> x y)", "(| (~ x) y)", "(| (~ x) (~ (~ y)))", "(| (~ (~ y)) (~ x))",
           "(-> (~ y) (~ x))"),
-      new Egg(4, 14, 6), 4);
+      new Egg(4, 14, 6));
 
   /**
    * egg runs it to its iteration limit, 20 iterations, with the graph at 31 nodes and 12 classes
-   * from the fifth on; this run saturates in 6 with the same 31 and 12, the same nodes and
-   * classes after each iteration. The 14 iterations egg adds change nothing: its multi-pattern
-   * {@code lem_imply} counts as applied each time it matches, which stops egg's runner from
-   * calling an unchanged graph saturated (see {@link #LEM_IMPLY}).
+   * from the fifth on: its multi-pattern {@code lem_imply} counts as applied each time it
+   * matches, which stops egg's runner from calling an unchanged graph saturated, and so does
+   * this one's ({@link #LEM_IMPLY}).
    */
   static final Case CHAIN_CASE = new Case("prove_chain",
       List.of(DEF_IMPLY, DEF_IMPLY_FLIP, DOUBLE_NEG_FLIP, COMM_OR, COMM_AND, LEM_IMPLY),
       "(& (-> x y) (-> y z))",
       List.of("(& (-> x y) (-> y z))", "(& (-> (~ y) (~ x)) (-> y z))",
           "(& (-> y z) (-> (~ y) (~ x)))", "(| z (~ x))", "(| (~ x) z)", "(-> x z)"),
-      new Egg(20, 31, 12), 6);
+      new Egg(20, 31, 12));
 
   /**
    * Distribution and association: (x | y) & (x | z) reaches x | (y & z). Not egg's test: the
@@ -255,7 +244,7 @@ class PropRulesTest {
    */
   static final Case FOLD_CASE = new Case("prove_fold",
       List.of(DIST_OR_AND, DIST_AND_OR, COMM_OR, COMM_AND, ASSOC_OR, DOUBLE_NEG, CONTRAPOSITIVE),
-      "(& (| x y) (| x z))", List.of("(| x (& y z))"), null, 0);
+      "(& (| x y) (| x z))", List.of("(| x (& y z))"), null);
 
   static final List<Case> CASES = List.of(CONTRAPOSITIVE_CASE, CHAIN_CASE, FOLD_CASE);
 
@@ -289,7 +278,7 @@ class PropRulesTest {
     g.checkAnalysisInvariant();
     if (c.egg() != null) {
       String why = "egg reports " + c.egg() + "\n" + report;
-      assertEquals(c.iterations(), report.size(), why);
+      assertEquals(c.egg().iterations(), report.size(), why);
       assertEquals(c.egg().nodes(), g.numNodes(), why);
       assertEquals(c.egg().classes(), g.numClasses(), why);
     }
@@ -303,9 +292,9 @@ class PropRulesTest {
 
   @Test
   void proveChain() {
-    // egg runs it to its iteration limit (20) with the graph unchanged from iteration 5; here it
-    // saturates in 6, at egg's 31 nodes and 12 classes (CHAIN_CASE says why).
-    assertEquals(new StopReason.Saturated(), prove(CHAIN_CASE).stop());
+    // egg runs it to its iteration limit (20) with the graph unchanged from iteration 5, at 31
+    // nodes and 12 classes; so does this: lem_imply counts every match as applied.
+    assertEquals(new StopReason.IterationLimit(20), prove(CHAIN_CASE).stop());
   }
 
   @Test
