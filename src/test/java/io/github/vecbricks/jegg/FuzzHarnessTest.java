@@ -233,4 +233,26 @@ class FuzzHarnessTest {
       assertEquals(1, FuzzShrinker.size(Term.parse(current)), term + " ended at " + current);
     }
   }
+
+  @Test
+  void theSchedulerBehavesAsEggsDoesOnTheScenariosPinnedToEggsLines() {
+    // The threshold, the ban length, the fast-forward, doubling, and a conditional rule's
+    // structural matches counted toward the ban, each against the line egg printed (#75).
+    List<FuzzRun.Pinned> pinned = FuzzRun.schedulerScenarios();
+    assertEquals(14, pinned.size());
+    for (FuzzRun.Pinned p : pinned) {
+      assertEquals(p.egg(), FuzzRun.run(p.input()), p.input().ruleset() + " " + p.input().term());
+    }
+  }
+
+  @Test
+  void aSchedulerSuffixNeedsTwoPositiveNumbers() {
+    for (String bad : List.of("math@1", "math@1,2,3", "math@0,5", "math@5,0", "math@a,b",
+        "math@-1,2", "math:comm-add@", "prop-all@1,")) {
+      assertThrows(IllegalArgumentException.class,
+          () -> FuzzRun.run(new FuzzRun.Case(bad, "(+ x y)", List.of())), bad);
+    }
+    assertEquals(new FuzzRun.Parsed("math:comm-add", 3, 4), FuzzRun.parse("math:comm-add@3,4"));
+    assertEquals(new FuzzRun.Parsed("math", 0, 0), FuzzRun.parse("math"));
+  }
 }
