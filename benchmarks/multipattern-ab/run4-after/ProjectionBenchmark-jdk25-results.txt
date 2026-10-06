@@ -1,0 +1,104 @@
+================================================================================================
+A projection of 64 nodes over the toy date language, 20 rules: saturation and extraction
+================================================================================================
+
+OpenJDK 64-Bit Server VM 25.0.4.1+1-1-26.04.4-Ubuntu on Linux 7.0.0-34-generic
+AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M, 8 threads
+pinned to cpus 0,1,2,3,12,13,14,15; max clock 5157895 kHz, governor performance, energy preference performance, platform profile performance
+commit 338ed1f, 2026-10-06T01:26:55.890170188+02:00
+load average before 0.70, after 0.80
+JMH 1.37; mvn -Pbench -q test-compile exec:exec -Dbench=projection
+  Warm, average time per operation in us, with bytes allocated (gc profiler), default object headers: mode [AverageTime], forks 5, warmup 5 x 1 s, measurement 10 x 1 s, jvm args []
+  Cold, the first call in a fresh JVM, single shot in us, default object headers: mode [SingleShotTime], forks 5, warmup 0 x null, measurement 1 x null, jvm args []
+  Warm, average time per operation in us, with bytes allocated (gc profiler), with -XX:+UseCompactObjectHeaders: mode [AverageTime], forks 5, warmup 5 x 1 s, measurement 10 x 1 s, jvm args [-XX:+UseCompactObjectHeaders]
+  Cold, the first call in a fresh JVM, single shot in us, with -XX:+UseCompactObjectHeaders: mode [SingleShotTime], forks 5, warmup 0 x null, measurement 1 x null, jvm args [-XX:+UseCompactObjectHeaders]
+
+The runs the timings are of (the third stopped by a deadline hook if it says so):
+node limit 200: 2 iterations, 221 nodes, 97 classes (2.28 nodes per class), 209 applied, 125 unions, stopped: NodeLimit[nodes=221], 0.0 s in one run; 20 roots, extractAll cost 182.0
+node limit 1000: 4 iterations, 957 nodes, 347 classes (2.76 nodes per class), 2472 applied, 1006 unions, stopped: NodeLimit[nodes=1028], 0.0 s in one run; 20 roots, extractAll cost 173.0
+node limit 10000: 22 iterations, 8965 nodes, 1529 classes (5.86 nodes per class), 93578 applied, 13741 unions, stopped: NodeLimit[nodes=11873], 8.3 s in one run; 20 roots, extractAll cost 173.0
+
+Warm, average time per operation in us, with bytes allocated (gc profiler), default object headers:
+Benchmark                                            (nodes)  Mode  Cnt        Score       Error   Units
+ProjectionBenchmark.extractAll                           200  avgt   50      112.313 ±     0.500   us/op
+ProjectionBenchmark.extractAll:gc.alloc.rate             200  avgt   50      909.514 ±     4.043  MB/sec
+ProjectionBenchmark.extractAll:gc.alloc.rate.norm        200  avgt   50   107144.794 ±     0.004    B/op
+ProjectionBenchmark.extractAll:gc.count                  200  avgt   50      300.000              counts
+ProjectionBenchmark.extractAll:gc.time                   200  avgt   50      142.000                  ms
+ProjectionBenchmark.extractAll                          1000  avgt   50     1897.843 ±    12.332   us/op
+ProjectionBenchmark.extractAll:gc.alloc.rate            1000  avgt   50      624.062 ±     8.574  MB/sec
+ProjectionBenchmark.extractAll:gc.alloc.rate.norm       1000  avgt   50  1242261.412 ± 16994.171    B/op
+ProjectionBenchmark.extractAll:gc.count                 1000  avgt   50      314.000              counts
+ProjectionBenchmark.extractAll:gc.time                  1000  avgt   50      134.000                  ms
+ProjectionBenchmark.extractTrees                         200  avgt   50       15.835 ±     0.045   us/op
+ProjectionBenchmark.extractTrees:gc.alloc.rate           200  avgt   50     1595.839 ±     4.845  MB/sec
+ProjectionBenchmark.extractTrees:gc.alloc.rate.norm      200  avgt   50    26507.312 ±    28.804    B/op
+ProjectionBenchmark.extractTrees:gc.count                200  avgt   50      350.000              counts
+ProjectionBenchmark.extractTrees:gc.time                 200  avgt   50      159.000                  ms
+ProjectionBenchmark.extractTrees                        1000  avgt   50       56.216 ±     1.698   us/op
+ProjectionBenchmark.extractTrees:gc.alloc.rate          1000  avgt   50     1272.168 ±   120.440  MB/sec
+ProjectionBenchmark.extractTrees:gc.alloc.rate.norm     1000  avgt   50    75397.197 ±  8184.298    B/op
+ProjectionBenchmark.extractTrees:gc.count               1000  avgt   50      329.000              counts
+ProjectionBenchmark.extractTrees:gc.time                1000  avgt   50      150.000                  ms
+ProjectionBenchmark.saturate                             200  avgt   50      121.304 ±     2.109   us/op
+ProjectionBenchmark.saturate:gc.alloc.rate               200  avgt   50     3720.563 ±    65.284  MB/sec
+ProjectionBenchmark.saturate:gc.alloc.rate.norm          200  avgt   50   472837.657 ±    16.120    B/op
+ProjectionBenchmark.saturate:gc.count                    200  avgt   50      722.000              counts
+ProjectionBenchmark.saturate:gc.time                     200  avgt   50      304.000                  ms
+ProjectionBenchmark.saturate                            1000  avgt   50     2563.478 ±    25.409   us/op
+ProjectionBenchmark.saturate:gc.alloc.rate              1000  avgt   50     2249.399 ±    25.049  MB/sec
+ProjectionBenchmark.saturate:gc.alloc.rate.norm         1000  avgt   50  6046101.306 ± 17262.941    B/op
+ProjectionBenchmark.saturate:gc.count                   1000  avgt   50      450.000              counts
+ProjectionBenchmark.saturate:gc.time                    1000  avgt   50      289.000                  ms
+
+Cold, the first call in a fresh JVM, single shot in us, default object headers:
+Benchmark                         (nodes)  Mode  Cnt      Score      Error  Units
+ProjectionBenchmark.extractAll        200    ss    5   5313.040 ±  272.427  us/op
+ProjectionBenchmark.extractAll       1000    ss    5  23252.581 ± 7436.051  us/op
+ProjectionBenchmark.extractTrees      200    ss    5   1844.739 ±  144.819  us/op
+ProjectionBenchmark.extractTrees     1000    ss    5   3615.182 ± 1393.702  us/op
+ProjectionBenchmark.saturate          200    ss    5   3336.609 ±  191.119  us/op
+ProjectionBenchmark.saturate         1000    ss    5  16652.428 ± 5584.434  us/op
+
+Warm, average time per operation in us, with bytes allocated (gc profiler), with -XX:+UseCompactObjectHeaders:
+Benchmark                                            (nodes)  Mode  Cnt        Score       Error   Units
+ProjectionBenchmark.extractAll                           200  avgt   50      113.935 ±     0.306   us/op
+ProjectionBenchmark.extractAll:gc.alloc.rate             200  avgt   50      852.957 ±     2.293  MB/sec
+ProjectionBenchmark.extractAll:gc.alloc.rate.norm        200  avgt   50   101936.732 ±     0.003    B/op
+ProjectionBenchmark.extractAll:gc.count                  200  avgt   50      250.000              counts
+ProjectionBenchmark.extractAll:gc.time                   200  avgt   50      115.000                  ms
+ProjectionBenchmark.extractAll                          1000  avgt   50     1885.778 ±    15.604   us/op
+ProjectionBenchmark.extractAll:gc.alloc.rate            1000  avgt   50      592.406 ±     4.264  MB/sec
+ProjectionBenchmark.extractAll:gc.alloc.rate.norm       1000  avgt   50  1171844.114 ± 12745.688    B/op
+ProjectionBenchmark.extractAll:gc.count                 1000  avgt   50      347.000              counts
+ProjectionBenchmark.extractAll:gc.time                  1000  avgt   50      148.000                  ms
+ProjectionBenchmark.extractTrees                         200  avgt   50       16.679 ±     0.182   us/op
+ProjectionBenchmark.extractTrees:gc.alloc.rate           200  avgt   50     1431.506 ±    17.122  MB/sec
+ProjectionBenchmark.extractTrees:gc.alloc.rate.norm      200  avgt   50    25032.107 ±    29.396    B/op
+ProjectionBenchmark.extractTrees:gc.count                200  avgt   50      350.000              counts
+ProjectionBenchmark.extractTrees:gc.time                 200  avgt   50      157.000                  ms
+ProjectionBenchmark.extractTrees                        1000  avgt   50       57.815 ±     1.257   us/op
+ProjectionBenchmark.extractTrees:gc.alloc.rate          1000  avgt   50     1130.659 ±    80.661  MB/sec
+ProjectionBenchmark.extractTrees:gc.alloc.rate.norm     1000  avgt   50    68937.971 ±  6138.226    B/op
+ProjectionBenchmark.extractTrees:gc.count               1000  avgt   50      311.000              counts
+ProjectionBenchmark.extractTrees:gc.time                1000  avgt   50      139.000                  ms
+ProjectionBenchmark.saturate                             200  avgt   50      124.389 ±     1.644   us/op
+ProjectionBenchmark.saturate:gc.alloc.rate               200  avgt   50     3167.583 ±    40.892  MB/sec
+ProjectionBenchmark.saturate:gc.alloc.rate.norm          200  avgt   50   413024.959 ±   974.431    B/op
+ProjectionBenchmark.saturate:gc.count                    200  avgt   50      578.000              counts
+ProjectionBenchmark.saturate:gc.time                     200  avgt   50      262.000                  ms
+ProjectionBenchmark.saturate                            1000  avgt   50     2615.673 ±    22.480   us/op
+ProjectionBenchmark.saturate:gc.alloc.rate              1000  avgt   50     1906.765 ±    15.752  MB/sec
+ProjectionBenchmark.saturate:gc.alloc.rate.norm         1000  avgt   50  5230306.403 ± 21774.336    B/op
+ProjectionBenchmark.saturate:gc.count                   1000  avgt   50      400.000              counts
+ProjectionBenchmark.saturate:gc.time                    1000  avgt   50      272.000                  ms
+
+Cold, the first call in a fresh JVM, single shot in us, with -XX:+UseCompactObjectHeaders:
+Benchmark                         (nodes)  Mode  Cnt      Score       Error  Units
+ProjectionBenchmark.extractAll        200    ss    5   5456.393 ±  1312.958  us/op
+ProjectionBenchmark.extractAll       1000    ss    5  25409.252 ± 14219.498  us/op
+ProjectionBenchmark.extractTrees      200    ss    5   1829.348 ±   136.954  us/op
+ProjectionBenchmark.extractTrees     1000    ss    5   3875.418 ±  1145.032  us/op
+ProjectionBenchmark.saturate          200    ss    5   3429.273 ±   492.930  us/op
+ProjectionBenchmark.saturate         1000    ss    5  14846.092 ±  8160.504  us/op
+

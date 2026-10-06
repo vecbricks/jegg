@@ -1,0 +1,148 @@
+================================================================================================
+Deferred against eager rebuilding, one saturation of each ported test
+================================================================================================
+
+OpenJDK 64-Bit Server VM 25.0.4.1+1-1-26.04.4-Ubuntu on Linux 7.0.0-34-generic
+AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M, 8 threads
+pinned to cpus 0,1,2,3,12,13,14,15; max clock 5157895 kHz, governor performance, energy preference performance, platform profile performance
+commit 68699ce, 2026-10-05T22:49:33.961792177+02:00
+load average before 0.22, after 0.68
+JMH 1.37; mvn -Pbench -q test-compile exec:exec -Dbench=rebuild
+  Single-shot time per saturation, ms: mode [SingleShotTime], forks 5, warmup 2 x null, measurement 3 x null, jvm args []
+
+Single-shot time per saturation, ms:
+Benchmark                    (mode)                   (suite)  Mode  Cnt   Score   Error  Units
+RebuildBenchmark.saturate  DEFERRED      prove_contrapositive    ss   15   1.590 ± 0.256  ms/op
+RebuildBenchmark.saturate  DEFERRED               prove_chain    ss   15   2.496 ± 0.458  ms/op
+RebuildBenchmark.saturate  DEFERRED              lambda_under    ss   15   2.263 ± 0.153  ms/op
+RebuildBenchmark.saturate  DEFERRED            lambda_if_elim    ss   15   3.278 ± 0.484  ms/op
+RebuildBenchmark.saturate  DEFERRED         lambda_let_simple    ss   15   2.993 ± 0.495  ms/op
+RebuildBenchmark.saturate  DEFERRED            lambda_capture    ss   15   1.861 ± 0.211  ms/op
+RebuildBenchmark.saturate  DEFERRED       lambda_capture_free    ss   15   2.837 ± 0.465  ms/op
+RebuildBenchmark.saturate  DEFERRED  lambda_closure_not_seven    ss   15   4.064 ± 0.744  ms/op
+RebuildBenchmark.saturate  DEFERRED            lambda_compose    ss   15   5.130 ± 0.945  ms/op
+RebuildBenchmark.saturate  DEFERRED          lambda_if_simple    ss   15   1.741 ± 0.354  ms/op
+RebuildBenchmark.saturate  DEFERRED       lambda_compose_many    ss   15   8.327 ± 2.048  ms/op
+RebuildBenchmark.saturate  DEFERRED                 lambda_if    ss   15   4.023 ± 0.485  ms/op
+RebuildBenchmark.saturate  DEFERRED                 math_fail    ss   15   3.444 ± 0.444  ms/op
+RebuildBenchmark.saturate  DEFERRED         math_simplify_add    ss   15   4.214 ± 0.886  ms/op
+RebuildBenchmark.saturate  DEFERRED               math_powers    ss   15   2.485 ± 0.298  ms/op
+RebuildBenchmark.saturate  DEFERRED       math_simplify_const    ss   15   3.648 ± 0.591  ms/op
+RebuildBenchmark.saturate  DEFERRED        math_simplify_root    ss   15   5.903 ± 0.813  ms/op
+RebuildBenchmark.saturate  DEFERRED      math_simplify_factor    ss   15   5.130 ± 1.386  ms/op
+RebuildBenchmark.saturate  DEFERRED            math_diff_same    ss   15   2.367 ± 0.316  ms/op
+RebuildBenchmark.saturate  DEFERRED       math_diff_different    ss   15   2.437 ± 0.328  ms/op
+RebuildBenchmark.saturate  DEFERRED         math_diff_simple1    ss   15   5.145 ± 1.136  ms/op
+RebuildBenchmark.saturate  DEFERRED         math_diff_simple2    ss   15   4.182 ± 0.508  ms/op
+RebuildBenchmark.saturate  DEFERRED              math_diff_ln    ss   15   2.447 ± 0.371  ms/op
+RebuildBenchmark.saturate  DEFERRED         diff_power_simple    ss   15   5.827 ± 1.658  ms/op
+RebuildBenchmark.saturate  DEFERRED         diff_power_harder    ss   15   8.660 ± 1.205  ms/op
+RebuildBenchmark.saturate  DEFERRED                 integ_one    ss   15   2.392 ± 0.389  ms/op
+RebuildBenchmark.saturate  DEFERRED                 integ_sin    ss   15   2.421 ± 0.253  ms/op
+RebuildBenchmark.saturate  DEFERRED                   integ_x    ss   15   2.660 ± 0.424  ms/op
+RebuildBenchmark.saturate  DEFERRED               integ_part1    ss   15   6.163 ± 1.098  ms/op
+RebuildBenchmark.saturate  DEFERRED               integ_part2    ss   15  12.971 ± 2.181  ms/op
+RebuildBenchmark.saturate  DEFERRED               integ_part3    ss   15   5.324 ± 1.071  ms/op
+RebuildBenchmark.saturate     EAGER      prove_contrapositive    ss   15   1.698 ± 0.318  ms/op
+RebuildBenchmark.saturate     EAGER               prove_chain    ss   15   2.435 ± 0.403  ms/op
+RebuildBenchmark.saturate     EAGER              lambda_under    ss   15   2.291 ± 0.269  ms/op
+RebuildBenchmark.saturate     EAGER            lambda_if_elim    ss   15   3.259 ± 0.368  ms/op
+RebuildBenchmark.saturate     EAGER         lambda_let_simple    ss   15   3.074 ± 0.552  ms/op
+RebuildBenchmark.saturate     EAGER            lambda_capture    ss   15   1.946 ± 0.256  ms/op
+RebuildBenchmark.saturate     EAGER       lambda_capture_free    ss   15   2.634 ± 0.342  ms/op
+RebuildBenchmark.saturate     EAGER  lambda_closure_not_seven    ss   15   4.114 ± 0.658  ms/op
+RebuildBenchmark.saturate     EAGER            lambda_compose    ss   15   5.203 ± 0.886  ms/op
+RebuildBenchmark.saturate     EAGER          lambda_if_simple    ss   15   1.822 ± 0.279  ms/op
+RebuildBenchmark.saturate     EAGER       lambda_compose_many    ss   15   8.784 ± 1.662  ms/op
+RebuildBenchmark.saturate     EAGER                 lambda_if    ss   15   4.197 ± 0.654  ms/op
+RebuildBenchmark.saturate     EAGER                 math_fail    ss   15   3.439 ± 0.677  ms/op
+RebuildBenchmark.saturate     EAGER         math_simplify_add    ss   15   4.550 ± 0.956  ms/op
+RebuildBenchmark.saturate     EAGER               math_powers    ss   15   2.931 ± 0.354  ms/op
+RebuildBenchmark.saturate     EAGER       math_simplify_const    ss   15   3.910 ± 0.698  ms/op
+RebuildBenchmark.saturate     EAGER        math_simplify_root    ss   15   5.957 ± 0.630  ms/op
+RebuildBenchmark.saturate     EAGER      math_simplify_factor    ss   15   5.724 ± 1.850  ms/op
+RebuildBenchmark.saturate     EAGER            math_diff_same    ss   15   2.453 ± 0.453  ms/op
+RebuildBenchmark.saturate     EAGER       math_diff_different    ss   15   2.714 ± 0.525  ms/op
+RebuildBenchmark.saturate     EAGER         math_diff_simple1    ss   15   5.290 ± 1.001  ms/op
+RebuildBenchmark.saturate     EAGER         math_diff_simple2    ss   15   5.286 ± 1.353  ms/op
+RebuildBenchmark.saturate     EAGER              math_diff_ln    ss   15   2.465 ± 0.331  ms/op
+RebuildBenchmark.saturate     EAGER         diff_power_simple    ss   15   5.688 ± 1.697  ms/op
+RebuildBenchmark.saturate     EAGER         diff_power_harder    ss   15   9.622 ± 1.728  ms/op
+RebuildBenchmark.saturate     EAGER                 integ_one    ss   15   2.554 ± 0.536  ms/op
+RebuildBenchmark.saturate     EAGER                 integ_sin    ss   15   2.387 ± 0.252  ms/op
+RebuildBenchmark.saturate     EAGER                   integ_x    ss   15   2.844 ± 0.435  ms/op
+RebuildBenchmark.saturate     EAGER               integ_part1    ss   15   6.485 ± 1.076  ms/op
+RebuildBenchmark.saturate     EAGER               integ_part2    ss   15  15.537 ± 3.000  ms/op
+RebuildBenchmark.saturate     EAGER               integ_part3    ss   15   5.254 ± 0.995  ms/op
+
+Classes repaired per run, one run each; the three large runs timed, their eager run capped at ten minutes:
+suite                           mode   iterations   repaired        nodes stop
+prove_contrapositive        DEFERRED            4          6           14 Saturated
+prove_contrapositive           EAGER            4          7           14 Saturated
+prove_chain                 DEFERRED            6         13           31 Saturated
+prove_chain                    EAGER            6         17           31 Saturated
+prove_fold                  DEFERRED           13       4069        31060 NodeLimit (0.2 s, one run)
+prove_fold                     EAGER           13      25024        31060 NodeLimit (1.1 s, one run)
+lambda_under                DEFERRED            2          4           10 Proved all goals
+lambda_under                   EAGER            2          4           10 Proved all goals
+lambda_if_elim              DEFERRED            4         11           19 Proved all goals
+lambda_if_elim                 EAGER            4         15           19 Proved all goals
+lambda_let_simple           DEFERRED            3         10           18 Proved all goals
+lambda_let_simple              EAGER            3         10           18 Proved all goals
+lambda_capture              DEFERRED            2          1            5 Saturated
+lambda_capture                 EAGER            2          1            5 Saturated
+lambda_capture_free         DEFERRED            4          6           12 Saturated
+lambda_capture_free            EAGER            4          3           12 Saturated
+lambda_closure_not_seven    DEFERRED            8         24           39 Saturated
+lambda_closure_not_seven       EAGER            8         30           39 Saturated
+lambda_compose              DEFERRED           14         50           78 Proved all goals
+lambda_compose                 EAGER           14         60           78 Proved all goals
+lambda_if_simple            DEFERRED            1          2            6 Proved all goals
+lambda_if_simple               EAGER            1          2            6 Proved all goals
+lambda_compose_many         DEFERRED           17        236          284 Proved all goals
+lambda_compose_many            EAGER           17        509          284 Proved all goals
+lambda_function_repeat      DEFERRED           58      12879        32636 Proved all goals (2.3 s, one run)
+lambda_function_repeat         EAGER           60      63652        36152 IterationLimit (3.3 s, one run)
+lambda_if                   DEFERRED            8         26           42 Proved all goals
+lambda_if                      EAGER            8         28           42 Proved all goals
+lambda_fib                  DEFERRED           56       1513        14582 Proved all goals (28.2 s, one run)
+lambda_fib                     EAGER           56      28255        14582 Proved all goals (29.6 s, one run)
+math_fail                   DEFERRED            3          9           18 Saturated
+math_fail                      EAGER            3         16           18 Saturated
+math_simplify_add           DEFERRED            4         24           36 Proved all goals
+math_simplify_add              EAGER            4         39           36 Proved all goals
+math_powers                 DEFERRED            1          6           21 Proved all goals
+math_powers                    EAGER            1         14           21 Proved all goals
+math_simplify_const         DEFERRED            2         11           14 Proved all goals
+math_simplify_const            EAGER            2         30           14 Proved all goals
+math_simplify_root          DEFERRED            7         91          211 Proved all goals
+math_simplify_root             EAGER            7        310          211 Proved all goals
+math_simplify_factor        DEFERRED            6         69          142 Proved all goals
+math_simplify_factor           EAGER            6        251          142 Proved all goals
+math_diff_same              DEFERRED            1          2            5 Proved all goals
+math_diff_same                 EAGER            1          5            5 Proved all goals
+math_diff_different         DEFERRED            1          3            8 Proved all goals
+math_diff_different            EAGER            1          7            8 Proved all goals
+math_diff_simple1           DEFERRED            4         24           20 Proved all goals
+math_diff_simple1              EAGER            4         99           20 Proved all goals
+math_diff_simple2           DEFERRED            3         20           26 Proved all goals
+math_diff_simple2              EAGER            3        104           26 Proved all goals
+math_diff_ln                DEFERRED            1          3           12 Proved all goals
+math_diff_ln                   EAGER            1          7           12 Proved all goals
+diff_power_simple           DEFERRED            5         46           80 Proved all goals
+diff_power_simple              EAGER            5        175           80 Proved all goals
+diff_power_harder           DEFERRED            7        191          409 Proved all goals
+diff_power_harder              EAGER            7        792          409 Proved all goals
+integ_one                   DEFERRED            1          2            6 Proved all goals
+integ_one                      EAGER            1          7            6 Proved all goals
+integ_sin                   DEFERRED            1          3           12 Proved all goals
+integ_sin                      EAGER            1          7           12 Proved all goals
+integ_x                     DEFERRED            1          4           12 Proved all goals
+integ_x                        EAGER            1         11           12 Proved all goals
+integ_part1                 DEFERRED            4        103          486 Proved all goals
+integ_part1                    EAGER            4        429          486 Proved all goals
+integ_part2                 DEFERRED            5        380         1991 Proved all goals
+integ_part2                    EAGER            5       1961         1991 Proved all goals
+integ_part3                 DEFERRED            4         42          144 Proved all goals
+integ_part3                    EAGER            4        134          144 Proved all goals
+
