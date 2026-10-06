@@ -8,6 +8,9 @@ scenario is a compiler's: two fields of one shifted date, `year(d + s1 + s2)` an
 (dear) or off a civil decomposition (dear once, cheap per field), and the two
 should share the decomposition.
 
+Add jegg to a Maven build with the coordinates of the README's "Using it"
+(`io.github.vecbricks:jegg:0.1.0`); the code below runs against that artifact.
+
 ## 1. The language: records with payloads
 
 ```java

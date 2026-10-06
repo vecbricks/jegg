@@ -36,8 +36,9 @@ backoff scheduler, extraction over one root and over several, and the
 measurement harness. egg's five test suites (`simple`, `prop`, `lambda`,
 `math`, `datalog`) are ported test for test, each run checked against egg's own
 iteration, node and class counts; the library has egg's multi-patterns too. Every build prints the tests' coverage of
-`src/main` (98% of lines). The API still moves between steps; there is no
-release yet, so there are no Maven coordinates to quote.
+`src/main` (98% of lines). The API still moves between steps: 0.1.0 is not on
+Maven Central yet, and `CHANGELOG.md` and `CONTRIBUTING.md` ("Releases") say how
+it is cut and how versions are numbered while the API moves.
 
 ## What it is
 
@@ -56,7 +57,8 @@ Three things egg's API does not have and a compiler client needs are in from
 the start: e-nodes with payloads and a `TreeBridge` from a client's own tree
 type, patterns that bind payloads as well as subterms, and `extractAll` over
 several roots that chooses one node per class and pays a shared subterm once.
-Proof production, s-expression parsing and ILP extraction are deliberately out.
+Proof production, s-expression parsing and ILP extraction are deliberately out;
+[`docs/egg-comparison.md`](docs/egg-comparison.md) lists everything else egg has that jegg does not.
 
 It was planned for [Varka](https://github.com/vecbricks/varka), which will use
 it to choose physical representations over a whole projection, but it has no
@@ -103,6 +105,21 @@ and the practical half (running one test, the slow tests, the benchmarks, the
 counts pinned to egg). Issues labelled
 [`good first issue`](https://github.com/vecbricks/jegg/labels/good%20first%20issue)
 have their plans written and are sized for a first pull request.
+
+## Using it
+
+Once 0.1.0 is on Maven Central:
+
+```xml
+<dependency>
+  <groupId>io.github.vecbricks</groupId>
+  <artifactId>jegg</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+The artifact is a module, `io.github.vecbricks.jegg`; its only dependency, JSpecify's
+annotations, is `static` and is not needed at run time. Java 25.
 
 ## Building
 

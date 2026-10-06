@@ -43,6 +43,35 @@ template's last section and as the last line of each commit message.
 
 The process was set on 3 October 2026 (https://github.com/vecbricks/jegg/issues/3) after the first steps had gone code-first.
 
+## Releases
+
+jegg is at 0.x while its API moves, as the README says. Versions follow semantic versioning with
+the 0.x convention: a change that breaks the public API raises the minor version (0.1 to 0.2), a
+fix or an addition raises the patch (0.1.0 to 0.1.1); 1.0.0 is the first version that promises
+the API stays. A release is the tag `v<version>` on `main`: the tagged commit carries the release
+version in the pom, and the next commit returns to the next `-SNAPSHOT`. Varka and any other
+client depend on a release, never on a snapshot.
+
+`CHANGELOG.md` lists what a release changed, in the form of Keep a Changelog. Each pull request
+that changes what a user sees (the API, a behaviour, a speed worth quoting) adds one line with its
+number under `Unreleased`, in Added, Changed or Fixed; a change to tests, docs or the build alone
+does not.
+
+Cutting a release is the owner's, since the Central token and the signing key are theirs:
+
+1. Move the `Unreleased` lines under a `## [<version>]` heading of `CHANGELOG.md` and add its
+   link line, in a pull request.
+2. On an up-to-date `main`, `dev/release.sh <version>` checks the tree, sets the version, runs
+   `mvn -B verify` with every test, commits "Release <version>", tags `v<version>`, and commits
+   the next `-SNAPSHOT`. It pushes nothing; `dev/release.sh --check <version>` only checks.
+3. `git checkout v<version> && mvn -B -Prelease deploy` builds the sources and Javadoc jars,
+   signs them and uploads them to Central's portal; publish the deployment there. Then
+   `git checkout main && git push origin main v<version>`.
+
+What the owner needs once: a Central portal account with the namespace `io.github.vecbricks`
+verified, a GPG key published to a key server, and `~/.m2/settings.xml` with a `central` server
+holding the portal's token.
+
 ## The practical half
 
 - **One test:** `mvn -q test -Dtest=LambdaTest`, or one method, `-Dtest='LambdaTest#lambdaIf'`;
