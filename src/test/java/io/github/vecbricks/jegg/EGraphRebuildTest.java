@@ -227,4 +227,58 @@ class EGraphRebuildTest {
     assertEquals(5, g.numNodes(), "the pruned sum is remembered, not added");
     g.checkInvariants();
   }
+
+  @Test
+  void aMergeInsideARepairThatGrowsTheRepairedClassesFactRemakesItsParents() {
+    // A repair takes the class's parent list out and puts it back after its loop. A congruence
+    // merge inside the loop that joins the class with one whose fact is bigger (here a class
+    // known true) must still re-make the facts of the nodes in that list, or they stay stale:
+    // the list is empty when the merge schedules them. Found by fuzzing prop against egg (#44).
+    EGraph<PropRulesTest.Prop, Boolean> g = new EGraph<>(PropRulesTest.CONSTANT_FOLD);
+    int t = g.add(new PropRulesTest.Prop.Bool(true));
+    int e = g.add(new PropRulesTest.Prop.Sym("e"));
+    int e2 = g.add(new PropRulesTest.Prop.Sym("e2"));
+    // E holds And[E, T], and T holds And[E2, T]: the two become congruent when E and E2 merge.
+    g.merge(g.add(new PropRulesTest.Prop.And(IntList.of(e, t))), e);
+    g.merge(g.add(new PropRulesTest.Prop.And(IntList.of(e2, t))), t);
+    // Q holds Or[E, E2], a parent of both that the repair of E holds aside.
+    int q = g.add(new PropRulesTest.Prop.Or(IntList.of(e, e2)));
+    g.rebuild();
+    g.checkAnalysisInvariant();
+    assertEquals(null, g.data(q));
+    g.merge(e, e2);
+    g.rebuild();
+    g.checkInvariants();
+    g.checkAnalysisInvariant();
+    assertEquals(true, g.data(q));
+    // modify then merges the constant class in, as it does for any class known true.
+    assertEquals(g.find(t), g.find(q));
+  }
+
+  @Test
+  void aNodePrunedByModifyLeavesNoStaleKeyWhenItsChildrenMergeInTheSameRebuild() {
+    // The effects of math's sub-canon and pow0 on (pow 1 (- 0 (pow z 0))): (- 0 P) gains
+    // (+ 0 (* -1 P)), and P = (pow z 0) is merged with 1. Rebuilding folds (* -1 P) to -1, whose
+    // modify prunes the class to its constants, while the class of P is merged into 1's: the
+    // pruned node's key is left in the hashcons under the child ids it was added with. Found by
+    // fuzzing math against egg (#44), where jegg counted a node more than the graph holds.
+    EGraph<MathTest.Math, Double> g = new EGraph<>(MathTest.CONSTANT_FOLD);
+    int z = g.add(new MathTest.Math.Symbol("z"));
+    int zero = g.add(new MathTest.Math.Constant(0));
+    int one = g.add(new MathTest.Math.Constant(1));
+    int p = g.add(new MathTest.Math.Pow(IntList.of(z, zero)));
+    int sub = g.add(new MathTest.Math.Sub(IntList.of(zero, p)));
+    g.add(new MathTest.Math.Pow(IntList.of(one, sub)));
+    g.rebuild();
+    int minusOne = g.add(new MathTest.Math.Constant(-1));
+    int times = g.add(new MathTest.Math.Mul(IntList.of(minusOne, p)));
+    int plus = g.add(new MathTest.Math.Add(IntList.of(zero, times)));
+    g.merge(sub, plus);
+    g.merge(p, one);
+    g.rebuild();
+    g.checkInvariants();
+    g.checkAnalysisInvariant();
+    assertEquals(5, g.numClasses());
+    assertEquals(5, g.numNodes());
+  }
 }

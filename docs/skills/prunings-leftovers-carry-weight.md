@@ -25,6 +25,13 @@ child's id changed between the entry's last re-key and the prune), so judging by
 canonical form put pruned nodes back into the hashcons. The fact is recorded where it cannot go
 stale: a flag on the class that pruned, and the class's node list.
 
+A fourth, from fuzzing math against egg (#44): **a pruned node's hashcons key is not only the two
+forms `retainNodes` knows.** It removes the form the class listed and the canonical form, but an
+entry keyed under an older form (a child's class merged away since, not yet repaired) kept that
+key past the prune, and the hashcons then held a node no class listed: `numNodes()` counted one
+more than the graph holds. `repair`'s pruned branch now also drops the entry's own key, if it
+names the entry's class. `EGraphRebuildTest` has the hand-built case.
+
 ## How to apply it
 
 - jegg keeps its hashcons exact (it holds exactly the graph's nodes, which `checkInvariants`

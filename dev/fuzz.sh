@@ -27,5 +27,13 @@ git -C "$cache" checkout -q "$EGG_COMMIT"
   > "$cache/tests/fuzz_$lang.rs"
 (cd "$cache" && cargo test -q --release --test "fuzz_$lang" --no-run)
 mkdir -p dev/fuzz/found target/fuzz
-mvn -B -q test -Dtest=EggDifferentialTest -Dfuzz.lang="$lang" -Dfuzz.mode="$mode" \
-  -Dfuzz.count="$count" -Dfuzz.seed="$seed" -Dfuzz.eggdir="$cache"
+# The summary line is the test's output, which maven hides for a test that passes; show it, the
+# failures with their messages, and keep maven's exit status and its whole log.
+log=target/fuzz/mvn-$lang-$mode.log
+status=0
+mvn -B test -Dtest=EggDifferentialTest -Dfuzz.lang="$lang" -Dfuzz.mode="$mode" \
+  -Dfuzz.count="$count" -Dfuzz.seed="$seed" -Dfuzz.eggdir="$cache" > "$log" 2>&1 || status=$?
+grep -E "^FUZZ|^\[ERROR\]|Tests run:|AssertionFailedError|Exception|BUILD|does not reproduce|egg's harness gave" \
+  "$log" | head -60 || true
+if [ "$status" -ne 0 ]; then echo "maven failed ($status); the whole log is $log" >&2; fi
+exit "$status"

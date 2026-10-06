@@ -87,48 +87,95 @@ class FuzzHarnessTest {
   void theComparisonSeparatesTheSameFromADivergenceFromWhatSaysNothing() {
     String line = "Saturated 4 4,3;12,6 final 14,6";
     String eggLine = line + " memo 14";
-    assertEquals(FuzzRun.Verdict.SAME, FuzzRun.compare(eggLine, line, 5_000));
+    assertEquals(FuzzRun.Verdict.SAME, FuzzRun.compare(eggLine, line));
     // A different sample, stop or count is a divergence.
     assertEquals(FuzzRun.Verdict.DIVERGE,
-        FuzzRun.compare(eggLine, "Saturated 4 4,3;13,6 final 14,6", 5_000));
+        FuzzRun.compare(eggLine, "Saturated 4 4,3;13,6 final 14,6"));
     assertEquals(FuzzRun.Verdict.DIVERGE,
-        FuzzRun.compare(eggLine, "IterationLimit 4 4,3;12,6 final 14,6", 5_000));
+        FuzzRun.compare(eggLine, "IterationLimit 4 4,3;12,6 final 14,6"));
     // egg panicking or timing out cannot be compared; jegg throwing where egg did not, can.
-    assertEquals(FuzzRun.Verdict.INCONCLUSIVE, FuzzRun.compare("PANIC", line, 5_000));
+    assertEquals(FuzzRun.Verdict.INCONCLUSIVE, FuzzRun.compare("PANIC", line));
     assertEquals(FuzzRun.Verdict.INCONCLUSIVE,
-        FuzzRun.compare("TimeLimit 3 - final 1,1 memo 1", line, 5_000));
+        FuzzRun.compare("TimeLimit 3 - final 1,1 memo 1", line));
     // Both refusing the same term, as a prop term that folds to false is, is agreement.
     assertEquals(FuzzRun.Verdict.BOTH_FAILED, FuzzRun.compare("PANIC",
-        "ERROR IllegalStateException: Merged non-equal constants", 5_000));
+        "ERROR IllegalStateException: Merged non-equal constants"));
     assertEquals(FuzzRun.Verdict.DIVERGE,
-        FuzzRun.compare(eggLine, "ERROR IllegalStateException: x", 5_000));
+        FuzzRun.compare(eggLine, "ERROR IllegalStateException: x after 4,3;12,6"));
   }
 
   @Test
-  void eggsMemoSizedNodeLimitIsAnExplainedDifferenceOnlyWhenTheMemoExplainsIt() {
-    // egg stops on a limit its nodes (2813) have not reached because its memo (5100) has; jegg,
-    // counting distinct nodes, runs on past the iteration egg stopped in.
+  void aNodeLimitStopIsAnExplainedDifferenceOnlyForTheIterationStartsItReached() {
+    // One side stopped on the node limit in the iteration that ended its run; every iteration
+    // start it reached is the other side's too, and the other side ran at least as long.
+    String eggStopped = "NodeLimit 3 7,6;21,10;27,12 final 2813,1075 memo 5100";
+    String jeggRanOn = "Saturated 5 7,6;21,10;27,12;43,20;50,20 final 61,8";
+    assertEquals(FuzzRun.Verdict.NODE_LIMIT, FuzzRun.compare(eggStopped, jeggRanOn));
+    // The same the other way round: jegg's size crossed first, as it can, by application order.
+    assertEquals(FuzzRun.Verdict.NODE_LIMIT, FuzzRun.compare(
+        "Saturated 5 7,6;21,10;27,12;43,20;50,20 final 61,8 memo 80",
+        "NodeLimit 3 7,6;21,10;27,12 final 2813,1075"));
+    // Both stopped on the limit in the same iteration, with partial last iterations that differ.
+    assertEquals(FuzzRun.Verdict.NODE_LIMIT, FuzzRun.compare(
+        "NodeLimit 3 7,6;21,10;27,12 final 5200,1075 memo 6100",
+        "NodeLimit 3 7,6;21,10;27,12 final 5100,1075"));
+    // Not explained: an iteration start the two do not share, before the stop.
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(eggStopped,
+        "Saturated 5 7,6;21,10;28,12;43,20;50,20 final 61,8"));
+    // Not explained: the side that stopped on the limit ran longer than the other.
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(eggStopped,
+        "Saturated 2 7,6;21,10 final 30,8"));
+    // Not explained: the stop was not the node limit (egg's iteration limit, say).
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(
+        "IterationLimit 3 7,6;21,10;27,12 final 2813,1075 memo 5100", jeggRanOn));
+    // Not explained: a side that stopped on the limit but whose iteration starts differ.
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(
+        "NodeLimit 3 7,6;21,10;27,12 final 2813,1075 memo 5100",
+        "NodeLimit 3 7,6;21,11;27,12 final 2813,1075"));
+  }
+
+  @Test
+  void anErrorPastWhereEggStoppedOnTheNodeLimitIsExplainedAndOneBeforeItIsNot() {
+    // egg stopped on the node limit after three iteration starts; jegg ran on and threw in a
+    // later iteration (the assumption that a prop term is true can lead to true = false).
     String egg = "NodeLimit 3 7,6;21,10;27,12 final 2813,1075 memo 5100";
-    String jegg = "Saturated 5 7,6;21,10;27,12;43,20;50,20 final 61,8";
-    assertEquals(FuzzRun.Verdict.MEMO_LIMIT, FuzzRun.compare(egg, jegg, 5_000));
-    // Not explained: the memo is under the limit, so egg's stop was not the memo's.
+    assertEquals(FuzzRun.Verdict.NODE_LIMIT, FuzzRun.compare(egg,
+        "ERROR IllegalStateException: Merged non-equal constants after 7,6;21,10;27,12;43,20"));
+    String contradiction = "ERROR IllegalStateException: Merged non-equal constants after ";
+    // In the iteration egg stopped in, too.
+    assertEquals(FuzzRun.Verdict.NODE_LIMIT,
+        FuzzRun.compare(egg, contradiction + "7,6;21,10;27,12"));
+    // Before it: egg went on from a state jegg threw in.
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg, contradiction + "7,6;21,10"));
+    // Past it but from other states: not the same run.
+    assertEquals(FuzzRun.Verdict.DIVERGE,
+        FuzzRun.compare(egg, contradiction + "7,6;21,10;28,12;43,20"));
+    // egg stopped for another reason: jegg's error is not past a node-limit stop.
     assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(
-        "NodeLimit 3 7,6;21,10;27,12 final 2813,1075 memo 4900", jegg, 5_000));
-    // Not explained: egg's own nodes are over the limit, so jegg crossed it too.
-    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(
-        "NodeLimit 3 7,6;21,10;27,12 final 5200,1075 memo 6100", jegg, 5_000));
-    // Not explained: an iteration start the two do not share, before egg stopped.
+        "Saturated 3 7,6;21,10;27,12 final 30,8 memo 40", contradiction + "7,6;21,10;27,12;43,20"));
+    // Any other error is jegg's own, past egg's stop or not: a bug is not excused by a limit.
     assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg,
-        "Saturated 5 7,6;21,10;28,12;43,20;50,20 final 61,8", 5_000));
-    // Not explained: jegg stopped sooner than egg.
+        "ERROR NullPointerException: null after 7,6;21,10;27,12;43,20"));
     assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg,
-        "Saturated 2 7,6;21,10 final 30,8", 5_000));
-    // Not a node-limit stop of egg's.
-    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(
-        "IterationLimit 3 7,6;21,10;27,12 final 2813,1075 memo 5100", jegg, 5_000));
-    assertEquals(5_000, FuzzRun.nodeLimit("prop-all"));
-    assertEquals(10_000, FuzzRun.nodeLimit("math"));
-    assertEquals(75_000, FuzzRun.nodeLimit("math-75k"));
+        "ERROR IllegalStateException: class 5 holds null where the join is true after "
+            + "7,6;21,10;27,12"));
+  }
+
+  @Test
+  void aMistypedRuleSetIsRefusedNotRunAsAnotherOne() {
+    for (String bad : List.of("prop-allx", "math-76k", "math-75K", "lambda", "prop", "",
+        "prop:def_imply,comm_orr", "math:comm-add,nope", "prop:", "math:")) {
+      assertThrows(IllegalArgumentException.class,
+          () -> FuzzRun.run(new FuzzRun.Case(bad, "(~ x)", List.of())), bad);
+    }
+    // The rule sets that exist run, a list of real rules among them.
+    for (String good : List.of("prop-all", "prop-chain", "prop:def_imply,comm_or",
+        "prop:lem_imply")) {
+      assertFalse(FuzzRun.run(new FuzzRun.Case(good, "(~ x)", List.of())).startsWith("ERROR"),
+          good);
+    }
+    assertFalse(FuzzRun.run(new FuzzRun.Case("math:comm-add,add-zero", "(+ x 0)", List.of()))
+        .startsWith("ERROR"));
   }
 
   @Test

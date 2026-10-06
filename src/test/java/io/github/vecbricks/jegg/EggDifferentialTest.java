@@ -86,14 +86,14 @@ class EggDifferentialTest {
     long jeggStart = System.nanoTime();
     int same = 0;
     int bothFailed = 0;
-    int memoLimit = 0;
+    int nodeLimit = 0;
     int inconclusive = 0;
     List<Integer> diverged = new ArrayList<>();
     for (int i = 0; i < cases.size(); i++) {
       String jegg = FuzzRun.run(cases.get(i));
-      switch (FuzzRun.compare(eggResults.get(i), jegg, FuzzRun.nodeLimit(ruleset))) {
+      switch (FuzzRun.compare(eggResults.get(i), jegg)) {
         case SAME -> same++;
-        case MEMO_LIMIT -> memoLimit++;
+        case NODE_LIMIT -> nodeLimit++;
         case BOTH_FAILED -> bothFailed++;
         case INCONCLUSIVE -> inconclusive++;
         case DIVERGE -> {
@@ -102,9 +102,9 @@ class EggDifferentialTest {
       }
     }
     double jeggSeconds = (System.nanoTime() - jeggStart) / 1e9;
-    System.out.printf("FUZZ %s seed %d: %d terms, %d the same, %d the same up to egg's memo-sized"
-        + " node limit, %d refused by both, %d diverged, %d inconclusive; egg %.1f s, jegg"
-        + " %.1f s%n", language, seed, count, same, memoLimit, bothFailed, diverged.size(),
+    System.out.printf("FUZZ %s seed %d: %d terms, %d the same, %d the same up to a node-limit"
+        + " stop, %d refused by both, %d diverged, %d inconclusive; egg %.1f s, jegg"
+        + " %.1f s%n", language, seed, count, same, nodeLimit, bothFailed, diverged.size(),
         inconclusive, eggSeconds, jeggSeconds);
     for (int k = 0; k < Math.min(5, diverged.size()); k++) {
       record(seed, diverged.get(k), cases.get(diverged.get(k)), eggResults.get(diverged.get(k)));
@@ -127,8 +127,8 @@ class EggDifferentialTest {
       List<String> results = egg.run(candidates);
       FuzzRun.Case next = null;
       for (int i = 0; i < candidates.size() && next == null; i++) {
-        if (FuzzRun.compare(results.get(i), FuzzRun.run(candidates.get(i)),
-            FuzzRun.nodeLimit(current.ruleset())) == FuzzRun.Verdict.DIVERGE) {
+        if (FuzzRun.compare(results.get(i), FuzzRun.run(candidates.get(i)))
+            == FuzzRun.Verdict.DIVERGE) {
           next = candidates.get(i);
         }
       }

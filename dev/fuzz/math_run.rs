@@ -1,13 +1,26 @@
 // Appended to egg's tests/math.rs: runs one term under egg's own language, analysis and rules()
 // with the runner's default limits (30 iterations, 10000 nodes; "math-75k" raises the nodes to
-// 75000 as math_simplify_root does) and the time limit raised to ten minutes. With goals, as
+// 75000 as math_simplify_root does) and the time limit raised to ten minutes; `math:name,name`
+// runs the named rules only, under the default limits. With goals, as
 // egg's test_fn! does, a hook stops the run once every goal matches at the start's class.
 
 use std::time::Duration;
 
 fn run_one(ruleset: &str, term: &str, goals: &[String]) -> String {
     let start: RecExpr<Math> = term.parse().unwrap();
-    let rules = rules();
+    let rules: Vec<Rewrite> = match ruleset.strip_prefix("math:") {
+        // "math:a,b,c": the rules of that name, for finding which of them a divergence needs.
+        Some(names) => {
+            let names: Vec<&str> = names.split(',').collect();
+            let found: Vec<Rewrite> =
+                rules().into_iter().filter(|rule| names.contains(&rule.name.as_str())).collect();
+            if found.len() != names.len() {
+                panic!("unknown or repeated rule name in {}", ruleset);
+            }
+            found
+        }
+        None => rules(),
+    };
     let samples: Samples = Rc::new(RefCell::new(Vec::new()));
     let seen = samples.clone();
     let mut runner: Runner<Math, ConstantFold, ()> = Runner::default()
@@ -20,6 +33,7 @@ fn run_one(ruleset: &str, term: &str, goals: &[String]) -> String {
     runner = match ruleset {
         "math" => runner,
         "math-75k" => runner.with_node_limit(75_000),
+        other if other.starts_with("math:") => runner,
         other => panic!("unknown ruleset {}", other),
     };
     runner = runner.with_expr(&start);
