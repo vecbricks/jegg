@@ -92,6 +92,7 @@ public final class Matcher {
     }
     List<Match> matches = new ArrayList<>();
     List<Subst> found = new ArrayList<>();
+    Walk<L, D> walk = new Walk<>(graph);
     boolean distinct = distinctByConstruction(graph, pattern);
     Class<?> type = pattern instanceof Pattern.Node<L> node
         ? node.head().type().orElse(null) : null;
@@ -99,12 +100,12 @@ public final class Matcher {
       BitSet classes = graph.classesHolding(type);
       for (int id = classes.nextSetBit(0); id >= 0 && matches.size() < limit;
           id = classes.nextSetBit(id + 1)) {
-        collect(graph, pattern, id, limit, matches, found, distinct);
+        collect(walk, pattern, id, limit, matches, found, distinct);
       }
     } else {
       for (int id = graph.nextLiveClass(0); id >= 0 && matches.size() < limit;
           id = graph.nextLiveClass(id + 1)) {
-        collect(graph, pattern, id, limit, matches, found, distinct);
+        collect(walk, pattern, id, limit, matches, found, distinct);
       }
     }
     return matches;
@@ -160,6 +161,7 @@ public final class Matcher {
   /** The state of one multi-pattern search: the clauses, a buffer per clause, the leaves seen. */
   private static final class Join<L extends Language<L>, D extends @Nullable Object> {
     private final EGraph<L, D> graph;
+    private final Walk<L, D> walk;
     private final List<MultiPattern.Clause<L>> clauses;
     private final int limit;
     private final List<Match> out;
@@ -175,6 +177,7 @@ public final class Matcher {
 
     Join(EGraph<L, D> graph, List<MultiPattern.Clause<L>> clauses, int limit, List<Match> out) {
       this.graph = graph;
+      this.walk = new Walk<>(graph);
       this.clauses = clauses;
       this.limit = limit;
       this.out = out;
@@ -247,7 +250,7 @@ public final class Matcher {
       Subst given = self ? subst.bind(clause.var(), id) : subst;
       List<Subst> found = buffers.get(index);
       found.clear();
-      matchIn(graph, clause.pattern(), id, given, Integer.MAX_VALUE, found, distinct[index]);
+      walk.matchIn(clause.pattern(), id, given, Integer.MAX_VALUE, found, distinct[index]);
       for (int i = 0; i < found.size() && out.size() < limit; i++) {
         Subst matched = found.get(i);
         join(index + 1, self ? matched : matched.bind(clause.var(), id), start);
@@ -288,17 +291,17 @@ public final class Matcher {
             }
             ids[i] = child.getAsInt();
           }
-          yield graph.lookup(head.build(subst, IntList.of(ids)));
+          yield graph.lookup(head.build(subst, IntList.wrap(ids)));
         }
       };
     }
   }
 
   private static <L extends Language<L>, D extends @Nullable Object>
-      void collect(EGraph<L, D> graph, Pattern<L> pattern, int id, int limit, List<Match> matches,
+      void collect(Walk<L, D> walk, Pattern<L> pattern, int id, int limit, List<Match> matches,
           List<Subst> found, boolean distinct) {
     found.clear();
-    matchIn(graph, pattern, id, Subst.EMPTY, limit - matches.size(), found, distinct);
+    walk.matchIn(pattern, id, Subst.EMPTY, limit - matches.size(), found, distinct);
     for (Subst subst : found) {
       matches.add(new Match(id, subst));
     }
@@ -321,7 +324,7 @@ public final class Matcher {
       List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
     List<Subst> out = new ArrayList<>();
-    matchIn(graph, pattern, id, subst, Integer.MAX_VALUE, out,
+    new Walk<>(graph).matchIn(pattern, id, subst, Integer.MAX_VALUE, out,
         distinctByConstruction(graph, pattern));
     return out;
   }
@@ -360,118 +363,133 @@ public final class Matcher {
   }
 
   /**
-   * Fills the empty {@code out} with the first {@code limit} substitutions of
-   * {@link #matchIn(EGraph, Pattern, int, Subst)}, in its order, the class's nodes left
-   * unvisited once the limit is reached. The cut is made between a node's substitutions and the
-   * next node's: a node's own are all computed, since a cut inside the walk of its children
-   * could lose some of them to deduplication and leave the prefix short. One substitution can
-   * come up twice, from two nodes of the class (a head that reads no payload over two nodes
-   * differing in theirs) or within one node's walk (a child head that binds a payload for some
-   * nodes and not others), so unless the results are {@code distinct} by construction
-   * ({@link #distinctByConstruction}) they are deduplicated, keeping the first; the set that does
-   * it is made only once a node yields more than one result or a second node yields any.
+   * One search's walk of the graph: the graph, and a pool of the lists a nested pattern node's
+   * substitutions are gathered in, so that a search allocates per match, not per candidate.
    */
-  private static <L extends Language<L>, D extends @Nullable Object>
-      void matchIn(EGraph<L, D> graph, Pattern<L> pattern, int id, Subst subst, int limit,
-          List<Subst> out, boolean distinct) {
-    int root = graph.find(id);
-    switch (pattern) {
-      case Pattern.Var<L>(var name) -> {
-        var bound = subst.id(name);
-        if (bound.isEmpty()) {
-          out.add(subst.bind(name, root));
-        } else if (graph.find(bound.getAsInt()) == root) {
-          out.add(subst);
+  private static final class Walk<L extends Language<L>, D extends @Nullable Object> {
+    private final EGraph<L, D> graph;
+    private final List<List<Subst>> free = new ArrayList<>();
+
+    Walk(EGraph<L, D> graph) {
+      this.graph = graph;
+    }
+
+    /**
+     * Fills the empty {@code out} with the first {@code limit} substitutions of
+     * {@link #matchIn(EGraph, Pattern, int, Subst)}, in its order, the class's nodes left
+     * unvisited once the limit is reached. The cut is made between a node's substitutions and the
+     * next node's: a node's own are all computed, since a cut inside the walk of its children
+     * could lose some of them to deduplication and leave the prefix short. One substitution can
+     * come up twice, from two nodes of the class (a head that reads no payload over two nodes
+     * differing in theirs) or within one node's walk (a child head that binds a payload for some
+     * nodes and not others), so unless the results are {@code distinct} by construction
+     * ({@link #distinctByConstruction}) they are deduplicated, keeping the first; the set that does
+     * it is made only once a node yields more than one result or a second node yields any.
+     */
+      void matchIn(Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out,
+          boolean distinct) {
+      int root = graph.find(id);
+      switch (pattern) {
+        case Pattern.Var<L>(var name) -> {
+          int bound = subst.idOrUnbound(name);
+          if (bound == Subst.UNBOUND) {
+            out.add(subst.bindNew(name, root));
+          } else if (graph.find(bound) == root) {
+            out.add(subst);
+          }
         }
-      }
-      case Pattern.Node<L>(var head, var children) -> {
-        Set<Subst> seen = null;
-        EClass<L, D> eclass = graph.classOf(root);
-        List<L> nodes = eclass.readNodes();
-        // The candidates: every node of a small class; in a larger one, the positions of the
-        // nodes with the head's key (whose heads then need no test) or of the head's node class.
-        IntArray positions = null;
-        boolean indexed = false;
-        boolean headsMatch = false;
-        if (nodes.size() >= INDEX_FROM) {
-          Optional<Object> key = head.key();
-          if (key.isPresent()) {
-            positions = eclass.positionsWithHead(key.get());
-            indexed = true;
-            headsMatch = true;
-          } else {
-            Optional<Class<? extends L>> type = head.type();
-            if (type.isPresent()) {
-              positions = eclass.positionsOfType(type.get());
+        case Pattern.Node<L>(var head, var children) -> {
+          Set<Subst> seen = null;
+          EClass<L, D> eclass = graph.classOf(root);
+          List<L> nodes = eclass.readNodes();
+          // The candidates: every node of a small class; in a larger one, the positions of the
+          // nodes with the head's key (whose heads then need no test) or of the head's node class.
+          IntArray positions = null;
+          boolean indexed = false;
+          boolean headsMatch = false;
+          if (nodes.size() >= INDEX_FROM) {
+            Optional<Object> key = head.key();
+            if (key.isPresent()) {
+              positions = eclass.positionsWithHead(key.get());
               indexed = true;
-            }
-          }
-        }
-        if (indexed && positions == null) {
-          return;
-        }
-        int candidates = indexed ? positions.size() : nodes.size();
-        for (int i = 0; i < candidates && out.size() < limit; i++) {
-          L node = nodes.get(indexed ? positions.get(i) : i);
-          if (node.children().size() != children.size()) {
-            continue;
-          }
-          Subst headBound = headsMatch ? subst : head.match(node, subst);
-          if (headBound == null) {
-            continue;
-          }
-          int before = out.size();
-          matchChildren(graph, children, 0, node, headBound, out, distinct);
-          int added = out.size() - before;
-          if (!distinct && (added > 1 || (added > 0 && before > 0))) {
-            if (seen == null) {
-              seen = new HashSet<>(out.subList(0, before));
-            }
-            int kept = before;
-            for (int j = before; j < out.size(); j++) {
-              Subst s = out.get(j);
-              if (seen.add(s)) {
-                out.set(kept++, s);
+              headsMatch = true;
+            } else {
+              Optional<Class<? extends L>> type = head.type();
+              if (type.isPresent()) {
+                positions = eclass.positionsOfType(type.get());
+                indexed = true;
               }
             }
-            out.subList(kept, out.size()).clear();
+          }
+          if (indexed && positions == null) {
+            return;
+          }
+          int candidates = indexed ? positions.size() : nodes.size();
+          for (int i = 0; i < candidates && out.size() < limit; i++) {
+            L node = nodes.get(indexed ? positions.get(i) : i);
+            if (node.children().size() != children.size()) {
+              continue;
+            }
+            Subst headBound = headsMatch ? subst : head.match(node, subst);
+            if (headBound == null) {
+              continue;
+            }
+            int before = out.size();
+            matchChildren(children, 0, node, headBound, out, distinct);
+            int added = out.size() - before;
+            if (!distinct && (added > 1 || (added > 0 && before > 0))) {
+              if (seen == null) {
+                seen = new HashSet<>(out.subList(0, before));
+              }
+              int kept = before;
+              for (int j = before; j < out.size(); j++) {
+                Subst s = out.get(j);
+                if (seen.add(s)) {
+                  out.set(kept++, s);
+                }
+              }
+              out.subList(kept, out.size()).clear();
+            }
+          }
+          if (out.size() > limit) {
+            out.subList(limit, out.size()).clear();
           }
         }
-        if (out.size() > limit) {
-          out.subList(limit, out.size()).clear();
-        }
       }
     }
-  }
 
-  /**
-   * Matches {@code node}'s children from the {@code i}th on against the child patterns under
-   * {@code subst}, appending each complete substitution to {@code out}: a variable child binds
-   * or agrees in place, a node child's substitutions each continue to the next child.
-   */
-  private static <L extends Language<L>, D extends @Nullable Object>
-      void matchChildren(EGraph<L, D> graph, List<Pattern<L>> children, int i, L node, Subst subst,
-          List<Subst> out, boolean distinct) {
-    if (i == children.size()) {
-      out.add(subst);
-      return;
-    }
-    int child = node.children().get(i);
-    switch (children.get(i)) {
-      case Pattern.Var<L>(var name) -> {
-        var bound = subst.id(name);
-        int root = graph.find(child);
-        if (bound.isEmpty()) {
-          matchChildren(graph, children, i + 1, node, subst.bind(name, root), out, distinct);
-        } else if (graph.find(bound.getAsInt()) == root) {
-          matchChildren(graph, children, i + 1, node, subst, out, distinct);
-        }
+    /**
+     * Matches {@code node}'s children from the {@code i}th on against the child patterns under
+     * {@code subst}, appending each complete substitution to {@code out}: a variable child binds
+     * or agrees in place, a node child's substitutions each continue to the next child.
+     */
+      void matchChildren(List<Pattern<L>> children, int i, L node, Subst subst, List<Subst> out,
+          boolean distinct) {
+      if (i == children.size()) {
+        out.add(subst);
+        return;
       }
-      case Pattern.Node<L> nested -> {
-        List<Subst> partial = new ArrayList<>();
-        matchIn(graph, nested, child, subst, Integer.MAX_VALUE, partial, distinct);
-        for (Subst s : partial) {
-          matchChildren(graph, children, i + 1, node, s, out, distinct);
+      int child = node.children().get(i);
+      switch (children.get(i)) {
+        case Pattern.Var<L>(var name) -> {
+          int bound = subst.idOrUnbound(name);
+          int root = graph.find(child);
+          if (bound == Subst.UNBOUND) {
+            matchChildren(children, i + 1, node, subst.bindNew(name, root), out, distinct);
+          } else if (graph.find(bound) == root) {
+            matchChildren(children, i + 1, node, subst, out, distinct);
+          }
+        }
+        case Pattern.Node<L> nested -> {
+          // The nested node's substitutions go into a list from the pool, read by index while the
+          // children after it fill lists of their own, and returned once read.
+          List<Subst> partial = free.isEmpty() ? new ArrayList<>() : free.remove(free.size() - 1);
+          matchIn(nested, child, subst, Integer.MAX_VALUE, partial, distinct);
+          for (int k = 0; k < partial.size(); k++) {
+            matchChildren(children, i + 1, node, partial.get(k), out, distinct);
+          }
+          partial.clear();
+          free.add(partial);
         }
       }
     }
@@ -500,7 +518,7 @@ public final class Matcher {
         for (int i = 0; i < ids.length; i++) {
           ids[i] = instantiate(graph, children.get(i), subst);
         }
-        return graph.add(head.build(subst, IntList.of(ids)));
+        return graph.add(head.build(subst, IntList.wrap(ids)));
       }
     }
   }
