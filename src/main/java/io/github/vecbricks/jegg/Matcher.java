@@ -244,7 +244,7 @@ public final class Matcher {
         return;
       }
       MultiPattern.Clause<L> clause = clauses.get(index);
-      OptionalInt named = subst.id(clause.var());
+      OptionalInt named = subst.idInterned(clause.var());
       if (clause.pattern() instanceof Pattern.Node<L> node && !node.children().isEmpty()
           && walk.isGround(node, subst)) {
         int found = walk.lookUp(node, subst);
@@ -255,15 +255,16 @@ public final class Matcher {
         if (named.isPresent() && graph.find(named.getAsInt()) != id) {
           return;
         }
-        join(index + 1, subst.bind(clause.var(), id), index == 0 ? id : first);
+        join(index + 1, subst.bindInterned(clause.var(), id), index == 0 ? id : first);
         return;
       }
       if (named.isPresent()) {
         joinIn(index, graph.find(named.getAsInt()), subst, first);
         return;
       }
-      if (clause.pattern() instanceof Pattern.Var<L>(var name) && subst.id(name).isPresent()) {
-        joinIn(index, graph.find(subst.id(name).getAsInt()), subst, first);
+      if (clause.pattern() instanceof Pattern.Var<L>(var name)
+          && subst.idInterned(name).isPresent()) {
+        joinIn(index, graph.find(subst.idInterned(name).getAsInt()), subst, first);
         return;
       }
       Class<?> type = clause.pattern() instanceof Pattern.Node<L> node
@@ -289,13 +290,13 @@ public final class Matcher {
       // clause's ?x are one class (egg's compiler binds the clause register before the pattern);
       // otherwise bound after, which costs nothing for the classes that do not match.
       boolean self = variables.get(index).contains(clause.var());
-      Subst given = self ? subst.bind(clause.var(), id) : subst;
+      Subst given = self ? subst.bindInterned(clause.var(), id) : subst;
       List<Subst> found = buffers.get(index);
       found.clear();
       walk.matchIn(clause.pattern(), id, given, Integer.MAX_VALUE, found, distinct[index]);
       for (int i = 0; i < found.size() && out.size() < limit; i++) {
         Subst matched = found.get(i);
-        join(index + 1, self ? matched : matched.bind(clause.var(), id), start);
+        join(index + 1, self ? matched : matched.bindInterned(clause.var(), id), start);
       }
     }
 

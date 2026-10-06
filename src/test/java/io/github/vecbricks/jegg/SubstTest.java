@@ -81,4 +81,71 @@ class SubstTest {
     assertTrue(payloads.hasPayload("d"));
     assertEquals(null, payloads.payload("d"));
   }
+
+  /** A name equal to {@code name} that is not the interned one: what a client builds by hand. */
+  private static String fresh(String name) {
+    String copy = new String(name.toCharArray());
+    assertTrue(copy != name.intern(), "a copy is a different object from the interned name");
+    return copy;
+  }
+
+  @Test
+  void namesAreFoundWhetherOrNotTheClientInternedThem() {
+    // The chain finds a name by reference, so what a client passes in is interned on the way
+    // in and, for a lookup, looked for again under its interned form.
+    Subst s = Subst.EMPTY.bind(fresh("x"), 3).bindPayload(fresh("c"), 'k');
+    assertEquals(3, s.idOf("x"));
+    assertEquals(3, s.idOf(fresh("x")));
+    assertTrue(s.id(fresh("x")).isPresent());
+    assertEquals(3, s.idOrUnbound("x"));
+    assertTrue(s.hasPayload(fresh("c")));
+    assertEquals('k', s.payload(fresh("c")));
+    assertTrue(s.id(fresh("y")).isEmpty(), "a name that is not bound is not found");
+    assertFalse(s.hasPayload(fresh("d")));
+    assertThrows(IllegalArgumentException.class, () -> s.idOf(fresh("y")));
+    // Rebinding under another copy of the name replaces in place and keeps one binding.
+    Subst rebound = s.bind(fresh("x"), 4);
+    assertEquals(4, rebound.idOf("x"));
+    assertEquals(1, rebound.ids().size());
+    assertSame(s, s.bind(fresh("x"), 3), "bound to the same id already");
+    assertSame(s, s.bindPayload(fresh("c"), 'k'), "bound to an equal value already");
+    // Two chains built from different copies of the names are equal, and hash alike.
+    Subst a = Subst.EMPTY.bind(fresh("p"), 1).bind(fresh("q"), 2);
+    Subst b = Subst.EMPTY.bind("q", 2).bind("p", 1);
+    assertEquals(a, b);
+    assertEquals(a.hashCode(), b.hashCode());
+  }
+
+  @Test
+  void aPatternAndAClauseHoldInternedNames() {
+    Pattern.Var<Toy> var = new Pattern.Var<>(fresh("w"));
+    assertSame(var.name(), var.name().intern());
+    MultiPattern.Clause<Toy> clause = new MultiPattern.Clause<>(fresh("k"),
+        Pattern.<Toy>var("m"));
+    assertSame(clause.var(), clause.var().intern());
+    assertThrows(NullPointerException.class, () -> Pattern.<Toy>var(null));
+  }
+
+  @Test
+  void aSearchWithNamesBuiltByHandFindsTheSameMatches() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    g.add(new Toy.Add(IntList.of(a, b)));
+    g.add(new Toy.Add(IntList.of(a, a)));
+    g.rebuild();
+    Pattern<Toy> plain = Pattern.of(new Toy.Add(IntList.EMPTY), Pattern.var("x"),
+        Pattern.var("y"));
+    Pattern<Toy> byHand = Pattern.of(new Toy.Add(IntList.EMPTY), Pattern.var(fresh("x")),
+        Pattern.var(fresh("y")));
+    assertEquals(Matcher.search(g, plain), Matcher.search(g, byHand));
+    Pattern<Toy> twice = Pattern.of(new Toy.Add(IntList.EMPTY), Pattern.var(fresh("x")),
+        Pattern.var(fresh("x")));
+    assertEquals(1, Matcher.search(g, twice).size(), "the same name twice is one variable");
+    // A substitution handed in from outside, built from copies of the names, constrains the same.
+    List<Subst> given = Matcher.matchIn(g, byHand, g.find(g.add(new Toy.Add(IntList.of(a, b)))),
+        Subst.EMPTY.bind(fresh("x"), a));
+    assertEquals(1, given.size());
+    assertEquals(b, given.get(0).idOf("y"));
+  }
 }

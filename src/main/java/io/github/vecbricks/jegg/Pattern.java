@@ -11,6 +11,7 @@ package io.github.vecbricks.jegg;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
@@ -44,6 +45,11 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
    * @param name the variable's name, without the {@code ?} that {@link #toString} prefixes
    */
   record Var<L extends Language<L>>(String name) implements Pattern<L> {
+    /** Interns the name, so that a substitution finds it by reference. */
+    public Var {
+      name = Objects.requireNonNull(name, "name").intern();
+    }
+
     @Override
     public String toString() {
       return "?" + name;
@@ -313,8 +319,9 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
    */
   static <L extends Language<L>, N extends L> Head<L> binding(Class<N> type, String variable,
       Function<N, ?> payloadOf, BiFunction<@Nullable Object, IntList, L> build) {
+    String name = variable.intern();
     Optional<Class<? extends L>> named = Optional.of(type);
-    Optional<Set<String>> declared = Optional.of(Set.of(variable));
+    Optional<Set<String>> declared = Optional.of(Set.of(name));
     return new Head<>() {
       @Override
       public Optional<Class<? extends L>> type() {
@@ -327,15 +334,15 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
           return null;
         }
         Object payload = payloadOf.apply(type.cast(node));
-        if (subst.hasPayload(variable)) {
-          return java.util.Objects.equals(subst.payload(variable), payload) ? subst : null;
+        if (subst.hasPayloadInterned(name)) {
+          return Objects.equals(subst.payloadInterned(name), payload) ? subst : null;
         }
-        return subst.bindPayload(variable, payload);
+        return subst.bindPayloadInterned(name, payload);
       }
 
       @Override
       public L build(Subst subst, IntList children) {
-        return build.apply(subst.payload(variable), children);
+        return build.apply(subst.payloadInterned(name), children);
       }
 
       @Override
