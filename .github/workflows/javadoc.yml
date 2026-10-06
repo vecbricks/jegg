@@ -28,7 +28,9 @@ jobs:
           java-version: 25
           cache: maven
       - name: Build the Javadoc
-        run: mvn -B --no-transfer-progress -q javadoc:javadoc
+        # compile first: without target/classes the plugin cannot see the module descriptor and
+        # fails with "Aggregator report contains named and unnamed modules"
+        run: mvn -B --no-transfer-progress -q compile javadoc:javadoc
       - uses: actions/upload-pages-artifact@v5
         with:
           path: target/reports/apidocs
