@@ -33,11 +33,28 @@ import org.jspecify.annotations.Nullable;
  * ({@code EClass}); the positions come in insertion order, so the matches are the ones a walk of
  * every node would find, in its order. A smaller class is walked, which costs less than
  * building its index.
+ *
+ * <p>One of egg's compiled matcher's devices is kept. A nested pattern node whose variables are
+ * all bound when it is reached, and that is not a leaf, may be looked up instead of walked: the
+ * node it names is built from the bindings and found through the hashcons (egg's {@code Lookup}),
+ * and must be in the child's class. The lookup finds a node {@link EGraph#retainNodes} dropped,
+ * as egg's memo finds it, so it is always used where the child's class has pruned, the one
+ * place a walk of the class could miss a node; elsewhere it gives the matches the walk gives,
+ * and is used only where the head's run in the child's class is longer than
+ * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. egg's other order, a node's variables bound before its nested nodes, is not kept: with
+ * substitutions that are bound by allocation, it binds for every candidate a nested node then
+ * rejects, and costs more than it saves (#74).
  */
 public final class Matcher {
 
   /** The size from which a class's nodes are found through its indexes rather than walked. */
   static final int INDEX_FROM = 8;
+
+  /**
+   * The length of a head's run in a class past which a ground nested pattern node is looked up
+   * in the hashcons rather than walked, on a graph without pruned nodes.
+   */
+  static final int LOOKUP_FROM = 8;
 
   private Matcher() {
   }
@@ -129,11 +146,8 @@ public final class Matcher {
    * one the first clause matched in, and its substitution binds every clause variable and every
    * pattern variable. Substitutions are distinct: two partial matches that differ only in a
    * payload variable some heads bind and others do not can extend to one substitution, which
-   * is kept once.
-   *
-   * <p>One difference from egg remains: a ground subterm inside a clause that is not ground
-   * itself is matched by walking its class's nodes, as a single pattern's is, where egg looks it
-   * up; the two differ only for a node {@code retainNodes} dropped.
+   * is kept once. A ground subterm inside a clause that is not ground itself is looked up too,
+   * as every ground nested node is.
    *
    * @param <L> the language
    * @param <D> the analysis fact
@@ -170,7 +184,6 @@ public final class Matcher {
     // while the clauses after it fill their own, so a search allocates per match, not per class.
     private final List<List<Subst>> buffers;
     private final List<Set<String>> variables;
-    private final List<Optional<Set<String>>> payloads;
     // Per clause, whether its pattern's substitutions in one class are distinct by construction
     // (matchIn), so that the walk of the class needs no set of its own.
     private final boolean[] distinct;
@@ -183,13 +196,11 @@ public final class Matcher {
       this.out = out;
       this.buffers = new ArrayList<>(clauses.size());
       this.variables = new ArrayList<>(clauses.size());
-      this.payloads = new ArrayList<>(clauses.size());
       this.distinct = new boolean[clauses.size()];
       for (int i = 0; i < clauses.size(); i++) {
         MultiPattern.Clause<L> clause = clauses.get(i);
         buffers.add(new ArrayList<>());
         variables.add(clause.pattern().subtermVariables());
-        payloads.add(clause.pattern().payloadVariables());
         distinct[i] = distinctByConstruction(graph, clause.pattern());
       }
     }
@@ -204,12 +215,12 @@ public final class Matcher {
       MultiPattern.Clause<L> clause = clauses.get(index);
       OptionalInt named = subst.id(clause.var());
       if (clause.pattern() instanceof Pattern.Node<L> node && !node.children().isEmpty()
-          && isGround(index, subst)) {
-        OptionalInt found = lookUp(node, subst);
-        if (found.isEmpty()) {
+          && walk.isGround(node, subst)) {
+        int found = walk.lookUp(node, subst);
+        if (found == EGraph.MISSING) {
           return;
         }
-        int id = graph.find(found.getAsInt());
+        int id = graph.find(found);
         if (named.isPresent() && graph.find(named.getAsInt()) != id) {
           return;
         }
@@ -257,44 +268,6 @@ public final class Matcher {
       }
     }
 
-    /**
-     * Whether every variable of the clause's pattern, subterm and payload, is bound; a head that
-     * does not declare its payload variables makes the pattern not ground, so it is walked.
-     */
-    private boolean isGround(int index, Subst subst) {
-      for (String v : variables.get(index)) {
-        if (subst.id(v).isEmpty()) {
-          return false;
-        }
-      }
-      if (payloads.get(index).isEmpty()) {
-        return false;
-      }
-      for (String v : payloads.get(index).get()) {
-        if (!subst.hasPayload(v)) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    /** The class of a ground pattern through the hashcons, or empty if the graph lacks it. */
-    private OptionalInt lookUp(Pattern<L> pattern, Subst subst) {
-      return switch (pattern) {
-        case Pattern.Var<L>(var name) -> subst.id(name);
-        case Pattern.Node<L>(var head, var children) -> {
-          int[] ids = new int[children.size()];
-          for (int i = 0; i < ids.length; i++) {
-            OptionalInt child = lookUp(children.get(i), subst);
-            if (child.isEmpty()) {
-              yield OptionalInt.empty();
-            }
-            ids[i] = child.getAsInt();
-          }
-          yield graph.lookup(head.build(subst, IntList.wrap(ids)));
-        }
-      };
-    }
   }
 
   private static <L extends Language<L>, D extends @Nullable Object>
@@ -375,6 +348,60 @@ public final class Matcher {
     }
 
     /**
+     * Whether {@code pattern} is ground under {@code subst}: every subterm variable bound, every
+     * head declaring its payload variables ({@link Pattern.Head#variables}) and each of them
+     * bound. A head that does not declare makes the pattern not ground, so it is walked.
+     */
+    boolean isGround(Pattern<L> pattern, Subst subst) {
+      return switch (pattern) {
+        case Pattern.Var<L>(var name) -> subst.idOrUnbound(name) != Subst.UNBOUND;
+        case Pattern.Node<L>(var head, var children) -> {
+          // The children first, by index: an unbound variable, the common answer, is found
+          // without an iterator or a look at the head.
+          for (int i = 0; i < children.size(); i++) {
+            if (!isGround(children.get(i), subst)) {
+              yield false;
+            }
+          }
+          Optional<Set<String>> declared = head.variables();
+          if (declared.isEmpty()) {
+            yield false;
+          }
+          if (!declared.get().isEmpty()) {
+            for (String v : declared.get()) {
+              if (!subst.hasPayload(v)) {
+                yield false;
+              }
+            }
+          }
+          yield true;
+        }
+      };
+    }
+
+    /**
+     * The class of the node a ground pattern names, built from the bindings and found through
+     * the hashcons and the pruned memory as {@link EGraph#lookup} finds it, or
+     * {@link EGraph#MISSING} if the graph has no such node.
+     */
+    int lookUp(Pattern<L> pattern, Subst subst) {
+      return switch (pattern) {
+        case Pattern.Var<L>(var name) -> graph.find(subst.idOrUnbound(name));
+        case Pattern.Node<L>(var head, var children) -> {
+          int[] ids = new int[children.size()];
+          for (int i = 0; i < ids.length; i++) {
+            int child = lookUp(children.get(i), subst);
+            if (child == EGraph.MISSING) {
+              yield EGraph.MISSING;
+            }
+            ids[i] = child;
+          }
+          yield graph.lookupCanonical(head.build(subst, IntList.wrap(ids)));
+        }
+      };
+    }
+
+    /**
      * Fills the empty {@code out} with the first {@code limit} substitutions of
      * {@link #matchIn(EGraph, Pattern, int, Subst)}, in its order, the class's nodes left
      * unvisited once the limit is reached. The cut is made between a node's substitutions and the
@@ -386,8 +413,18 @@ public final class Matcher {
      * ({@link #distinctByConstruction}) they are deduplicated, keeping the first; the set that does
      * it is made only once a node yields more than one result or a second node yields any.
      */
-      void matchIn(Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out,
-          boolean distinct) {
+    void matchIn(Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out,
+        boolean distinct) {
+      matchIn(pattern, id, subst, limit, out, distinct, false);
+    }
+
+    /**
+     * As {@link #matchIn(Pattern, int, Subst, int, List, boolean)}; {@code nested} says the
+     * pattern is a child of another's, which is where a ground node may be looked up rather
+     * than walked (the root of a search is always walked, as egg's {@code Bind} walks it).
+     */
+    void matchIn(Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out,
+        boolean distinct, boolean nested) {
       int root = graph.find(id);
       switch (pattern) {
         case Pattern.Var<L>(var name) -> {
@@ -425,6 +462,15 @@ public final class Matcher {
             return;
           }
           int candidates = indexed ? positions.size() : nodes.size();
+          // egg's Lookup where it pays: a long run of the head, for a ground nested node (in a
+          // class that has pruned, matchChildren has looked it up before coming here).
+          if (nested && candidates > LOOKUP_FROM && !children.isEmpty()
+              && isGround(pattern, subst)) {
+            if (lookUp(pattern, subst) == root) {
+              out.add(subst);
+            }
+            return;
+          }
           for (int i = 0; i < candidates && out.size() < limit; i++) {
             L node = nodes.get(indexed ? positions.get(i) : i);
             if (node.children().size() != children.size()) {
@@ -461,10 +507,13 @@ public final class Matcher {
     /**
      * Matches {@code node}'s children from the {@code i}th on against the child patterns under
      * {@code subst}, appending each complete substitution to {@code out}: a variable child binds
-     * or agrees in place, a node child's substitutions each continue to the next child.
+     * or agrees in place; a node child that is ground is looked up where that alone gives egg's
+     * answer (a child class that has pruned) and otherwise matched in the child's class, where a
+     * long run is looked up too ({@link #matchIn}); each of its substitutions continues to the
+     * next child.
      */
-      void matchChildren(List<Pattern<L>> children, int i, L node, Subst subst, List<Subst> out,
-          boolean distinct) {
+    void matchChildren(List<Pattern<L>> children, int i, L node, Subst subst, List<Subst> out,
+        boolean distinct) {
       if (i == children.size()) {
         out.add(subst);
         return;
@@ -481,10 +530,21 @@ public final class Matcher {
           }
         }
         case Pattern.Node<L> nested -> {
-          // The nested node's substitutions go into a list from the pool, read by index while the
-          // children after it fill lists of their own, and returned once read.
+          // In a class that has pruned, a ground nested node is looked up without entering it:
+          // the class's list no longer holds a dropped node and the hashcons still does. A class
+          // that never pruned, or was never joined by one, lists every node it holds.
+          int childRoot = graph.find(child);
+          if (graph.classOf(childRoot).hasPruned() && !nested.children().isEmpty()
+              && isGround(nested, subst)) {
+            if (lookUp(nested, subst) == childRoot) {
+              matchChildren(children, i + 1, node, subst, out, distinct);
+            }
+            return;
+          }
+          // The nested node's substitutions go into a list from the pool, read by index while
+          // the children after it fill lists of their own, and returned once read.
           List<Subst> partial = free.isEmpty() ? new ArrayList<>() : free.remove(free.size() - 1);
-          matchIn(nested, child, subst, Integer.MAX_VALUE, partial, distinct);
+          matchIn(nested, child, subst, Integer.MAX_VALUE, partial, distinct, true);
           for (int k = 0; k < partial.size(); k++) {
             matchChildren(children, i + 1, node, partial.get(k), out, distinct);
           }

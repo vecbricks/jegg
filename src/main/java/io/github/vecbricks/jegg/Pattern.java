@@ -261,6 +261,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
     Optional<Class<? extends L>> type = key.getClass() == prototype.getClass()
         ? Optional.of((Class<? extends L>) prototype.getClass()) : Optional.empty();
     Optional<Object> exact = Optional.of(key);
+    Optional<Set<String>> declared = Optional.of(Set.of());
     return new Head<>() {
       @Override
       public @Nullable Subst match(L node, Subst subst) {
@@ -284,7 +285,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
 
       @Override
       public Optional<Set<String>> variables() {
-        return Optional.of(Set.of());
+        return declared;
       }
 
       @Override
@@ -313,6 +314,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
   static <L extends Language<L>, N extends L> Head<L> binding(Class<N> type, String variable,
       Function<N, ?> payloadOf, BiFunction<@Nullable Object, IntList, L> build) {
     Optional<Class<? extends L>> named = Optional.of(type);
+    Optional<Set<String>> declared = Optional.of(Set.of(variable));
     return new Head<>() {
       @Override
       public Optional<Class<? extends L>> type() {
@@ -338,7 +340,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
 
       @Override
       public Optional<Set<String>> variables() {
-        return Optional.of(Set.of(variable));
+        return declared;
       }
 
       @Override
