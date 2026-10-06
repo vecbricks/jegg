@@ -49,6 +49,14 @@ real divergences were found this way and nowhere else:
    a hashcons key left behind by a prune. Shrunk divergences go to `dev/fuzz/found/` (not
    tracked); `FuzzRun`'s `prop:name,name` and `math:name,name` rule sets find which rules a
    divergence needs.
+5a. The backoff scheduler is a place where ports differ and egg decides: a rule set takes a suffix
+   `@<match limit>,<ban length>` on both sides, and the scenarios in
+   `FuzzRun.schedulerScenarios` (the threshold, the ban length, the fast-forward when only banned
+   rules remain, a conditional rule's structural matches against a ban threshold of 1) are pinned
+   to egg's lines (`dev/fuzz.sh --scenarios`). egg counts a conditional rule's structural matches
+   toward the ban whether or not their condition holds, as jegg does; hegg's `T51` expects the
+   opposite and describes hegg, not egg: take the expected value of a scenario from egg, not from
+   a port's test (#75).
 6. egg's defaults include a 5-second time limit jegg does not have; if egg's report says
    `TimeLimit`, the counts are not reproducible and the case says so instead of pinning them.
 7. egg's prop tests print no report; `dev/egg_counts.sh prop <test>` runs a copy of

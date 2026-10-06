@@ -6,7 +6,15 @@
 
 use std::time::Duration;
 
-fn run_one(ruleset: &str, term: &str, goals: &[String]) -> String {
+fn run_one(full_ruleset: &str, term: &str, goals: &[String]) -> String {
+    // "<rule set>@<limit>,<ban>": egg's backoff scheduler with that match limit and ban length.
+    let (ruleset, scheduler) = match full_ruleset.split_once('@') {
+        Some((base, params)) => {
+            let (limit, ban) = params.split_once(',').unwrap();
+            (base, Some((limit.parse::<usize>().unwrap(), ban.parse::<usize>().unwrap())))
+        }
+        None => (full_ruleset, None),
+    };
     let start: RecExpr<Math> = term.parse().unwrap();
     let rules: Vec<Rewrite> = match ruleset.strip_prefix("math:") {
         // "math:a,b,c": the rules of that name, for finding which of them a divergence needs.
@@ -36,6 +44,11 @@ fn run_one(ruleset: &str, term: &str, goals: &[String]) -> String {
         other if other.starts_with("math:") => runner,
         other => panic!("unknown ruleset {}", other),
     };
+    if let Some((limit, ban)) = scheduler {
+        runner = runner.with_scheduler(
+            BackoffScheduler::default().with_initial_match_limit(limit).with_ban_length(ban),
+        );
+    }
     runner = runner.with_expr(&start);
     if !goals.is_empty() {
         let id = runner.egraph.find(*runner.roots.last().unwrap());

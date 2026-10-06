@@ -7,6 +7,8 @@
 #   dev/fuzz.sh prop 1000 1           the same for prop (egg's whole rule set)
 #   dev/fuzz.sh --known math          the known-answer gate: egg's own harness must reproduce the
 #                                     counts the ported tests pin (EggDifferentialTest)
+#   dev/fuzz.sh --scenarios math      the scheduler scenarios (FuzzRun.schedulerScenarios): egg
+#                                     must still print the lines they are pinned to
 # A divergence is shrunk and written to dev/fuzz/found/. Needs cargo (https://rustup.rs) and mvn;
 # egg's first release build takes a few minutes. Not a benchmark: nothing here is timed.
 set -euo pipefail
@@ -15,8 +17,9 @@ EGG_COMMIT=73975c9
 cache="${JEGG_EGG_CACHE:-$HOME/.cache/jegg/egg}"
 mode=fuzz
 if [ "${1:-}" = "--known" ]; then mode=known; shift; fi
+if [ "${1:-}" = "--scenarios" ]; then mode=scenarios; shift; fi
 lang="${1:-}"; count="${2:-1000}"; seed="${3:-1}"
-case "$lang" in prop|math) ;; *) sed -n '2,13p' "$0"; exit 2 ;; esac
+case "$lang" in prop|math) ;; *) sed -n '2,15p' "$0"; exit 2 ;; esac
 command -v cargo >/dev/null || { echo "cargo is not on the PATH; install Rust from https://rustup.rs" >&2; exit 2; }
 command -v mvn >/dev/null || { echo "mvn is not on the PATH" >&2; exit 2; }
 if [ ! -d "$cache/.git" ]; then git clone -q https://github.com/egraphs-good/egg.git "$cache"; fi

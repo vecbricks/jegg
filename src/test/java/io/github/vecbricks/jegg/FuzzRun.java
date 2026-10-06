@@ -158,6 +158,59 @@ final class FuzzRun {
     return eggStopped || jeggStopped ? Verdict.NODE_LIMIT : Verdict.DIVERGE;
   }
 
+  /**
+   * A case with the line egg's own run of it printed, for the cases whose point is how the
+   * backoff scheduler behaves, not what a term saturates to (#75): the threshold, the ban length,
+   * the fast-forward when only banned rules remain, and a conditional rule's structural matches,
+   * which egg counts toward the ban whether or not their condition holds (hegg's {@code T51}
+   * expects the opposite; it describes hegg). Each was run through egg 73975c9 by
+   * {@code dev/fuzz.sh --scenarios}, which checks the pins again.
+   *
+   * @param input the case, its rule set carrying the scheduler's parameters ({@code @limit,ban})
+   * @param egg egg's result line, without its memo size
+   */
+  record Pinned(Case input, String egg) {
+  }
+
+  /** The scheduler scenarios, in the languages of {@link PropRulesTest} and {@link MathTest}. */
+  static List<Pinned> schedulerScenarios() {
+    return List.of(
+        new Pinned(new Case("math:assoc-add@1,30", "(+ a (+ b (+ c d)))", List.of()),
+            "Saturated 7 7,7;7,7;11,9;11,9;15,11;15,11;14,10 final 14,10"),
+        new Pinned(new Case("math:cancel-div@1,5", "(+ (/ 0 0) (/ x x))", List.of()),
+            "Saturated 3 5,5;5,5;5,5 final 5,5"),
+        new Pinned(new Case("math:assoc-add,comm-add@2,3", "(+ a (+ b (+ c (+ d e))))", List.of()),
+            "Saturated 16 9,9;9,9;19,12;19,12;19,12;45,22;45,22;45,22;98,35;98,35;162,39;"
+            + "162,39;183,35;183,35;188,32;185,31 final 185,31"),
+        new Pinned(new Case("math:comm-add@3,4", "(+ a (+ b (+ c d)))", List.of()),
+            "Saturated 3 7,7;10,7;10,7 final 10,7"),
+        new Pinned(new Case(
+            "math:assoc-add,comm-add,add-zero@1,2", "(+ (+ a 0) (+ b 0))", List.of()),
+            "Saturated 10 6,6;8,7;8,7;8,7;8,7;11,4;11,4;11,4;11,4;11,4 final 11,4"),
+        new Pinned(new Case("prop-all@3,2", "(| (& x y) (-> z w))", List.of()),
+            "IterationLimit 20 8,7;14,9;25,14;31,17;31,17;45,25;45,25;49,27;67,39;73,43;"
+            + "73,43;73,43;93,43;93,43;117,55;117,55;117,55;117,55;117,55;"
+            + "147,67 final 151,67"),
+        new Pinned(new Case("math:assoc-add@1,1", "(+ a (+ b (+ c d)))", List.of()),
+            "Saturated 7 7,7;7,7;11,9;11,9;15,11;15,11;14,10 final 14,10"),
+        new Pinned(new Case("math:cancel-div,pow0@1,5", "(+ (/ x x) (pow y 0))", List.of()),
+            "Saturated 2 6,6;5,5 final 5,5"),
+        new Pinned(new Case("math@10,3", "(+ x (+ x (+ x x)))", List.of()),
+            "Saturated 9 4,4;17,6;28,7;30,7;30,7;35,9;36,9;36,9;36,9 final 36,9"),
+        new Pinned(new Case("math@1,1", "(* (+ x 3) (+ x 1))", List.of()),
+            "IterationLimit 30 6,6;10,8;10,7;16,10;16,10;16,10;22,10;27,10;27,10;31,12;"
+            + "31,12;31,12;48,12;48,12;48,12;52,14;56,14;56,14;56,14;56,14;72,13;72,13;"
+            + "72,13;72,13;72,13;72,13;72,13;72,13;72,13;101,20 final 136,27"),
+        new Pinned(new Case("math:cancel-div@2,5", "(+ (/ 0 0) (/ x x))", List.of()),
+            "Saturated 2 5,5;5,5 final 5,5"),
+        new Pinned(new Case("math:cancel-div@1,5", "(/ 0 0)", List.of()),
+            "Saturated 1 2,2 final 2,2"),
+        new Pinned(new Case("math:d-constant@1,5", "(+ (d 3 y) (d x z))", List.of()),
+            "Saturated 3 7,7;7,7;7,7 final 7,7"),
+        new Pinned(new Case("math:d-constant,d-variable@1,3", "(+ (d x x) (d x y))", List.of()),
+            "Saturated 4 5,5;5,5;5,5;4,4 final 4,4"));
+  }
+
   /** The cases of egg's math tests that run under the runner's own limits, with egg's counts. */
   static List<Known> knownMath() {
     List<Known> out = new ArrayList<>();
@@ -193,12 +246,14 @@ final class FuzzRun {
    */
   static String run(Case c) {
     validate(c.ruleset());
+    Parsed parsed = parse(c.ruleset());
+    Case base = new Case(parsed.base(), c.term(), c.goals());
     try {
-      if (c.ruleset().startsWith("prop")) {
-        return prop(c);
+      if (parsed.base().startsWith("prop")) {
+        return prop(base, parsed);
       }
-      if (c.ruleset().startsWith("math")) {
-        return math(c);
+      if (parsed.base().startsWith("math")) {
+        return math(base, parsed);
       }
       throw new IllegalArgumentException("unknown rule set " + c.ruleset());
     } catch (RuntimeException | StackOverflowError e) {
@@ -215,7 +270,7 @@ final class FuzzRun {
         PropRulesTest.CONTRAPOSITIVE, PropRulesTest.LEM_IMPLY);
   }
 
-  private static String prop(Case c) {
+  private static String prop(Case c, Parsed scheduling) {
     List<Rewrite<PropRulesTest.Prop, Boolean>> all = allProp();
     List<Rewrite<PropRulesTest.Prop, Boolean>> rules = switch (c.ruleset()) {
       case "prop-contrapositive" -> PropRulesTest.CONTRAPOSITIVE_CASE.rules();
@@ -228,10 +283,10 @@ final class FuzzRun {
     // egg's prove_something: the input is assumed true, which lem_imply's soundness needs.
     g.merge(root, g.add(new PropRulesTest.Prop.Bool(true)));
     g.rebuild();
-    return execute(g, root, rules, PropRulesTest.LIMITS, List.of());
+    return execute(g, root, rules, PropRulesTest.LIMITS, List.of(), scheduling);
   }
 
-  private static String math(Case c) {
+  private static String math(Case c, Parsed scheduling) {
     RunLimits limits = c.ruleset().equals("math-75k") ? RunLimits.DEFAULT.withNodes(75_000)
         : RunLimits.DEFAULT;
     EGraph<MathTest.Math, Double> g = new EGraph<>(MathTest.CONSTANT_FOLD);
@@ -239,7 +294,39 @@ final class FuzzRun {
     List<Pattern<MathTest.Math>> goals = c.goals().stream().map(MathTest::pattern).toList();
     List<Rewrite<MathTest.Math, Double>> rules = c.ruleset().startsWith("math:")
         ? named(MathTest.rules(), c.ruleset(), "math:") : MathTest.rules();
-    return execute(g, root, rules, limits, goals);
+    return execute(g, root, rules, limits, goals, scheduling);
+  }
+
+  /**
+   * A rule set with the backoff scheduler's parameters: {@code <rule set>@<limit>,<ban>} runs it
+   * under a scheduler with that match limit and ban length (both positive), as egg's
+   * {@code BackoffScheduler::default().with_initial_match_limit(limit).with_ban_length(ban)};
+   * without the suffix the defaults, a limit of 1000 and a ban of 5.
+   *
+   * @param base the rule set without the suffix
+   * @param matchLimit the match limit, 0 for the default
+   * @param banLength the ban length, 0 for the default
+   */
+  record Parsed(String base, int matchLimit, int banLength) {
+  }
+
+  static Parsed parse(String ruleset) {
+    int at = ruleset.indexOf('@');
+    if (at < 0) {
+      return new Parsed(ruleset, 0, 0);
+    }
+    String[] params = ruleset.substring(at + 1).split(",");
+    try {
+      int limit = Integer.parseInt(params[0]);
+      int ban = Integer.parseInt(params[1]);
+      if (params.length != 2 || limit < 1 || ban < 1) {
+        throw new IllegalArgumentException("the match limit and the ban must be positive");
+      }
+      return new Parsed(ruleset.substring(0, at), limit, ban);
+    } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+      throw new IllegalArgumentException("rule set " + ruleset
+          + ": the suffix is @<match limit>,<ban length>", e);
+    }
   }
 
   /**
@@ -250,7 +337,8 @@ final class FuzzRun {
    * @param ruleset the rule set of a case
    * @throws IllegalArgumentException if it is unknown, or a list names a rule that does not exist
    */
-  static void validate(String ruleset) {
+  static void validate(String full) {
+    String ruleset = parse(full).base();
     switch (ruleset) {
       case "prop-all", "prop-contrapositive", "prop-chain", "math", "math-75k" -> {
         return;
@@ -287,9 +375,11 @@ final class FuzzRun {
   }
 
   private static <L extends Language<L>, D> String execute(EGraph<L, D> g, int root,
-      List<Rewrite<L, D>> rules, RunLimits limits, List<Pattern<L>> goals) {
+      List<Rewrite<L, D>> rules, RunLimits limits, List<Pattern<L>> goals, Parsed scheduling) {
     List<String> samples = new ArrayList<>();
-    Runner<L, D> runner = new Runner<>(g, rules, limits, new BackoffScheduler<>())
+    Scheduler<L, D> scheduler = scheduling.matchLimit() == 0 ? new BackoffScheduler<>()
+        : new BackoffScheduler<>(scheduling.matchLimit(), scheduling.banLength());
+    Runner<L, D> runner = new Runner<>(g, rules, limits, scheduler)
         .withHook(graph -> {
           samples.add(graph.numNodes() + "," + graph.numClasses());
           return Optional.empty();

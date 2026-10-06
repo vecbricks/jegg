@@ -6,7 +6,15 @@
 
 use std::time::Duration;
 
-fn run_one(ruleset: &str, term: &str, _goals: &[String]) -> String {
+fn run_one(full_ruleset: &str, term: &str, _goals: &[String]) -> String {
+    // "<rule set>@<limit>,<ban>": egg's backoff scheduler with that match limit and ban length.
+    let (ruleset, scheduler) = match full_ruleset.split_once('@') {
+        Some((base, params)) => {
+            let (limit, ban) = params.split_once(',').unwrap();
+            (base, Some((limit.parse::<usize>().unwrap(), ban.parse::<usize>().unwrap())))
+        }
+        None => (full_ruleset, None),
+    };
     let start: RecExpr<Prop> = term.parse().unwrap();
     let all = || -> Vec<Rewrite> {
         vec![
@@ -45,6 +53,11 @@ fn run_one(ruleset: &str, term: &str, _goals: &[String]) -> String {
                 .push((r.egraph.total_number_of_nodes(), r.egraph.number_of_classes()));
             Ok(())
         });
+    if let Some((limit, ban)) = scheduler {
+        runner = runner.with_scheduler(
+            BackoffScheduler::default().with_initial_match_limit(limit).with_ban_length(ban),
+        );
+    }
     let true_id = runner.egraph.add(Prop::Bool(true));
     let root = runner.roots[0];
     runner.egraph.union(root, true_id);

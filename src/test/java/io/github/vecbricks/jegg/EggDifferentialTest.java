@@ -29,6 +29,8 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
  *   <li>{@code known}, the gate: egg's own harness must reproduce the counts the ported tests pin
  *       ({@link FuzzRun#knownMath}, {@link FuzzRun#knownProp}), or the harness, not jegg, is
  *       wrong and no fuzzing means anything;
+ *   <li>{@code scenarios}: the scheduler scenarios pinned to egg's lines
+ *       ({@link FuzzRun#schedulerScenarios}) must still be egg's;
  *   <li>{@code fuzz}, default: {@code -Dfuzz.count} random terms from {@code -Dfuzz.seed} through
  *       egg and jegg, compared; a divergence is shrunk and written under {@code
  *       dev/fuzz/found/}, and the test fails.
@@ -47,8 +49,11 @@ class EggDifferentialTest {
 
   @Test
   void run() throws IOException, InterruptedException {
-    if (System.getProperty("fuzz.mode", "fuzz").equals("known")) {
+    String mode = System.getProperty("fuzz.mode", "fuzz");
+    if (mode.equals("known")) {
       known();
+    } else if (mode.equals("scenarios")) {
+      scenarios();
     } else {
       fuzz(Integer.getInteger("fuzz.count", 1000), Long.getLong("fuzz.seed", 1L));
     }
@@ -73,6 +78,25 @@ class EggDifferentialTest {
     System.out.printf("FUZZ known %s: %d cases, egg's harness reproduces %d%n", language,
         cases.size(), cases.size() - wrong.size());
     assertTrue(wrong.isEmpty(), "the harness does not reproduce the pinned counts:\n"
+        + String.join("\n", wrong));
+  }
+
+  /** The scheduler scenarios of {@link FuzzRun#schedulerScenarios}: egg's lines are the pins. */
+  private void scenarios() throws IOException, InterruptedException {
+    List<FuzzRun.Pinned> pinned = FuzzRun.schedulerScenarios().stream()
+        .filter(p -> p.input().ruleset().startsWith(language)).toList();
+    List<String> results = egg.run(pinned.stream().map(FuzzRun.Pinned::input).toList());
+    List<String> wrong = new ArrayList<>();
+    for (int i = 0; i < pinned.size(); i++) {
+      String eggLine = results.get(i).replaceFirst(" memo -?\\d+$", "");
+      if (!eggLine.equals(pinned.get(i).egg())) {
+        wrong.add(pinned.get(i).input().ruleset() + " " + pinned.get(i).input().term()
+            + ": egg gave " + eggLine + ", pinned " + pinned.get(i).egg());
+      }
+    }
+    System.out.printf("FUZZ scenarios %s: %d, egg reproduces %d%n", language, pinned.size(),
+        pinned.size() - wrong.size());
+    assertTrue(wrong.isEmpty(), "egg no longer gives the pinned lines:\n"
         + String.join("\n", wrong));
   }
 
