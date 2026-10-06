@@ -64,6 +64,14 @@
   </properties>
 
   <dependencies>
+    <!-- Nullness annotations only (CLASS retention): needed to compile, not to run, so the module
+         descriptor says "requires static" and consumers do not inherit it. -->
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+      <version>1.0.0</version>
+      <scope>provided</scope>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
@@ -101,14 +109,21 @@
         <executions>
           <!-- The tests compile with JMH's annotation processor, which since JDK 23 runs only
                when asked (-proc:full); the processing lint is off there, as the processor
-               claims no JUnit annotation. -->
+               claims no JUnit annotation; the exports and missing-explicit-ctor lints are off because the tests are patched into the exported
+               package and are not the API. -->
           <execution>
             <id>default-testCompile</id>
             <configuration>
               <compilerArgs>
-                <arg>-Xlint:all,-processing</arg>
+                <arg>-Xlint:all,-processing,-exports,-missing-explicit-ctor</arg>
                 <arg>-Werror</arg>
                 <arg>-proc:full</arg>
+                <!-- The tests compile inside the module, whose descriptor does not read the
+                     JDK module the benchmark harness uses to report the heap. -->
+                <arg>--add-modules</arg>
+                <arg>java.management</arg>
+                <arg>--add-reads</arg>
+                <arg>io.github.vecbricks.jegg=java.management,ALL-UNNAMED</arg>
               </compilerArgs>
             </configuration>
           </execution>
@@ -120,6 +135,9 @@
         <version>${maven.surefire.version}</version>
         <configuration>
           <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+          <!-- The tests run on the class path, as the determinism test forks JVMs from
+               java.class.path; the descriptor is checked by the compile and by the jar check. -->
+          <useModulePath>false</useModulePath>
         </configuration>
       </plugin>
       <plugin>
@@ -238,18 +256,6 @@
             </goals>
           </execution>
         </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <version>3.5.1</version>
-        <configuration>
-          <archive>
-            <manifestEntries>
-              <Automatic-Module-Name>io.github.vecbricks.jegg</Automatic-Module-Name>
-            </manifestEntries>
-          </archive>
-        </configuration>
       </plugin>
     </plugins>
   </build>

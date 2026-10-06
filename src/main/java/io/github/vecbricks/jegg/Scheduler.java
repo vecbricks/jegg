@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What decides, each iteration, which of a rule's matches are applied (egg's
@@ -20,7 +21,7 @@ import java.util.List;
  * @param <L> the language
  * @param <D> the analysis fact
  */
-public interface Scheduler<L extends Language<L>, D> {
+public interface Scheduler<L extends Language<L>, D extends @Nullable Object> {
 
   /**
    * The matches of {@code rule} to apply this iteration: usually {@code rule.search(graph)},
@@ -79,7 +80,7 @@ public interface Scheduler<L extends Language<L>, D> {
    * @param <D> the analysis fact
    * @return a scheduler that holds no rule back
    */
-  static <L extends Language<L>, D> Scheduler<L, D> simple() {
+  static <L extends Language<L>, D extends @Nullable Object> Scheduler<L, D> simple() {
     return (_, _, rule, graph) -> rule.search(graph);
   }
 }

@@ -9,6 +9,8 @@
 
 package io.github.vecbricks.jegg;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A right-hand side that is a pattern, kept as one so a {@link Rewrite} can check its
  * variables against the left-hand side's when it is made.
@@ -17,7 +19,8 @@ package io.github.vecbricks.jegg;
  * @param <D> the analysis fact
  * @param rhs the pattern to instantiate under the match's substitution
  */
-record PatternApplier<L extends Language<L>, D>(Pattern<L> rhs) implements Applier<L, D> {
+record PatternApplier<L extends Language<L>, D extends @Nullable Object>(
+    Pattern<L> rhs) implements Applier<L, D> {
   @Override
   public IntList apply(EGraph<L, D> graph, int eclass, Subst subst) {
     return IntList.of(Matcher.instantiate(graph, rhs, subst));

@@ -9,6 +9,8 @@
 
 package io.github.vecbricks.jegg;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A rewrite's side condition: whether a match may be applied, read from the graph - the facts
  * of the bound classes, their nodes - and the substitution. It is evaluated at apply time, in
@@ -23,7 +25,7 @@ package io.github.vecbricks.jegg;
  * @param <D> the analysis fact
  */
 @FunctionalInterface
-public interface Condition<L extends Language<L>, D> {
+public interface Condition<L extends Language<L>, D extends @Nullable Object> {
 
   /**
    * Whether the match may be applied.
@@ -44,7 +46,7 @@ public interface Condition<L extends Language<L>, D> {
    * @param <D> the analysis fact
    * @return a condition that is true for every match
    */
-  static <L extends Language<L>, D> Condition<L, D> always() {
+  static <L extends Language<L>, D extends @Nullable Object> Condition<L, D> always() {
     return (_, _, _) -> true;
   }
 
@@ -60,7 +62,8 @@ public interface Condition<L extends Language<L>, D> {
    * @param b the second pattern, over variables the match binds
    * @return a condition that holds when {@code a} and {@code b} instantiate to one class
    */
-  static <L extends Language<L>, D> Condition<L, D> equal(Pattern<L> a, Pattern<L> b) {
+  static <L extends Language<L>, D extends @Nullable Object>
+      Condition<L, D> equal(Pattern<L> a, Pattern<L> b) {
     return (graph, eclass, subst) -> {
       // Both instantiated before either root is read: adding the second may run the analysis's
       // modify hook, which may merge the first's class under another root.

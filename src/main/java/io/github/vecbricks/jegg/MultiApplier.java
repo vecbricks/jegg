@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import java.util.OptionalInt;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A multi-pattern right-hand side, kept as one so a {@link Rewrite} can check its variables
@@ -20,7 +21,8 @@ import java.util.OptionalInt;
  * @param <D> the analysis fact
  * @param rhs the clauses to apply for each match
  */
-record MultiApplier<L extends Language<L>, D>(MultiPattern<L> rhs) implements Applier<L, D> {
+record MultiApplier<L extends Language<L>, D extends @Nullable Object>(
+    MultiPattern<L> rhs) implements Applier<L, D> {
   /**
    * Refused, as egg's {@code apply_one} for a multi-pattern panics: a caller that applies it
    * through {@code apply} would see no class to union and no count, so its unions would go

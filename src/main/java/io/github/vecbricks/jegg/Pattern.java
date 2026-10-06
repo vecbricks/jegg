@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A pattern over a language: a variable, which matches any e-class and binds it, or a node,
@@ -89,7 +90,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
      * @return {@code subst} or an extension of it with this head's payload bindings, or
      *     {@code null} (not an empty substitution) if the node does not match
      */
-    Subst match(L node, Subst subst);
+    @Nullable Subst match(L node, Subst subst);
 
     /**
      * The e-node with this head over these children, payload variables read from the subst.
@@ -247,7 +248,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
         ? Optional.of((Class<? extends L>) prototype.getClass()) : Optional.empty();
     return new Head<>() {
       @Override
-      public Subst match(L node, Subst subst) {
+      public @Nullable Subst match(L node, Subst subst) {
         return key.equals(node.head()) ? subst : null;
       }
 
@@ -290,7 +291,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
    * @return a head that declares {@code variable} as its one payload variable
    */
   static <L extends Language<L>, N extends L> Head<L> binding(Class<N> type, String variable,
-      Function<N, ?> payloadOf, BiFunction<Object, IntList, L> build) {
+      Function<N, ?> payloadOf, BiFunction<@Nullable Object, IntList, L> build) {
     return new Head<>() {
       @Override
       public Optional<Class<? extends L>> type() {
@@ -298,7 +299,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
       }
 
       @Override
-      public Subst match(L node, Subst subst) {
+      public @Nullable Subst match(L node, Subst subst) {
         if (!type.isInstance(node)) {
           return null;
         }

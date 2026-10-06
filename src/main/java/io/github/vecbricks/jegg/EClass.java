@@ -12,6 +12,7 @@ package io.github.vecbricks.jegg;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An equivalence class of e-nodes: its id, its nodes, its parents and its analysis fact.
@@ -24,7 +25,7 @@ import java.util.List;
  * @param <L> the language
  * @param <D> the analysis fact
  */
-public final class EClass<L extends Language<L>, D> {
+public final class EClass<L extends Language<L>, D extends @Nullable Object> {
 
   /**
    * A parent entry: an e-node that has the class as a child, and the class it was added to. The

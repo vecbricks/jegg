@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A named rewrite: a left-hand {@link Searcher} (a pattern, or several joined in a
@@ -31,7 +32,8 @@ import java.util.Set;
  *     against {@code lhs}'s on construction
  * @param condition whether a match may be applied, read at apply time; not null
  */
-public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Applier<L, D> rhs,
+public record Rewrite<L extends Language<L>, D extends @Nullable Object>(
+    String name, Searcher<L> lhs, Applier<L, D> rhs,
     Condition<L, D> condition) {
 
   /**
@@ -101,8 +103,8 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
    * @param rhs the pattern to instantiate for each match, over variables {@code lhs} binds
    * @return the rewrite, whose condition always holds
    */
-  public static <L extends Language<L>, D> Rewrite<L, D> of(String name, Pattern<L> lhs,
-      Pattern<L> rhs) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      Rewrite<L, D> of(String name, Pattern<L> lhs, Pattern<L> rhs) {
     return new Rewrite<>(name, lhs, Applier.pattern(rhs), Condition.always());
   }
 
@@ -118,8 +120,8 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
    *     earlier right-hand clause does
    * @return the rewrite, whose condition always holds
    */
-  public static <L extends Language<L>, D> Rewrite<L, D> multi(String name, MultiPattern<L> lhs,
-      MultiPattern<L> rhs) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      Rewrite<L, D> multi(String name, MultiPattern<L> lhs, MultiPattern<L> rhs) {
     return new Rewrite<>(name, lhs, Applier.multi(rhs), Condition.always());
   }
 
@@ -134,8 +136,8 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
    *     checked, a pattern's or a multi-pattern's ({@link Applier#multi}) are
    * @return the rewrite, whose condition always holds
    */
-  public static <L extends Language<L>, D> Rewrite<L, D> dynamic(String name, Searcher<L> lhs,
-      Applier<L, D> rhs) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      Rewrite<L, D> dynamic(String name, Searcher<L> lhs, Applier<L, D> rhs) {
     return new Rewrite<>(name, lhs, rhs, Condition.always());
   }
 

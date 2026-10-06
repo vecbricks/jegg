@@ -9,6 +9,8 @@
 
 package io.github.vecbricks.jegg;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A rewrite's right-hand side: given a match, adds whatever it adds to the graph and returns the
  * classes to make equal to the matched class. A pattern is the common case
@@ -19,7 +21,7 @@ package io.github.vecbricks.jegg;
  * @param <D> the analysis fact
  */
 @FunctionalInterface
-public interface Applier<L extends Language<L>, D> {
+public interface Applier<L extends Language<L>, D extends @Nullable Object> {
 
   /**
    * The classes to union with {@code eclass}; empty if nothing was added.
@@ -63,7 +65,7 @@ public interface Applier<L extends Language<L>, D> {
    * @param rhs the pattern to instantiate; its variables must be bound by the match
    * @return an applier that returns the one class {@code rhs} instantiates to
    */
-  static <L extends Language<L>, D> Applier<L, D> pattern(Pattern<L> rhs) {
+  static <L extends Language<L>, D extends @Nullable Object> Applier<L, D> pattern(Pattern<L> rhs) {
     return new PatternApplier<>(rhs);
   }
 
@@ -81,7 +83,8 @@ public interface Applier<L extends Language<L>, D> {
    *     earlier clause's variable
    * @return an applier that does its own unions and counts every match as applied
    */
-  static <L extends Language<L>, D> Applier<L, D> multi(MultiPattern<L> rhs) {
+  static <L extends Language<L>, D extends @Nullable Object>
+      Applier<L, D> multi(MultiPattern<L> rhs) {
     return new MultiApplier<>(rhs);
   }
 }

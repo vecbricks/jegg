@@ -49,6 +49,19 @@ exhaustively. Open on purpose: `Language`, `Analysis`, `Searcher`, `Applier`, `C
 `Scheduler`, `CostFunction`, `TreeBridge`, `Pattern.Head` and `Runner.Hook`, which clients
 implement. Threads: `docs/concepts.md`.
 
+Nullness: the package is `@NullMarked` (JSpecify 1.0.0), so a reference is non-null unless marked
+`@Nullable`. The analysis fact type is `D extends @Nullable Object`: `Analysis.none()` has
+`D = Void` and its facts are null, an analysis over `Integer` never sees a null. The marked
+places are `Pattern.Head.match` (null for no match), `Subst.payload` and `bindPayload` (a payload
+may be null) and `Extractor.extractAll`'s score (null for the node-cost sum). NullAway was run
+once over `src/main`, not added to the build; it reports five internal places (`EGraph`'s
+fact slot before the first `make`, `Extractor`'s choice arrays), which are not annotated.
+
+Module: `module-info.java` exports the one package and has `requires static transitive
+org.jspecify`, so the annotations compile for a client on the module path and are not needed at
+run time. The tests run on the class path (`useModulePath` is false: the determinism test forks
+JVMs from `java.class.path`) and compile inside the module with `java.management` added.
+
 ## One iteration of the runner
 
 ```

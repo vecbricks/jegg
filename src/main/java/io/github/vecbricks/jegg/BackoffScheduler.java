@@ -11,6 +11,7 @@ package io.github.vecbricks.jegg;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * egg's {@code BackoffScheduler}, the runner's default: a rule whose matches in one iteration
@@ -26,7 +27,8 @@ import java.util.List;
  * @param <L> the language
  * @param <D> the analysis fact
  */
-public final class BackoffScheduler<L extends Language<L>, D> implements Scheduler<L, D> {
+public final class BackoffScheduler<L extends Language<L>, D extends @Nullable Object>
+    implements Scheduler<L, D> {
 
   private static final class RuleStats {
     int bannedUntil;

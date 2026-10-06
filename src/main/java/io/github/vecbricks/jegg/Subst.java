@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A substitution: what a pattern's variables stand for in one match. Subterm variables are
@@ -37,9 +38,9 @@ public final class Subst {
   private final String[] names;
   private final int[] ids;
   private final String[] payloadNames;
-  private final Object[] payloads;
+  private final @Nullable Object[] payloads;
 
-  private Subst(String[] names, int[] ids, String[] payloadNames, Object[] payloads) {
+  private Subst(String[] names, int[] ids, String[] payloadNames, @Nullable Object[] payloads) {
     this.names = names;
     this.ids = ids;
     this.payloadNames = payloadNames;
@@ -88,18 +89,18 @@ public final class Subst {
    * @param value the payload value, compared by {@code equals}; may be null
    * @return the new substitution, or this one if the variable is bound to an equal value already
    */
-  public Subst bindPayload(String variable, Object value) {
+  public Subst bindPayload(String variable, @Nullable Object value) {
     int i = indexOf(payloadNames, variable);
     if (i >= 0) {
       if (Objects.equals(payloads[i], value)) {
         return this;
       }
-      Object[] next = payloads.clone();
+      @Nullable Object[] next = payloads.clone();
       next[i] = value;
       return new Subst(names, ids, payloadNames, next);
     }
     String[] nextNames = Arrays.copyOf(payloadNames, payloadNames.length + 1);
-    Object[] nextValues = Arrays.copyOf(payloads, payloads.length + 1);
+    @Nullable Object[] nextValues = Arrays.copyOf(payloads, payloads.length + 1);
     nextNames[payloadNames.length] = variable;
     nextValues[payloads.length] = value;
     return new Subst(names, ids, nextNames, nextValues);
@@ -148,7 +149,7 @@ public final class Subst {
    * @return the bound value, which may be null
    * @throws IllegalArgumentException if the variable is unbound
    */
-  public Object payload(String variable) {
+  public @Nullable Object payload(String variable) {
     int i = indexOf(payloadNames, variable);
     if (i < 0) {
       throw new IllegalArgumentException("unbound payload variable " + variable + " in " + this);

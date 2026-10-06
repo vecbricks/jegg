@@ -9,6 +9,8 @@
 
 package io.github.vecbricks.jegg;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * An e-class analysis: a fact of type {@code D} for every e-class, kept true as the graph
  * changes (egg's {@code Analysis} trait, the paper's section 4).
@@ -23,7 +25,7 @@ package io.github.vecbricks.jegg;
  * @param <L> the language
  * @param <D> the fact
  */
-public interface Analysis<L extends Language<L>, D> {
+public interface Analysis<L extends Language<L>, D extends @Nullable Object> {
 
   /**
    * The fact for {@code node}, whose children's facts are readable through {@code graph}.

@@ -24,6 +24,7 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An e-graph: a union-find over e-class ids, a hashcons from canonical e-nodes to the class each
@@ -59,7 +60,7 @@ import java.util.function.ToIntFunction;
  * @param <L> the language
  * @param <D> the analysis fact, {@code Void} under {@link Analysis#none}
  */
-public final class EGraph<L extends Language<L>, D> {
+public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
 
   private final Analysis<L, D> analysis;
   private final UnionFind unionFind = new UnionFind();
@@ -853,10 +854,11 @@ public final class EGraph<L extends Language<L>, D> {
     }
     for (var e : entriesOfNode.entrySet()) {
       L canonical = e.getKey();
-      int lists = listsOfNode.get(canonical).size();
+      int lists = Objects.requireNonNull(listsOfNode.get(canonical)).size();
       int mapped = idOf(canonical);
       boolean shared = e.getValue().stream().anyMatch(entry ->
-          listsOfEntry.get(entry).size() == lists && entry.node().equals(canonical)
+          Objects.requireNonNull(listsOfEntry.get(entry)).size() == lists
+              && entry.node().equals(canonical)
               && unionFind.find(entry.classId()) == mapped);
       if (!shared) {
         throw new IllegalStateException("no entry for " + canonical + " is in all " + lists
