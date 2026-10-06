@@ -97,7 +97,7 @@ is a library Varka merely uses.
 | repository | `github.com/vecbricks/jegg` (named 3 October 2026) |
 | artifact | `io.github.vecbricks:jegg`, versioned and published like any dependency |
 | package | `io.github.vecbricks.jegg`, not `org.apache.spark` |
-| public surface | `EGraph<L, A>`, `Language<L>`, `TreeBridge<T, L>`, `Analysis<L, D>`, `Pattern`, `Subst`, `Rewrite`, `Condition`, `Applier`, `Runner`, `RunLimits`, `RunReport`, `Scheduler`, `Extractor`, `Selection`, `CostFunction` (3.2 added the bridge, the substitution's payloads, the report and the selection) |
+| public surface | `EGraph<L, A>`, `Language<L>`, `TreeBridge<T, L>`, `Analysis<L, D>`, `Pattern`, `MultiPattern`, `Searcher`, `Subst`, `Rewrite`, `Condition`, `Applier`, `Applied`, `Runner`, `RunLimits`, `RunReport`, `Scheduler`, `Extractor`, `Selection`, `CostFunction` (3.2 added the bridge, the substitution's payloads, the report and the selection) |
 | Varka's side | nothing until item 11: then one dependency on a pinned version, and the client mapping |
 
 The egg-to-Java mapping, component by component:
@@ -113,6 +113,7 @@ The egg-to-Java mapping, component by component:
 | `Analysis` trait | `interface Analysis<L, D> { D make(EGraph, L); D join(D, D); void modify(EGraph, int) }` | `join` must be a semilattice join and `modify` idempotent, or `rebuild` may not terminate (paper 4.1.1) |
 | `Pattern`, `Subst`, `ematch` | a pattern tree of operator nodes and variables, where a node's payload is matched by a predicate or bound to a payload variable and `Subst` holds payload bindings beside class ids (3.2); a naive recursive matcher first, egg's compiled backtracking machine (`machine.rs`) behind a measurement later | the largest piece; at 64-node graphs the naive matcher is likely enough (prediction 5) |
 | `Rewrite`, `Applier`, `Condition` | a name, a left pattern, and a right-hand side that is a pattern or an `Applier` function; conditions read analysis data and the graph, at apply time, and may add nodes (egg's `ConditionEqual`) | dynamic rewrites are functions of `(EGraph, matched class, Subst)` |
+| `MultiPattern`, `multi_rewrite!` | clauses `?var = pattern` joined on shared variables, a `Searcher` like a pattern; as a right-hand side (`Applier.multi`) each clause binds a new variable or unions with the class a bound one names; `Rewrite.multi` | in the library since #34 (the owner reversed the earlier exclusion when #65 showed that a multi-pattern changes a run's stop, not only its graph: egg counts every match of one as applied, so a run in which one matches never saturates, and `Applied.counted` carries that); no text syntax, the tests parse egg's |
 | `Runner`, `BackoffScheduler`, `StopReason` | an iteration loop with `RunLimits` (nodes, classes, iterations; no wall-clock limit by default) and per-rule backoff | the limit that makes extraction a function of the input |
 | `Extractor`, `CostFunction` | bottom-up fixed point over local costs, per paper 4.3, for one root; and `extractAll` over several roots, one node chosen per e-class across all of them with a shared node paid once, returning a `Selection` as a DAG (3.2): a greedy start, then a descent over the union of the roots that tries each class's other nodes and keeps a change when the selection scores lower - a change that brings new classes in is held while their selected parents are offered the nodes that use them, and kept if the whole scores lower; evaluated incrementally, so a candidate costs what it changes; a heuristic, since the ILP is out, checked against an exact oracle on extraction-gym's graphs of up to 300 nodes | the client's cost table is Varka's measured register; a hook scores a whole selection so the client can run its own prediction over the candidate |
 | `Explain`, `RecExpr` parsing, `LpExtractor`, `dot` | out | proofs are Herbie's need; Varka builds patterns from IR; no ILP dependency |
@@ -322,7 +323,9 @@ numbers is not attempted; the ratios the paper established are.
    Prediction 5 says when the compiled machine is due; it is a contained
    component.
 6. **Scope creep toward egglog** (multi-patterns, incremental runs, proofs).
-   Section 3.2 names what is out; a need for any of it is a new plan.
+   Section 3.2 names what is out; a need for any of it is a new plan. Multi-patterns
+   came in on 6 October 2026 (#34), for `prop`'s `lem_imply` and egg's `datalog` tests; the
+   incremental runs and proofs stay out.
 7. **A second repository's overhead**: its own CI, publishing and
    versioning, and a dependency Varka's build must resolve without a snapshot
    repository in the way. Configure publishing in the first commit, release

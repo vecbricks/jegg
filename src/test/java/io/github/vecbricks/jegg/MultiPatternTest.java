@@ -57,19 +57,7 @@ class MultiPatternTest {
 
   /** egg's syntax: {@code ?x = p, ?y = q = r}, where {@code ?y = q = r} is two clauses. */
   static MultiPattern<Sym> multi(String s) {
-    List<MultiPattern.Clause<Sym>> clauses = new ArrayList<>();
-    for (String statement : s.split(",")) {
-      String trimmed = statement.trim();
-      if (trimmed.isEmpty()) {
-        continue;
-      }
-      String[] parts = trimmed.split("=");
-      String var = parts[0].trim().substring(1);
-      for (int i = 1; i < parts.length; i++) {
-        clauses.add(MultiPattern.clause(var, pattern(parts[i].trim())));
-      }
-    }
-    return new MultiPattern<>(clauses);
+    return MultiTerm.parse(s, BRIDGE);
   }
 
   static Rewrite<Sym, Void> rule(String name, String lhs, String rhs) {

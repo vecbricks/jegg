@@ -33,9 +33,9 @@ which runs on every build.
 **Status.** The library is complete to the plan's eighth step (`PLAN.md` 8):
 e-graph, rebuilding, analyses, patterns and rewrites, the runner with egg's
 backoff scheduler, extraction over one root and over several, and the
-measurement harness. egg's four test suites (`simple`, `prop`, `lambda`,
-`math`) are ported test for test, each run checked against egg's own
-iteration, node and class counts. Every build prints the tests' coverage of
+measurement harness. egg's five test suites (`simple`, `prop`, `lambda`,
+`math`, `datalog`) are ported test for test, each run checked against egg's own
+iteration, node and class counts; the library has egg's multi-patterns too. Every build prints the tests' coverage of
 `src/main` (98% of lines). The API still moves between steps; there is no
 release yet, so there are no Maven coordinates to quote.
 

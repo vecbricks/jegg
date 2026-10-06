@@ -5,9 +5,10 @@
 #   dev/egg_counts.sh math math_powers           Stop reason, Iterations, Egraph size
 #   dev/egg_counts.sh lambda lambda_if --log     with egg's per-iteration sizes and bans
 # Needs cargo (https://rustup.rs). egg's "nodes" is jegg's numNodes(); its "memo" is not
-# comparable. egg's prop tests print no report of their own, so for the suite prop the script
-# runs a copy of tests/prop.rs (tests/prop_report.rs, untracked in the cache) that prints the
-# runner's report after each run and, for const_fold, the size of its graph.
+# comparable. egg's prop and datalog tests print no report of their own, so for those suites the
+# script runs a copy of the file (tests/prop_report.rs, tests/datalog_report.rs, untracked in the
+# cache) that prints the runner's report after each run and, for prop's const_fold, the size of
+# its graph.
 set -euo pipefail
 EGG_COMMIT=73975c9
 cache="${JEGG_EGG_CACHE:-$HOME/.cache/jegg/egg}"
@@ -21,6 +22,11 @@ fi
 git -C "$cache" fetch -q origin "$EGG_COMMIT" 2>/dev/null || git -C "$cache" fetch -q origin
 git -C "$cache" checkout -q "$EGG_COMMIT"
 cd "$cache"
+if [ "$suite" = "datalog" ]; then
+  sed -e 's/let mut runner = Runner::default().with_egraph(egraph).run(&rules);/let mut runner = Runner::default().with_egraph(egraph).run(\&rules); runner.print_report();/' \
+      tests/datalog.rs > tests/datalog_report.rs
+  suite=datalog_report
+fi
 if [ "$suite" = "prop" ]; then
   sed -e 's/let egraph = runner.run(rewrites).egraph;/let runner = runner.run(rewrites); runner.print_report(); let egraph = runner.egraph;/' \
       -e 's/^    eg.rebuild();$/    eg.rebuild(); println!("Egraph size: {} nodes, {} classes", eg.total_number_of_nodes(), eg.number_of_classes());/' \
