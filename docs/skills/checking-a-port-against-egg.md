@@ -35,12 +35,20 @@ real divergences were found this way and nowhere else:
    iteration. The first iteration where `e` differs is where to look.
 4. egg installs no goal hook for a test with a `@check`, so such a test runs to its limit;
    mirror that (`math_associate_adds`).
-5. egg's defaults include a 5-second time limit jegg does not have; if egg's report says
+5. For more runs than the ports pin, `dev/fuzz.sh` (#44) runs random terms of `prop` and `math`
+   through egg's own language, analysis and rules and jegg's ports and compares, per iteration,
+   the nodes and classes at its start. Run `dev/fuzz.sh --known <language>` first: egg's side must
+   reproduce the pinned counts, or no result of the fuzzing means anything. egg checks its node
+   limit against its memo, which keeps stale entries, so a run can stop on a limit jegg's nodes
+   have not reached; the comparison calls that "the same up to egg's memo-sized node limit" only
+   when egg's nodes are within the limit, its memo is over it, and every iteration start egg
+   reached is jegg's too. Shrunk divergences go to `dev/fuzz/found/` (not tracked).
+6. egg's defaults include a 5-second time limit jegg does not have; if egg's report says
    `TimeLimit`, the counts are not reproducible and the case says so instead of pinning them.
-6. egg's prop tests print no report; `dev/egg_counts.sh prop <test>` runs a copy of
+7. egg's prop tests print no report; `dev/egg_counts.sh prop <test>` runs a copy of
    `tests/prop.rs` that does (`print_report` after each run, and the graph's size for
    `const_fold`, which has no runner).
-7. A graph that matches egg's iteration by iteration can still stop at a different iteration.
+8. A graph that matches egg's iteration by iteration can still stop at a different iteration.
    egg's multi-pattern `apply_matches` returns an id per substitution whether or not a union
    changed anything, so a run with a matching multi-pattern rule is never `Saturated`: egg's
    `prove_chain` runs 20 iterations over a graph that stops changing in the fifth, and both

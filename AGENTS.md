@@ -35,12 +35,17 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
    every node canonical, no two congruent nodes in different classes, the live-class count) and
    `checkAnalysisInvariant()` (each fact is the join of `make` over the class's nodes). A new
    operation on the graph gets a test that calls them after it.
-2. **The counts pinned to egg.** `LambdaTest` and `MathTest` assert that each ported run ends at
+2. **The counts pinned to egg.** `PropRulesTest`, `LambdaTest`, `MathTest` and `DatalogTest` assert that each ported run ends at
    egg's own iteration, node and class counts (`Egg` records). A count that differs means the
    port diverged; find where with egg's per-iteration log (`RUST_LOG=egg=info cargo test
    --release --test <suite> -- --exact <name> --nocapture` in a clone of egg 73975c9) against
    jegg's `RunReport`. Never relax a count to make a test pass: #19 and #30 each found a real
    divergence this way.
+   Beyond the pinned runs, `dev/fuzz.sh math|prop <count> <seed>` runs random terms through egg
+   and jegg and compares the stop, the iterations and the sizes at the start of each iteration
+   (#44; needs cargo, not part of the build); `dev/fuzz.sh --known <language>` first checks that
+   egg's side of the harness reproduces every pinned count. A divergence is shrunk and written to
+   `dev/fuzz/found/`; pin it as a case with egg's counts and open an issue.
 3. **Extraction against enumeration and an exact oracle.** `ExtractAllEnumerationTest` and
    `ExtractionGymTest` (branch and bound over extraction-gym's graphs). A change to the descent
    must never worsen the greedy start, never beat the oracle, and should meet it.
