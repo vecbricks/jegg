@@ -84,7 +84,7 @@ final class FuzzRun {
     }
 
     List<String> sampleList() {
-      return samples.equals("-") ? List.of() : List.of(samples.split(";"));
+      return samplesOf(samples);
     }
   }
 
@@ -129,15 +129,18 @@ final class FuzzRun {
       return Verdict.INCONCLUSIVE;
     }
     if (jegg.startsWith("ERROR")) {
-      // jegg threw where egg did not: a divergence, unless egg stopped on the node limit in the
-      // iteration jegg threw in or before it, so that jegg ran into something (a contradiction
-      // that the assumption that a prop term is true can lead to) past where egg stopped.
+      // jegg threw where egg did not: a divergence, unless jegg threw the contradiction that
+      // the assumption that a prop term is true can lead to ("Merged non-equal constants", which
+      // egg raises too, as a panic) and egg stopped on the node limit in the iteration jegg threw
+      // in or before it, so that jegg ran into it past where egg stopped. Any other error is
+      // jegg's own, wherever it came.
       Result e = Result.parse(egg);
       int after = jegg.lastIndexOf(" after ");
       List<String> js = after < 0 ? List.of()
           : samplesOf(jegg.substring(after + " after ".length()));
       List<String> es = e.sampleList();
-      boolean ranPastEggsStop = e.stop().equals("NodeLimit") && js.size() >= es.size()
+      boolean ranPastEggsStop = jegg.contains("Merged non-equal constants")
+          && e.stop().equals("NodeLimit") && js.size() >= es.size()
           && js.subList(0, es.size()).equals(es);
       return ranPastEggsStop ? Verdict.NODE_LIMIT : Verdict.DIVERGE;
     }
@@ -189,6 +192,7 @@ final class FuzzRun {
    * @return the result line, or {@code ERROR <exception>} if jegg threw
    */
   static String run(Case c) {
+    validate(c.ruleset());
     try {
       if (c.ruleset().startsWith("prop")) {
         return prop(c);
@@ -202,12 +206,17 @@ final class FuzzRun {
     }
   }
 
+  /** Every rule of egg's {@code prop.rs}, in the order of {@code dev/fuzz/prop_run.rs}. */
+  private static List<Rewrite<PropRulesTest.Prop, Boolean>> allProp() {
+    return List.of(PropRulesTest.DEF_IMPLY, PropRulesTest.DEF_IMPLY_FLIP,
+        PropRulesTest.DOUBLE_NEG, PropRulesTest.DOUBLE_NEG_FLIP, PropRulesTest.ASSOC_OR,
+        PropRulesTest.DIST_AND_OR, PropRulesTest.DIST_OR_AND, PropRulesTest.COMM_OR,
+        PropRulesTest.COMM_AND, PropRulesTest.LEM, PropRulesTest.OR_TRUE, PropRulesTest.AND_TRUE,
+        PropRulesTest.CONTRAPOSITIVE, PropRulesTest.LEM_IMPLY);
+  }
+
   private static String prop(Case c) {
-    List<Rewrite<PropRulesTest.Prop, Boolean>> all = List.of(PropRulesTest.DEF_IMPLY,
-        PropRulesTest.DEF_IMPLY_FLIP, PropRulesTest.DOUBLE_NEG, PropRulesTest.DOUBLE_NEG_FLIP,
-        PropRulesTest.ASSOC_OR, PropRulesTest.DIST_AND_OR, PropRulesTest.DIST_OR_AND,
-        PropRulesTest.COMM_OR, PropRulesTest.COMM_AND, PropRulesTest.LEM, PropRulesTest.OR_TRUE,
-        PropRulesTest.AND_TRUE, PropRulesTest.CONTRAPOSITIVE, PropRulesTest.LEM_IMPLY);
+    List<Rewrite<PropRulesTest.Prop, Boolean>> all = allProp();
     List<Rewrite<PropRulesTest.Prop, Boolean>> rules = switch (c.ruleset()) {
       case "prop-contrapositive" -> PropRulesTest.CONTRAPOSITIVE_CASE.rules();
       case "prop-chain" -> PropRulesTest.CHAIN_CASE.rules();
@@ -231,6 +240,40 @@ final class FuzzRun {
     List<Rewrite<MathTest.Math, Double>> rules = c.ruleset().startsWith("math:")
         ? named(MathTest.rules(), c.ruleset(), "math:") : MathTest.rules();
     return execute(g, root, rules, limits, goals);
+  }
+
+  /**
+   * Refuses a rule set that is not one of the named ones or a {@code prop:}/{@code math:} list of
+   * rules that exist, as a mistyped name would otherwise run a smaller rule set, or another
+   * language's, and compare the wrong thing.
+   *
+   * @param ruleset the rule set of a case
+   * @throws IllegalArgumentException if it is unknown, or a list names a rule that does not exist
+   */
+  static void validate(String ruleset) {
+    switch (ruleset) {
+      case "prop-all", "prop-contrapositive", "prop-chain", "math", "math-75k" -> {
+        return;
+      }
+      default -> {
+      }
+    }
+    if (ruleset.startsWith("prop:")) {
+      checkNames(ruleset, "prop:", allProp().stream().map(Rewrite::name).toList());
+    } else if (ruleset.startsWith("math:")) {
+      checkNames(ruleset, "math:", MathTest.rules().stream().map(Rewrite::name).toList());
+    } else {
+      throw new IllegalArgumentException("unknown rule set " + ruleset);
+    }
+  }
+
+  private static void checkNames(String ruleset, String prefix, List<String> known) {
+    for (String name : ruleset.substring(prefix.length()).split(",")) {
+      if (!known.contains(name)) {
+        throw new IllegalArgumentException("rule set " + ruleset + " names " + name
+            + ", which is not one of " + known);
+      }
+    }
   }
 
   /** The rules of {@code all} that a {@code prefix:name,name} rule set names, in their order. */

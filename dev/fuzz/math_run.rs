@@ -12,7 +12,12 @@ fn run_one(ruleset: &str, term: &str, goals: &[String]) -> String {
         // "math:a,b,c": the rules of that name, for finding which of them a divergence needs.
         Some(names) => {
             let names: Vec<&str> = names.split(',').collect();
-            rules().into_iter().filter(|rule| names.contains(&rule.name.as_str())).collect()
+            let found: Vec<Rewrite> =
+                rules().into_iter().filter(|rule| names.contains(&rule.name.as_str())).collect();
+            if found.len() != names.len() {
+                panic!("unknown or repeated rule name in {}", ruleset);
+            }
+            found
         }
         None => rules(),
     };

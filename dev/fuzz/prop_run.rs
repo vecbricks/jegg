@@ -20,7 +20,12 @@ fn run_one(ruleset: &str, term: &str, _goals: &[String]) -> String {
         // "prop:a,b,c": the rules of that name, for finding which of them a divergence needs.
         r if r.starts_with("prop:") => {
             let names: Vec<&str> = r["prop:".len()..].split(',').collect();
-            all().into_iter().filter(|rule| names.contains(&rule.name.as_str())).collect()
+            let found: Vec<Rewrite> =
+                all().into_iter().filter(|rule| names.contains(&rule.name.as_str())).collect();
+            if found.len() != names.len() {
+                panic!("unknown or repeated rule name in {}", r);
+            }
+            found
         }
         "prop-contrapositive" => vec![def_imply(), def_imply_flip(), double_neg_flip(), comm_or()],
         "prop-chain" => vec![

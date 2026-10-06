@@ -141,19 +141,41 @@ class FuzzHarnessTest {
     String egg = "NodeLimit 3 7,6;21,10;27,12 final 2813,1075 memo 5100";
     assertEquals(FuzzRun.Verdict.NODE_LIMIT, FuzzRun.compare(egg,
         "ERROR IllegalStateException: Merged non-equal constants after 7,6;21,10;27,12;43,20"));
+    String contradiction = "ERROR IllegalStateException: Merged non-equal constants after ";
     // In the iteration egg stopped in, too.
-    assertEquals(FuzzRun.Verdict.NODE_LIMIT, FuzzRun.compare(egg,
-        "ERROR IllegalStateException: x after 7,6;21,10;27,12"));
+    assertEquals(FuzzRun.Verdict.NODE_LIMIT,
+        FuzzRun.compare(egg, contradiction + "7,6;21,10;27,12"));
     // Before it: egg went on from a state jegg threw in.
-    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg,
-        "ERROR IllegalStateException: x after 7,6;21,10"));
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg, contradiction + "7,6;21,10"));
     // Past it but from other states: not the same run.
-    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg,
-        "ERROR IllegalStateException: x after 7,6;21,10;28,12;43,20"));
+    assertEquals(FuzzRun.Verdict.DIVERGE,
+        FuzzRun.compare(egg, contradiction + "7,6;21,10;28,12;43,20"));
     // egg stopped for another reason: jegg's error is not past a node-limit stop.
     assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(
-        "Saturated 3 7,6;21,10;27,12 final 30,8 memo 40",
-        "ERROR IllegalStateException: x after 7,6;21,10;27,12;43,20"));
+        "Saturated 3 7,6;21,10;27,12 final 30,8 memo 40", contradiction + "7,6;21,10;27,12;43,20"));
+    // Any other error is jegg's own, past egg's stop or not: a bug is not excused by a limit.
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg,
+        "ERROR NullPointerException: null after 7,6;21,10;27,12;43,20"));
+    assertEquals(FuzzRun.Verdict.DIVERGE, FuzzRun.compare(egg,
+        "ERROR IllegalStateException: class 5 holds null where the join is true after "
+            + "7,6;21,10;27,12"));
+  }
+
+  @Test
+  void aMistypedRuleSetIsRefusedNotRunAsAnotherOne() {
+    for (String bad : List.of("prop-allx", "math-76k", "math-75K", "lambda", "prop", "",
+        "prop:def_imply,comm_orr", "math:comm-add,nope", "prop:", "math:")) {
+      assertThrows(IllegalArgumentException.class,
+          () -> FuzzRun.run(new FuzzRun.Case(bad, "(~ x)", List.of())), bad);
+    }
+    // The rule sets that exist run, a list of real rules among them.
+    for (String good : List.of("prop-all", "prop-chain", "prop:def_imply,comm_or",
+        "prop:lem_imply")) {
+      assertFalse(FuzzRun.run(new FuzzRun.Case(good, "(~ x)", List.of())).startsWith("ERROR"),
+          good);
+    }
+    assertFalse(FuzzRun.run(new FuzzRun.Case("math:comm-add,add-zero", "(+ x 0)", List.of()))
+        .startsWith("ERROR"));
   }
 
   @Test
