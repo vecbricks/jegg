@@ -27,7 +27,8 @@ import org.jspecify.annotations.Nullable;
  * replacement if a measurement asks for it.
  *
  * <p>Order is fixed: classes in id order, a class's nodes in insertion order, a node's children
- * depth-first, so the list of matches is a function of the graph. A search starts at the classes
+ * depth-first in an order the pattern alone decides ({@code View}), so the list of matches is a
+ * function of the graph and the pattern. A search starts at the classes
  * holding a node of the root head's class where the head names it, and allocates per match, not
  * per class visited. A pattern node whose head has a {@link Pattern.Head#key} reads the class's
  * table ({@code EClass.Table}): the nodes sorted by head, insertion order kept within a head,
@@ -39,16 +40,20 @@ import org.jspecify.annotations.Nullable;
  * smaller class; a head with neither walks every node. The candidates come in insertion order
  * either way, so the matches are the ones a walk of every node would find, in its order.
  *
- * <p>One of egg's compiled matcher's devices is kept. A nested pattern node whose variables are
+ * <p>Two of egg's compiled matcher's devices are kept. A nested pattern node whose variables are
  * all bound when it is reached, and that is not a leaf, may be looked up instead of walked: the
  * node it names is built from the bindings and found through the hashcons (egg's {@code Lookup}),
  * and must be in the child's class. The lookup finds a node {@link EGraph#retainNodes} dropped,
  * as egg's memo finds it, so it is always used where the child's class has pruned, the one
  * place a walk of the class could miss a node; elsewhere it gives the matches the walk gives,
  * and is used only where the head's run in the child's class is longer than
- * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. egg's other order, a node's variables bound before its nested nodes, is not kept: with
- * substitutions that are bound by allocation, it binds for every candidate a nested node then
- * rejects, and costs more than it saves (#74).
+ * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. And a
+ * node's nested children are matched in the order egg's compiler gives a pattern's nodes, the one
+ * with more free variables first and the smaller among equals, so that the ones after it are
+ * ground, and looked up, or narrower; a node whose nested children tie keeps its written order,
+ * so most patterns match as written. egg's third order, a node's variables bound before its
+ * nested nodes, is not kept: with substitutions that are bound by allocation, it binds for every
+ * candidate a nested node then rejects, and costs more than it saves (#74).
  */
 public final class Matcher {
 
