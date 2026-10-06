@@ -458,7 +458,7 @@ the compile: at the 200 limit it is half the saturation.
    (above) reads 0.13 to 1.66 ms, so this half holds since then. Cold, in a
    fresh JVM, everything is two to eighty times slower still, the JIT's share.
 5. **The naive matcher within 3x of the compiled machine: not measurable.**
-   There is no machine (#7). A JFR profile of the deferred `lambda_function_repeat` run (`RepeatProfile-jdk25-results.txt`) puts at least 32% of its samples in the matcher and at least 26% in `rebuild`, with 39% in node equality whose callers the stack depth cut off; the matcher is the number #7 reads, and it says the naive matcher is a third of the run or more, not the whole of it.
+   There is no machine (#7). A JFR profile of the deferred `lambda_function_repeat` run (`RepeatProfile-jdk25-results.txt`) puts at least 32% of its samples in the matcher and at least 26% in `rebuild`, with 39% in node equality whose callers the stack depth cut off; the matcher is the number #7 reads, and it says the naive matcher is a third of the run or more, not the whole of it. After #15 and #13 the matcher was four fifths of that run, and a count of its work (#74) showed why: 322 million node visits for 1.6 million results, nearly all from a pattern node's child walking a class of 64 nodes or more. The index a class now keeps from head to node positions (#74) cut the visits to 17 million and the run from 1.9 s to 0.8 s, with the same matches in the same order; the matcher is still two thirds of what remains.
 6. **`extractAll` keeps the shared decomposition and costs less than the two
    single-root extractions summed; the greedy choice matches enumeration on
    every graph small enough to enumerate: holds, with a change.** On the

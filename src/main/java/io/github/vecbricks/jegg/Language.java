@@ -53,7 +53,8 @@ public interface Language<L extends Language<L>> {
    * searches at the classes holding a node of the prototype's class only when the head is such
    * a node itself, so a cheaper key costs a look at every class and never a match.
    *
-   * @return a key equal for two nodes exactly when their operator and payload are equal
+   * @return a key equal for two nodes exactly when their operator and payload are equal, with a
+   *     {@code hashCode} to match, since a class indexes its nodes by it
    */
   default Object head() {
     return withChildren(IntList.EMPTY);

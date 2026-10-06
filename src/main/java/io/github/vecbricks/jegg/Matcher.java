@@ -19,18 +19,25 @@ import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /**
- * E-matching, the naive way: a pattern is matched against a class by trying each of the class's
+ * E-matching by backtracking: a pattern is matched against a class by trying each of the class's
  * nodes whose head matches, then each child pattern against the child's class, threading the
- * substitution through and backtracking by discarding it. Quadratic in the worst case and
- * enough at the graph sizes the plan targets (its prediction 5); egg's compiled machine is the
+ * substitution through and backtracking by discarding it. egg's compiled machine is the
  * replacement if a measurement asks for it.
  *
  * <p>Order is fixed: classes in id order, a class's nodes in insertion order, a node's children
  * depth-first, so the list of matches is a function of the graph. A search starts at the classes
  * holding a node of the root head's class where the head names it, and allocates per match, not
- * per class visited.
+ * per class visited. In a class of {@link #INDEX_FROM} nodes or more, a pattern node whose head
+ * has a {@link Pattern.Head#key} visits only the nodes with that head, and one whose head names
+ * a {@link Pattern.Head#type} only the nodes of that class, through the indexes the class keeps
+ * ({@code EClass}); the positions come in insertion order, so the matches are the ones a walk of
+ * every node would find, in its order. A smaller class is walked, which costs less than
+ * building its index.
  */
 public final class Matcher {
+
+  /** The size from which a class's nodes are found through its indexes rather than walked. */
+  static final int INDEX_FROM = 8;
 
   private Matcher() {
   }
@@ -337,13 +344,37 @@ public final class Matcher {
       }
       case Pattern.Node<L>(var head, var children) -> {
         Set<Subst> seen = null;
-        List<L> nodes = graph.classOf(root).mutableNodes();
-        for (int i = 0; i < nodes.size() && out.size() < limit; i++) {
-          L node = nodes.get(i);
+        EClass<L, D> eclass = graph.classOf(root);
+        List<L> nodes = eclass.readNodes();
+        // The candidates: every node of a small class; in a larger one, the positions of the
+        // nodes with the head's key (whose heads then need no test) or of the head's node class.
+        IntArray positions = null;
+        boolean indexed = false;
+        boolean headsMatch = false;
+        if (nodes.size() >= INDEX_FROM) {
+          Optional<Object> key = head.key();
+          if (key.isPresent()) {
+            positions = eclass.positionsWithHead(key.get());
+            indexed = true;
+            headsMatch = true;
+          } else {
+            Optional<Class<? extends L>> type = head.type();
+            if (type.isPresent()) {
+              positions = eclass.positionsOfType(type.get());
+              indexed = true;
+            }
+          }
+        }
+        if (indexed && positions == null) {
+          return;
+        }
+        int candidates = indexed ? positions.size() : nodes.size();
+        for (int i = 0; i < candidates && out.size() < limit; i++) {
+          L node = nodes.get(indexed ? positions.get(i) : i);
           if (node.children().size() != children.size()) {
             continue;
           }
-          Subst headBound = head.match(node, subst);
+          Subst headBound = headsMatch ? subst : head.match(node, subst);
           if (headBound == null) {
             continue;
           }

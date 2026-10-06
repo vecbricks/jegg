@@ -71,8 +71,10 @@ to values.
 `Matcher.search(graph, pattern)` finds every match in the graph, class by class
 in id order, nodes in insertion order; where the root head names its node class
 (`Pattern.Head.type`, which jegg's own heads do), only the classes holding such
-a node are visited. The order is fixed, which is part of the determinism jegg
-promises. A `Rewrite` is a name, a left-hand `Searcher` (a pattern, or a
+a node are visited; inside a class of eight nodes or more, a pattern node
+visits only the nodes with its head (`Pattern.Head.key`) or of its node class,
+through an index the class keeps in insertion order. The order is fixed, which
+is part of the determinism jegg promises. A `Rewrite` is a name, a left-hand `Searcher` (a pattern, or a
 `MultiPattern`: clauses `?var = pattern` joined on shared variables, egg's
 multi-pattern), a right-hand `Applier` (a pattern to instantiate, a
 multi-pattern's clauses, or a function of the graph and the substitution:

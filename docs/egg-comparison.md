@@ -69,7 +69,7 @@ The shape of the port in four lines:
 | `EClass { id, nodes, data, parents }` | `EClass`: `id()`, `nodes()`, `data()`, `parents()` | nodes in insertion order, not sorted by operator; the views are live |
 | `parents()` as ids | `parents()` as `Parent(node, classId)` | an entry per parent node, shared by every list that names it, re-keyed in place |
 | `iter`, `len`, `is_empty`, `leaves`, `assert_unique_leaves` | `nodes()` | use the list |
-| `for_each_matching_node` | replaced | egg's matcher uses it; jegg's matcher walks `nodes()` |
+| `for_each_matching_node` | `EClass`'s indexes, read by the matcher | egg keeps a class's nodes sorted and binary-searches the run of an operator from 50 nodes up, filtering below; jegg keeps insertion order and indexes a class by head and by node class from 8 nodes up, walking below, so the matches come in the order a walk gives |
 
 ## `unionfind` (`UnionFind`)
 

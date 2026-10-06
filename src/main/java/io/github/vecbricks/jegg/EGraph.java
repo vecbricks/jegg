@@ -457,11 +457,11 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     if (!Objects.equals(joined, gone.data())) {
       analysisPending.addAll(gone.mutableParents());
     }
-    for (L node : gone.mutableNodes()) {
+    for (L node : gone.readNodes()) {
       index(node, root);
       unindex(node.getClass(), other);
     }
-    kept.mutableNodes().addAll(gone.mutableNodes());
+    kept.mutableNodes().addAll(gone.readNodes());
     kept.setMergedNodes(true);
     kept.mutableParents().addAll(gone.mutableParents());
     kept.setData(joined);
@@ -604,12 +604,14 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * or another class's nodes were merged in since the list was last canonical.
    */
   private void canonicalizeNodes(EClass<L, D> eclass) {
-    List<L> nodes = eclass.mutableNodes();
+    // Read until a node is remade: a class whose list stays as it was keeps its indexes.
+    List<L> nodes = eclass.readNodes();
     boolean changed = eclass.hasMergedNodes();
     eclass.setMergedNodes(false);
     for (int i = 0; i < nodes.size(); i++) {
       L node = nodes.get(i);
       if (!isCanonical(node)) {
+        eclass.dropIndexes();
         nodes.set(i, canonicalize(node));
         changed = true;
       }
@@ -645,7 +647,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     if (!c.hasPruned()) {
       return false;
     }
-    for (L n : c.mutableNodes()) {
+    for (L n : c.readNodes()) {
       if (canonicalize(n).equals(canonical)) {
         return false;
       }
@@ -763,8 +765,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * equal canonical node. Also the parent entries: for every node some one entry is in every
    * list that names the node, in canonical form and mapped by the hashcons or the pruned memory
    * to its class, so that a repair through any child re-keys the form all of them hold; and no
-   * entry left behind under an older form is a key. All hold after {@link #rebuild}; none need
-   * hold between a merge and the rebuild. For tests and debugging; throws
+   * entry left behind under an older form is a key. Also the matcher's indexes: a class's built
+   * index agrees with its node list. All hold after {@link #rebuild}; none need hold between a
+   * merge and the rebuild. For tests and debugging; throws
    * {@link IllegalStateException} naming the first violation.
    */
   public void checkInvariants() {
@@ -809,6 +812,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
 
   private void checkIndex() {
     for (EClass<L, D> eclass : classes()) {
+      eclass.checkIndexes();
       for (L node : eclass.nodes()) {
         BitSet holding = byNodeClass.get(node.getClass());
         if (holding == null || !holding.get(eclass.id())) {
