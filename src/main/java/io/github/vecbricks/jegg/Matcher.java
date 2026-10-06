@@ -92,18 +92,19 @@ public final class Matcher {
     }
     List<Match> matches = new ArrayList<>();
     List<Subst> found = new ArrayList<>();
+    boolean distinct = distinctByConstruction(graph, pattern);
     Class<?> type = pattern instanceof Pattern.Node<L> node
         ? node.head().type().orElse(null) : null;
     if (type != null) {
       BitSet classes = graph.classesHolding(type);
       for (int id = classes.nextSetBit(0); id >= 0 && matches.size() < limit;
           id = classes.nextSetBit(id + 1)) {
-        collect(graph, pattern, id, limit, matches, found);
+        collect(graph, pattern, id, limit, matches, found, distinct);
       }
     } else {
       for (int id = graph.nextLiveClass(0); id >= 0 && matches.size() < limit;
           id = graph.nextLiveClass(id + 1)) {
-        collect(graph, pattern, id, limit, matches, found);
+        collect(graph, pattern, id, limit, matches, found, distinct);
       }
     }
     return matches;
@@ -168,6 +169,9 @@ public final class Matcher {
     private final List<List<Subst>> buffers;
     private final List<Set<String>> variables;
     private final List<Optional<Set<String>>> payloads;
+    // Per clause, whether its pattern's substitutions in one class are distinct by construction
+    // (matchIn), so that the walk of the class needs no set of its own.
+    private final boolean[] distinct;
 
     Join(EGraph<L, D> graph, List<MultiPattern.Clause<L>> clauses, int limit, List<Match> out) {
       this.graph = graph;
@@ -177,10 +181,13 @@ public final class Matcher {
       this.buffers = new ArrayList<>(clauses.size());
       this.variables = new ArrayList<>(clauses.size());
       this.payloads = new ArrayList<>(clauses.size());
-      for (MultiPattern.Clause<L> clause : clauses) {
+      this.distinct = new boolean[clauses.size()];
+      for (int i = 0; i < clauses.size(); i++) {
+        MultiPattern.Clause<L> clause = clauses.get(i);
         buffers.add(new ArrayList<>());
         variables.add(clause.pattern().subtermVariables());
         payloads.add(clause.pattern().payloadVariables());
+        distinct[i] = distinctByConstruction(graph, clause.pattern());
       }
     }
 
@@ -240,7 +247,7 @@ public final class Matcher {
       Subst given = self ? subst.bind(clause.var(), id) : subst;
       List<Subst> found = buffers.get(index);
       found.clear();
-      matchIn(graph, clause.pattern(), id, given, Integer.MAX_VALUE, found);
+      matchIn(graph, clause.pattern(), id, given, Integer.MAX_VALUE, found, distinct[index]);
       for (int i = 0; i < found.size() && out.size() < limit; i++) {
         Subst matched = found.get(i);
         join(index + 1, self ? matched : matched.bind(clause.var(), id), start);
@@ -289,9 +296,9 @@ public final class Matcher {
 
   private static <L extends Language<L>, D extends @Nullable Object>
       void collect(EGraph<L, D> graph, Pattern<L> pattern, int id, int limit, List<Match> matches,
-          List<Subst> found) {
+          List<Subst> found, boolean distinct) {
     found.clear();
-    matchIn(graph, pattern, id, Subst.EMPTY, limit - matches.size(), found);
+    matchIn(graph, pattern, id, Subst.EMPTY, limit - matches.size(), found, distinct);
     for (Subst subst : found) {
       matches.add(new Match(id, subst));
     }
@@ -314,8 +321,42 @@ public final class Matcher {
       List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
     List<Subst> out = new ArrayList<>();
-    matchIn(graph, pattern, id, subst, Integer.MAX_VALUE, out);
+    matchIn(graph, pattern, id, subst, Integer.MAX_VALUE, out,
+        distinctByConstruction(graph, pattern));
     return out;
+  }
+
+  /**
+   * Whether every substitution {@code pattern} yields in one class of {@code graph} is distinct
+   * from the others without a set to tell: so when the graph is rebuilt and every head of the
+   * pattern has a {@link Pattern.Head#key}. Then no head binds anything, and a substitution fixes
+   * the node chosen at each pattern node - its head and, by the variables' bindings or by
+   * induction on the children, each child's class - and a canonical node with that head and
+   * those children is one node in one class (the hashcons invariant), listed once
+   * ({@code canonicalizeNodes}); two derivations of one substitution are then one derivation,
+   * which the walk makes once. A dirty graph, whose merged class may list one node twice, and a
+   * head without a key, which may bind for some nodes and not others, each need the set.
+   */
+  private static <L extends Language<L>> boolean distinctByConstruction(EGraph<L, ?> graph,
+      Pattern<L> pattern) {
+    return !graph.isDirty() && allKeyed(pattern);
+  }
+
+  private static <L extends Language<L>> boolean allKeyed(Pattern<L> pattern) {
+    return switch (pattern) {
+      case Pattern.Var<L> v -> true;
+      case Pattern.Node<L>(var head, var children) -> {
+        if (head.key().isEmpty()) {
+          yield false;
+        }
+        for (Pattern<L> child : children) {
+          if (!allKeyed(child)) {
+            yield false;
+          }
+        }
+        yield true;
+      }
+    };
   }
 
   /**
@@ -326,12 +367,13 @@ public final class Matcher {
    * could lose some of them to deduplication and leave the prefix short. One substitution can
    * come up twice, from two nodes of the class (a head that reads no payload over two nodes
    * differing in theirs) or within one node's walk (a child head that binds a payload for some
-   * nodes and not others), so the results are deduplicated, keeping the first; the set that does
+   * nodes and not others), so unless the results are {@code distinct} by construction
+   * ({@link #distinctByConstruction}) they are deduplicated, keeping the first; the set that does
    * it is made only once a node yields more than one result or a second node yields any.
    */
   private static <L extends Language<L>, D extends @Nullable Object>
       void matchIn(EGraph<L, D> graph, Pattern<L> pattern, int id, Subst subst, int limit,
-          List<Subst> out) {
+          List<Subst> out, boolean distinct) {
     int root = graph.find(id);
     switch (pattern) {
       case Pattern.Var<L>(var name) -> {
@@ -379,9 +421,9 @@ public final class Matcher {
             continue;
           }
           int before = out.size();
-          matchChildren(graph, children, 0, node, headBound, out);
+          matchChildren(graph, children, 0, node, headBound, out, distinct);
           int added = out.size() - before;
-          if (added > 1 || (added > 0 && before > 0)) {
+          if (!distinct && (added > 1 || (added > 0 && before > 0))) {
             if (seen == null) {
               seen = new HashSet<>(out.subList(0, before));
             }
@@ -409,7 +451,7 @@ public final class Matcher {
    */
   private static <L extends Language<L>, D extends @Nullable Object>
       void matchChildren(EGraph<L, D> graph, List<Pattern<L>> children, int i, L node, Subst subst,
-          List<Subst> out) {
+          List<Subst> out, boolean distinct) {
     if (i == children.size()) {
       out.add(subst);
       return;
@@ -420,16 +462,16 @@ public final class Matcher {
         var bound = subst.id(name);
         int root = graph.find(child);
         if (bound.isEmpty()) {
-          matchChildren(graph, children, i + 1, node, subst.bind(name, root), out);
+          matchChildren(graph, children, i + 1, node, subst.bind(name, root), out, distinct);
         } else if (graph.find(bound.getAsInt()) == root) {
-          matchChildren(graph, children, i + 1, node, subst, out);
+          matchChildren(graph, children, i + 1, node, subst, out, distinct);
         }
       }
       case Pattern.Node<L> nested -> {
         List<Subst> partial = new ArrayList<>();
-        matchIn(graph, nested, child, subst, Integer.MAX_VALUE, partial);
+        matchIn(graph, nested, child, subst, Integer.MAX_VALUE, partial, distinct);
         for (Subst s : partial) {
-          matchChildren(graph, children, i + 1, node, s, out);
+          matchChildren(graph, children, i + 1, node, s, out, distinct);
         }
       }
     }
