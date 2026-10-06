@@ -40,9 +40,9 @@ public final class Subst {
   /** What {@link #idOrUnbound} answers for a variable that is not bound: no class has this id. */
   static final int UNBOUND = -1;
 
-  // One binding and the rest of the chain: the variable's name, null in EMPTY alone; the id it
-  // stands for, or for a payload variable the value; and the substitution this one extends,
-  // which is EMPTY itself at the end of every chain.
+  // One binding and the rest of the chain: the variable's name, interned (null in EMPTY alone),
+  // so that it is found by reference; the id it stands for, or for a payload variable the value;
+  // and the substitution this one extends, which is EMPTY itself at the end of every chain.
   private final @Nullable String name;
   private final int id;
   private final @Nullable Object payload;
@@ -65,14 +65,33 @@ public final class Subst {
     this.next = next;
   }
 
-  /** The node binding {@code variable} as a subterm or a payload variable, or null if none. */
-  private @Nullable Subst nodeOf(String variable, boolean payload) {
+  /**
+   * The node binding {@code variable}, an interned name, as a subterm or a payload variable, or
+   * null if none. Every name in a chain is interned (the public binds intern theirs, and the
+   * matcher binds the names of patterns, which are interned when they are made), so a name is
+   * found by reference, with no {@code equals} on the names that are not it.
+   */
+  private @Nullable Subst nodeOfInterned(String variable, boolean payload) {
     for (Subst n = this; n.name != null; n = n.next) {
-      if (n.isPayload == payload && (n.name == variable || n.name.equals(variable))) {
+      if (n.name == variable && n.isPayload == payload) {
         return n;
       }
     }
     return null;
+  }
+
+  /**
+   * As {@link #nodeOfInterned} for a name that may not be interned, a client's: found by
+   * reference first, which is the answer for a name that is, and otherwise looked for again under
+   * its interned form.
+   */
+  private @Nullable Subst nodeOf(String variable, boolean payload) {
+    Subst n = nodeOfInterned(variable, payload);
+    if (n != null) {
+      return n;
+    }
+    String interned = variable.intern();
+    return interned == variable ? null : nodeOfInterned(interned, payload);
   }
 
   /**
@@ -84,7 +103,12 @@ public final class Subst {
    * @return the new substitution, or this one if the variable is bound to {@code id} already
    */
   public Subst bind(String variable, int id) {
-    Subst bound = nodeOf(variable, false);
+    return bindInterned(variable.intern(), id);
+  }
+
+  /** {@link #bind} for a name that is interned already: a pattern's, a clause's. */
+  Subst bindInterned(String variable, int id) {
+    Subst bound = nodeOfInterned(variable, false);
     if (bound == null) {
       return new Subst(variable, id, null, false, this);
     }
@@ -95,8 +119,8 @@ public final class Subst {
   }
 
   /**
-   * This substitution with {@code variable}, which must not be bound, bound to {@code id}: a
-   * bind without the lookup, for the matcher, which has just looked.
+   * This substitution with {@code variable}, which must not be bound and must be interned, bound
+   * to {@code id}: a bind without the lookup, for the matcher, which has just looked.
    */
   Subst bindNew(String variable, int id) {
     return new Subst(variable, id, null, false, this);
@@ -111,7 +135,12 @@ public final class Subst {
    * @return the new substitution, or this one if the variable is bound to an equal value already
    */
   public Subst bindPayload(String variable, @Nullable Object value) {
-    Subst bound = nodeOf(variable, true);
+    return bindPayloadInterned(variable.intern(), value);
+  }
+
+  /** {@link #bindPayload} for a name that is interned already: a head's. */
+  Subst bindPayloadInterned(String variable, @Nullable Object value) {
+    Subst bound = nodeOfInterned(variable, true);
     if (bound == null) {
       return new Subst(variable, 0, value, true, this);
     }
@@ -151,11 +180,32 @@ public final class Subst {
 
   /**
    * The class a subterm variable is bound to, or {@link #UNBOUND}: {@link #id} without the
-   * {@code OptionalInt}, for the matcher.
+   * {@code OptionalInt}, for the matcher, which asks with the interned name of a pattern's
+   * variable.
    */
   int idOrUnbound(String variable) {
-    Subst bound = nodeOf(variable, false);
+    Subst bound = nodeOfInterned(variable, false);
     return bound == null ? UNBOUND : bound.id;
+  }
+
+  /** {@link #id} for an interned name, for the join, which asks about its clauses' variables. */
+  OptionalInt idInterned(String variable) {
+    Subst bound = nodeOfInterned(variable, false);
+    return bound == null ? OptionalInt.empty() : OptionalInt.of(bound.id);
+  }
+
+  /** {@link #hasPayload} for an interned name: a head's own variable. */
+  boolean hasPayloadInterned(String variable) {
+    return nodeOfInterned(variable, true) != null;
+  }
+
+  /** {@link #payload} for an interned name that is bound: a head's own variable. */
+  @Nullable Object payloadInterned(String variable) {
+    Subst bound = nodeOfInterned(variable, true);
+    if (bound == null) {
+      throw new IllegalArgumentException("unbound payload variable " + variable + " in " + this);
+    }
+    return bound.payload;
   }
 
   /**
@@ -249,7 +299,7 @@ public final class Subst {
     int mine = 0;
     for (Subst n = this; n.name != null; n = n.next) {
       mine++;
-      Subst theirs = s.nodeOf(n.name, n.isPayload);
+      Subst theirs = s.nodeOfInterned(n.name, n.isPayload);
       if (theirs == null
           || (n.isPayload ? !Objects.equals(theirs.payload, n.payload) : theirs.id != n.id)) {
         return false;

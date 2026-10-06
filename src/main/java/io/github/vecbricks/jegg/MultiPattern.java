@@ -47,7 +47,7 @@ public record MultiPattern<L extends Language<L>>(List<Clause<L>> clauses)
   public record Clause<L extends Language<L>>(String var, Pattern<L> pattern) {
     /** Checks that neither component is null. */
     public Clause {
-      Objects.requireNonNull(var, "var");
+      var = Objects.requireNonNull(var, "var").intern();
       Objects.requireNonNull(pattern, "pattern");
     }
 

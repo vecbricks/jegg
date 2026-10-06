@@ -50,14 +50,14 @@ record MultiApplier<L extends Language<L>, D extends @Nullable Object>(
     int unions = 0;
     for (MultiPattern.Clause<L> clause : rhs.clauses()) {
       int id = Matcher.instantiate(graph, clause.pattern(), subst);
-      OptionalInt named = subst.id(clause.var());
+      OptionalInt named = subst.idInterned(clause.var());
       if (named.isPresent()) {
         if (graph.find(named.getAsInt()) != graph.find(id)) {
           graph.merge(named.getAsInt(), id);
           unions++;
         }
       } else {
-        subst = subst.bind(clause.var(), id);
+        subst = subst.bindInterned(clause.var(), id);
       }
     }
     return Applied.countedOnce(unions);
