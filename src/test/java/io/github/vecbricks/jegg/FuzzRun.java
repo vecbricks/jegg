@@ -21,8 +21,9 @@ import java.util.Optional;
  *
  * <p>A case is a rule set, a term and optionally goals. The rule sets are egg's: {@code prop-all},
  * {@code prop-contrapositive} and {@code prop-chain} for {@link PropRulesTest}'s language,
- * {@code math} and {@code math-75k} for {@link MathTest}'s; the goals stop the run as egg's
- * {@code test_fn!} does.
+ * {@code math} and {@code math-75k} for {@link MathTest}'s, and {@code prop:a,b} or {@code
+ * math:a,b} for the named rules of either, to find which of them a divergence needs; the goals
+ * stop the run as egg's {@code test_fn!} does.
  */
 final class FuzzRun {
 
@@ -88,17 +89,12 @@ final class FuzzRun {
   }
 
   /**
-   * How two lines compare. {@code MEMO_LIMIT} is a difference egg's node limit explains.
+   * How two lines compare. {@code NODE_LIMIT} is a difference that a node-limit stop explains.
    */
-  enum Verdict { SAME, MEMO_LIMIT, BOTH_FAILED, DIVERGE, INCONCLUSIVE }
+  enum Verdict { SAME, NODE_LIMIT, BOTH_FAILED, DIVERGE, INCONCLUSIVE }
 
-  /** The node limit of a rule set's runs. */
-  static int nodeLimit(String ruleset) {
-    return switch (ruleset) {
-      case "math" -> RunLimits.DEFAULT.nodes();
-      case "math-75k" -> 75_000;
-      default -> PropRulesTest.LIMITS.nodes();
-    };
+  private static List<String> samplesOf(String samples) {
+    return samples.equals("-") ? List.of() : List.of(samples.split(";"));
   }
 
   /**
@@ -106,21 +102,26 @@ final class FuzzRun {
    * (a term that folds to {@code false} under the assumption that it is true is refused by both
    * as "Merged non-equal constants"); egg panicking where jegg runs, or egg's time limit, is
    * inconclusive, as the count would depend on the clock or there is no egg count; jegg throwing
-   * where egg did not is a divergence; equal lines (egg's memo size aside) are the same.
+   * where egg did not is a divergence, unless it is explained as below; equal lines (egg's memo
+   * size aside) are the same.
    *
-   * <p>egg checks its node limit against its memo, which keeps stale entries, where jegg checks
-   * the distinct nodes, so egg can stop on a limit its nodes have not reached while jegg runs on.
-   * That is {@code MEMO_LIMIT}, and only when explained: egg stopped on the node limit with its
-   * nodes at or under it and its memo over it, jegg ran at least as long, and every iteration
-   * start egg reached is jegg's too. The last iteration, which egg left part way, is then not
-   * compared; anything else that differs is a divergence.
+   * <p>A stop on the node limit is not comparable past the iteration it came in, for two
+   * reasons that are not defects. The limit is checked between rules, against the size then,
+   * which is transient: before the rebuild it counts the stale entries that merges leave, and how
+   * many there are depends on the order the iteration's matches were applied in, which is egg's
+   * (the order of its classes) and jegg's (class id, then node insertion) and differs. And egg
+   * checks its memo, which keeps stale entries for good, where jegg checks the distinct nodes.
+   * So when one side stopped on the node limit, in the iteration that ended its run, and every
+   * iteration start it reached is the other side's too, with the other side having run at least
+   * as long, the verdict is {@code NODE_LIMIT}: the same up to that stop. The partial last
+   * iteration is not compared, and what follows it on the side that ran on cannot be. Anything
+   * else that differs is a divergence.
    *
    * @param egg egg's line
    * @param jegg jegg's line
-   * @param nodeLimit the run's node limit
    * @return the verdict
    */
-  static Verdict compare(String egg, String jegg, int nodeLimit) {
+  static Verdict compare(String egg, String jegg) {
     if (egg.startsWith("PANIC")) {
       return jegg.startsWith("ERROR") ? Verdict.BOTH_FAILED : Verdict.INCONCLUSIVE;
     }
@@ -128,18 +129,30 @@ final class FuzzRun {
       return Verdict.INCONCLUSIVE;
     }
     if (jegg.startsWith("ERROR")) {
-      return Verdict.DIVERGE;
+      // jegg threw where egg did not: a divergence, unless egg stopped on the node limit in the
+      // iteration jegg threw in or before it, so that jegg ran into something (a contradiction
+      // that the assumption that a prop term is true can lead to) past where egg stopped.
+      Result e = Result.parse(egg);
+      int after = jegg.lastIndexOf(" after ");
+      List<String> js = after < 0 ? List.of()
+          : samplesOf(jegg.substring(after + " after ".length()));
+      List<String> es = e.sampleList();
+      boolean ranPastEggsStop = e.stop().equals("NodeLimit") && js.size() >= es.size()
+          && js.subList(0, es.size()).equals(es);
+      return ranPastEggsStop ? Verdict.NODE_LIMIT : Verdict.DIVERGE;
     }
     if (egg.replaceFirst(" memo -?\\d+$", "").equals(jegg)) {
       return Verdict.SAME;
     }
     Result e = Result.parse(egg);
     Result j = Result.parse(jegg);
-    boolean explained = e.stop().equals("NodeLimit") && e.nodes() <= nodeLimit
-        && e.memo() > nodeLimit && j.iterations() >= e.iterations()
-        && j.sampleList().size() >= e.sampleList().size()
-        && j.sampleList().subList(0, e.sampleList().size()).equals(e.sampleList());
-    return explained ? Verdict.MEMO_LIMIT : Verdict.DIVERGE;
+    List<String> es = e.sampleList();
+    List<String> js = j.sampleList();
+    boolean eggStopped = e.stop().equals("NodeLimit") && es.size() <= js.size()
+        && js.subList(0, es.size()).equals(es);
+    boolean jeggStopped = j.stop().equals("NodeLimit") && js.size() <= es.size()
+        && es.subList(0, js.size()).equals(js);
+    return eggStopped || jeggStopped ? Verdict.NODE_LIMIT : Verdict.DIVERGE;
   }
 
   /** The cases of egg's math tests that run under the runner's own limits, with egg's counts. */
@@ -177,25 +190,29 @@ final class FuzzRun {
    */
   static String run(Case c) {
     try {
-      return switch (c.ruleset()) {
-        case "prop-all", "prop-contrapositive", "prop-chain" -> prop(c);
-        case "math", "math-75k" -> math(c);
-        default -> throw new IllegalArgumentException("unknown rule set " + c.ruleset());
-      };
+      if (c.ruleset().startsWith("prop")) {
+        return prop(c);
+      }
+      if (c.ruleset().startsWith("math")) {
+        return math(c);
+      }
+      throw new IllegalArgumentException("unknown rule set " + c.ruleset());
     } catch (RuntimeException | StackOverflowError e) {
       return "ERROR " + e.getClass().getSimpleName() + ": " + e.getMessage();
     }
   }
 
   private static String prop(Case c) {
+    List<Rewrite<PropRulesTest.Prop, Boolean>> all = List.of(PropRulesTest.DEF_IMPLY,
+        PropRulesTest.DEF_IMPLY_FLIP, PropRulesTest.DOUBLE_NEG, PropRulesTest.DOUBLE_NEG_FLIP,
+        PropRulesTest.ASSOC_OR, PropRulesTest.DIST_AND_OR, PropRulesTest.DIST_OR_AND,
+        PropRulesTest.COMM_OR, PropRulesTest.COMM_AND, PropRulesTest.LEM, PropRulesTest.OR_TRUE,
+        PropRulesTest.AND_TRUE, PropRulesTest.CONTRAPOSITIVE, PropRulesTest.LEM_IMPLY);
     List<Rewrite<PropRulesTest.Prop, Boolean>> rules = switch (c.ruleset()) {
       case "prop-contrapositive" -> PropRulesTest.CONTRAPOSITIVE_CASE.rules();
       case "prop-chain" -> PropRulesTest.CHAIN_CASE.rules();
-      default -> List.of(PropRulesTest.DEF_IMPLY, PropRulesTest.DEF_IMPLY_FLIP,
-          PropRulesTest.DOUBLE_NEG, PropRulesTest.DOUBLE_NEG_FLIP, PropRulesTest.ASSOC_OR,
-          PropRulesTest.DIST_AND_OR, PropRulesTest.DIST_OR_AND, PropRulesTest.COMM_OR,
-          PropRulesTest.COMM_AND, PropRulesTest.LEM, PropRulesTest.OR_TRUE,
-          PropRulesTest.AND_TRUE, PropRulesTest.CONTRAPOSITIVE, PropRulesTest.LEM_IMPLY);
+      case "prop-all" -> all;
+      default -> named(all, c.ruleset(), "prop:");
     };
     EGraph<PropRulesTest.Prop, Boolean> g = new EGraph<>(PropRulesTest.CONSTANT_FOLD);
     int root = g.addTree(Term.parse(c.term()), PropRulesTest.BRIDGE);
@@ -211,7 +228,19 @@ final class FuzzRun {
     EGraph<MathTest.Math, Double> g = new EGraph<>(MathTest.CONSTANT_FOLD);
     int root = g.addTree(Term.parse(c.term()), MathTest.BRIDGE);
     List<Pattern<MathTest.Math>> goals = c.goals().stream().map(MathTest::pattern).toList();
-    return execute(g, root, MathTest.rules(), limits, goals);
+    List<Rewrite<MathTest.Math, Double>> rules = c.ruleset().startsWith("math:")
+        ? named(MathTest.rules(), c.ruleset(), "math:") : MathTest.rules();
+    return execute(g, root, rules, limits, goals);
+  }
+
+  /** The rules of {@code all} that a {@code prefix:name,name} rule set names, in their order. */
+  private static <L extends Language<L>, D> List<Rewrite<L, D>> named(List<Rewrite<L, D>> all,
+      String ruleset, String prefix) {
+    if (!ruleset.startsWith(prefix)) {
+      throw new IllegalArgumentException("unknown rule set " + ruleset);
+    }
+    List<String> names = List.of(ruleset.substring(prefix.length()).split(","));
+    return all.stream().filter(r -> names.contains(r.name())).toList();
   }
 
   private static <L extends Language<L>, D> String execute(EGraph<L, D> g, int root,
@@ -227,7 +256,15 @@ final class FuzzRun {
           p -> !Matcher.matchIn(graph, p, root, Subst.EMPTY).isEmpty())
               ? Optional.of("Proved all goals") : Optional.empty());
     }
-    RunReport report = runner.run();
+    RunReport report;
+    try {
+      report = runner.run();
+    } catch (RuntimeException | StackOverflowError e) {
+      // The iteration starts reached, so that an error past where egg stopped can be told from
+      // one before it.
+      return "ERROR " + e.getClass().getSimpleName() + ": " + e.getMessage() + " after "
+          + (samples.isEmpty() ? "-" : String.join(";", samples));
+    }
     String stop = switch (report.stop()) {
       case StopReason.Saturated s -> "Saturated";
       case StopReason.IterationLimit s -> "IterationLimit";

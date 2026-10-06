@@ -38,11 +38,17 @@ real divergences were found this way and nowhere else:
 5. For more runs than the ports pin, `dev/fuzz.sh` (#44) runs random terms of `prop` and `math`
    through egg's own language, analysis and rules and jegg's ports and compares, per iteration,
    the nodes and classes at its start. Run `dev/fuzz.sh --known <language>` first: egg's side must
-   reproduce the pinned counts, or no result of the fuzzing means anything. egg checks its node
-   limit against its memo, which keeps stale entries, so a run can stop on a limit jegg's nodes
-   have not reached; the comparison calls that "the same up to egg's memo-sized node limit" only
-   when egg's nodes are within the limit, its memo is over it, and every iteration start egg
-   reached is jegg's too. Shrunk divergences go to `dev/fuzz/found/` (not tracked).
+   reproduce the pinned counts, or no result of the fuzzing means anything. A stop on the node
+   limit is not comparable past the iteration it came in: the limit is checked between rules,
+   against a transient size that depends on the order the matches were applied in (egg's and
+   jegg's differ), and egg checks its memo, which keeps stale entries, where jegg checks distinct
+   nodes. So when one side stopped on the node limit and every iteration start it reached is the
+   other side's, the comparison says "the same up to a node-limit stop" and does not compare the
+   partial last iteration; anything else that differs is a divergence. Fuzzing found two bugs that
+   no hand-written case had (#71): a fact left stale after a congruence merge inside a repair, and
+   a hashcons key left behind by a prune. Shrunk divergences go to `dev/fuzz/found/` (not
+   tracked); `FuzzRun`'s `prop:name,name` and `math:name,name` rule sets find which rules a
+   divergence needs.
 6. egg's defaults include a 5-second time limit jegg does not have; if egg's report says
    `TimeLimit`, the counts are not reproducible and the case says so instead of pinning them.
 7. egg's prop tests print no report; `dev/egg_counts.sh prop <test>` runs a copy of

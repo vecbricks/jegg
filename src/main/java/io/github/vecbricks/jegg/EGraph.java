@@ -654,13 +654,25 @@ public final class EGraph<L extends Language<L>, D> {
     // go to whichever class is the root when the loop ends, after anything appended meanwhile.
     List<EClass.Parent<L>> parents = new ArrayList<>(eclass.mutableParents());
     eclass.mutableParents().clear();
+    // What the nodes held aside were made from: if a merge below changes this class's fact, they
+    // are re-made, since merge, which re-makes a class's parents when its fact grows, finds this
+    // list empty (paper Figure 9 does the re-make inside the repair for the same reason).
+    D factBefore = eclass.data();
     for (EClass.Parent<L> parent : parents) {
       L canonical = canonicalize(parent.node());
       int root = unionFind.find(parent.classId());
       staleOwners.set(root);
       if (isPruned(canonical, root)) {
         // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
-        // that adding it again still finds the class, and never back into the hashcons.
+        // that adding it again still finds the class, and never back into the hashcons. The key
+        // the entry still has there goes: retainNodes removes the two forms it knows (the one the
+        // class listed and the canonical one), and an entry keyed under an older form, from
+        // before a child's class was merged away, kept its key past the prune. It goes only if
+        // it names this class; one that names another is a live node's.
+        Integer keyed = hashcons.get(parent.node());
+        if (keyed != null && unionFind.find(keyed) == root) {
+          hashcons.remove(parent.node());
+        }
         pruned.remove(parent.node());
         pruned.put(canonical, root);
       } else {
@@ -703,7 +715,11 @@ public final class EGraph<L extends Language<L>, D> {
         pruned.remove(dropped.node());
       }
     }
-    classOf(eclass.id()).mutableParents().addAll(seen.values());
+    EClass<L, D> root = classOf(eclass.id());
+    root.mutableParents().addAll(seen.values());
+    if (merged && !Objects.equals(root.data(), factBefore)) {
+      analysisPending.addAll(seen.values());
+    }
   }
 
   /**

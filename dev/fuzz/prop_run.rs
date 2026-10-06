@@ -1,19 +1,27 @@
 // Appended to egg's tests/prop.rs: runs one term under egg's own language, analysis and rules,
 // as `prove_something` does: the start is united with `true` first (lem_imply is sound only
 // then) and rebuilt, the limits are the suite's (20 iterations, 5000 nodes) and the time limit is
-// raised to ten minutes so that a timeout cannot hide a count. Rule sets: the whole file's, and
-// the two the file's tests use.
+// raised to ten minutes so that a timeout cannot hide a count. Rule sets: the whole file's, the
+// two the file's tests use, and `prop:name,name` for the named rules of the file.
 
 use std::time::Duration;
 
 fn run_one(ruleset: &str, term: &str, _goals: &[String]) -> String {
     let start: RecExpr<Prop> = term.parse().unwrap();
-    let rules: Vec<Rewrite> = match ruleset {
-        "prop-all" => vec![
+    let all = || -> Vec<Rewrite> {
+        vec![
             def_imply(), def_imply_flip(), double_neg(), double_neg_flip(), assoc_or(),
             dist_and_or(), dist_or_and(), comm_or(), comm_and(), lem(), or_true(), and_true(),
             contrapositive(), lem_imply(),
-        ],
+        ]
+    };
+    let rules: Vec<Rewrite> = match ruleset {
+        "prop-all" => all(),
+        // "prop:a,b,c": the rules of that name, for finding which of them a divergence needs.
+        r if r.starts_with("prop:") => {
+            let names: Vec<&str> = r["prop:".len()..].split(',').collect();
+            all().into_iter().filter(|rule| names.contains(&rule.name.as_str())).collect()
+        }
         "prop-contrapositive" => vec![def_imply(), def_imply_flip(), double_neg_flip(), comm_or()],
         "prop-chain" => vec![
             def_imply(), def_imply_flip(), double_neg_flip(), comm_or(), comm_and(), lem_imply(),
