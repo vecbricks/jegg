@@ -132,7 +132,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
      * The one head this head matches, when it matches by head alone: present only if
      * {@link #match} returns its substitution unchanged for every node whose
      * {@link Language#head} equals the key, and null for every other node. The matcher then finds
-     * a class's candidate nodes through the class's index of heads and asks {@code match}
+     * a class's candidate nodes through the class's table of heads and asks {@code match}
      * nothing. Empty, the default, means {@code match} is asked about each candidate; a head
      * that binds a payload has no key, and a class of nodes ({@link #type}) at most.
      *

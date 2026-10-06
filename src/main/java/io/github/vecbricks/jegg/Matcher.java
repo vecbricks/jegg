@@ -27,7 +27,8 @@ import org.jspecify.annotations.Nullable;
  * replacement if a measurement asks for it.
  *
  * <p>Order is fixed: classes in id order, a class's nodes in insertion order, a node's children
- * depth-first, so the list of matches is a function of the graph. A search starts at the classes
+ * depth-first in an order the pattern alone decides ({@code View}), so the list of matches is a
+ * function of the graph and the pattern. A search starts at the classes
  * holding a node of the root head's class where the head names it, and allocates per match, not
  * per class visited. A pattern node whose head has a {@link Pattern.Head#key} reads the class's
  * table ({@code EClass.Table}): the nodes sorted by head, insertion order kept within a head,
@@ -39,16 +40,22 @@ import org.jspecify.annotations.Nullable;
  * smaller class; a head with neither walks every node. The candidates come in insertion order
  * either way, so the matches are the ones a walk of every node would find, in its order.
  *
- * <p>One of egg's compiled matcher's devices is kept. A nested pattern node whose variables are
+ * <p>Two of egg's compiled matcher's devices are kept. A nested pattern node whose variables are
  * all bound when it is reached, and that is not a leaf, may be looked up instead of walked: the
  * node it names is built from the bindings and found through the hashcons (egg's {@code Lookup}),
  * and must be in the child's class. The lookup finds a node {@link EGraph#retainNodes} dropped,
  * as egg's memo finds it, so it is always used where the child's class has pruned, the one
  * place a walk of the class could miss a node; elsewhere it gives the matches the walk gives,
  * and is used only where the head's run in the child's class is longer than
- * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. egg's other order, a node's variables bound before its nested nodes, is not kept: with
- * substitutions that are bound by allocation, it binds for every candidate a nested node then
- * rejects, and costs more than it saves (#74).
+ * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. And a
+ * node's nested children are matched in an order that follows egg's compiler, the one with more
+ * variables first and the smaller among equals, so that the ones after it are ground, and looked
+ * up, or narrower; egg counts only the variables not yet bound where it reaches a node, this
+ * counts all of a child's, which differs only for a variable an ancestor or an earlier sibling
+ * binds. A node whose nested children tie keeps its written order, so most patterns match as
+ * written. egg's third order, a node's variables bound before its
+ * nested nodes, is not kept: with substitutions that are bound by allocation, it binds for every
+ * candidate a nested node then rejects, and costs more than it saves (#74).
  */
 public final class Matcher {
 
@@ -350,22 +357,100 @@ public final class Matcher {
   private static final class Walk<L extends Language<L>, D extends @Nullable Object> {
     private final EGraph<L, D> graph;
     private final List<List<Subst>> free = new ArrayList<>();
-    // The graph's ordinal of each pattern head's key met in this search, by the head object: a
-    // pattern has a handful of heads, each asked about once per class it is tried in.
-    private final Map<Pattern.Head<L>, Integer> ordinals = new IdentityHashMap<>();
+    // Each pattern node met in this search, compiled once ({@link View}), by the node object.
+    private final Map<Pattern.Node<L>, View<L>> views = new IdentityHashMap<>();
 
     Walk(EGraph<L, D> graph) {
       this.graph = graph;
     }
 
-    /** The graph's ordinal of the head's key, or -1 if no node has that head. */
-    private int ordinalOf(Pattern.Head<L> head, Object key) {
-      Integer ordinal = ordinals.get(head);
-      if (ordinal == null) {
-        ordinal = graph.headOrdinalOf(key);
-        ordinals.put(head, ordinal);
+    /**
+     * A pattern node as the walk reads it: its children as an array, which the hot loops index
+     * without a {@code List} call per candidate; its head's key and the graph's ordinal for it;
+     * and the order its children are matched in. Made once per search per node.
+     *
+     * <p>The order is the written one, except that the nested children are matched the one with
+     * more variables first and, among equals, the smaller first, as egg's compiler orders a
+     * pattern's nodes, except that egg counts the variables not yet bound and this counts all of
+     * a child's: a nested node that binds more variables first makes the ones after it ground,
+     * to be looked up, or narrower. So {@code (+ (* (field year ?d) 12) (field month ?d))}
+     * matches the field first and the product, then ground, is looked up; a node whose nested
+     * children tie, {@code (& (-> ?a ?b) (-> (~ ?a) ?c))}, keeps its written order. A variable
+     * child keeps its place: binding it ahead of a nested node costs a binding for every
+     * candidate the nested node rejects. The order depends on the pattern alone, so the matches
+     * stay a function of the graph and the pattern.
+     */
+    private static final class View<L extends Language<L>> {
+      final Pattern.Head<L> head;
+      final Pattern<L>[] children;
+      final int arity;
+      final @Nullable Object key;
+      final int[] order;
+      // The graph's ordinal of the key, -1 if no node has that head; -2 until asked.
+      int ordinal = -2;
+
+      @SuppressWarnings("unchecked")
+      View(Pattern.Node<L> node) {
+        this.head = node.head();
+        this.children = node.children().toArray((Pattern<L>[]) new Pattern<?>[0]);
+        this.arity = children.length;
+        this.key = head.key().orElse(null);
+        this.order = new int[arity];
+        List<Integer> nested = new ArrayList<>();
+        for (int i = 0; i < arity; i++) {
+          order[i] = i;
+          if (children[i] instanceof Pattern.Node) {
+            nested.add(i);
+          }
+        }
+        if (nested.size() > 1) {
+          int[] variables = new int[arity];
+          int[] sizes = new int[arity];
+          for (int i : nested) {
+            variables[i] = children[i].subtermVariables().size();
+            sizes[i] = size(children[i]);
+          }
+          List<Integer> sorted = new ArrayList<>(nested);
+          sorted.sort((a, b) -> {
+            int byVariables = Integer.compare(variables[b], variables[a]);
+            return byVariables != 0 ? byVariables : Integer.compare(sizes[a], sizes[b]);
+          });
+          for (int k = 0; k < nested.size(); k++) {
+            order[nested.get(k)] = sorted.get(k);
+          }
+        }
       }
-      return ordinal;
+
+      /** The number of nodes and variables in the pattern. */
+      private static <L extends Language<L>> int size(Pattern<L> pattern) {
+        return switch (pattern) {
+          case Pattern.Var<L> v -> 1;
+          case Pattern.Node<L>(var head, var children) -> {
+            int n = 1;
+            for (Pattern<L> child : children) {
+              n += size(child);
+            }
+            yield n;
+          }
+        };
+      }
+    }
+
+    private View<L> viewOf(Pattern.Node<L> node) {
+      View<L> view = views.get(node);
+      if (view == null) {
+        view = new View<>(node);
+        views.put(node, view);
+      }
+      return view;
+    }
+
+    /** The graph's ordinal of the view's key, or -1 if no node has that head. */
+    private int ordinalOf(View<L> view) {
+      if (view.ordinal == -2) {
+        view.ordinal = graph.headOrdinalOf(view.key);
+      }
+      return view.ordinal;
     }
 
     /**
@@ -456,10 +541,12 @@ public final class Matcher {
             out.add(subst);
           }
         }
-        case Pattern.Node<L>(var head, var children) -> {
+        case Pattern.Node<L> patternNode -> {
           Set<Subst> seen = null;
           EClass<L, D> eclass = graph.classOf(root);
-          int arity = children.size();
+          View<L> view = viewOf(patternNode);
+          Pattern.Head<L> head = view.head;
+          int arity = view.arity;
           // The candidates: for a head with a key, the run of its ordinal in the class's table,
           // whose heads need no test; for a head that names its node class, the positions of
           // that class's nodes (or every node of a small class); for any other head, every node.
@@ -469,9 +556,8 @@ public final class Matcher {
           List<L> nodes = null;
           IntArray positions = null;
           int candidates;
-          Optional<Object> key = head.key();
-          if (key.isPresent()) {
-            int headId = ordinalOf(head, key.get());
+          if (view.key != null) {
+            int headId = ordinalOf(view);
             if (headId < 0) {
               return;
             }
@@ -494,8 +580,7 @@ public final class Matcher {
           }
           // egg's Lookup where it pays: a long run of the head, for a ground nested node (in a
           // class that has pruned, matchChildren has looked it up before coming here).
-          if (nested && candidates > LOOKUP_FROM && !children.isEmpty()
-              && isGround(pattern, subst)) {
+          if (nested && candidates > LOOKUP_FROM && arity > 0 && isGround(pattern, subst)) {
             if (lookUp(pattern, subst) == root) {
               out.add(subst);
             }
@@ -527,7 +612,7 @@ public final class Matcher {
               start = 0;
             }
             int before = out.size();
-            matchChildren(children, 0, kids, start, headBound, out, distinct);
+            matchChildren(view, view.order, 0, kids, start, headBound, out, distinct);
             int added = out.size() - before;
             if (!distinct && (added > 1 || (added > 0 && before > 0))) {
               if (seen == null) {
@@ -551,29 +636,31 @@ public final class Matcher {
     }
 
     /**
-     * Matches a candidate node's children, {@code kids} from {@code start} on, from the
-     * {@code i}th on against the child patterns under {@code subst}, appending each complete
-     * substitution to {@code out}: a variable child binds or agrees in place; a node child that
-     * is ground is looked up where that alone gives egg's answer (a child class that has pruned)
-     * and otherwise matched in the child's class, where a long run is looked up too
-     * ({@link #matchIn}); each of its substitutions continues to the next child.
+     * Matches a candidate node's children, {@code kids} from {@code start} on, in the
+     * {@code order} given from its {@code k}th entry on, against the child patterns of the view
+     * under {@code subst}, appending each complete substitution to {@code out}: a variable child
+     * binds or agrees in place; a node child that is ground is looked up where that alone gives
+     * egg's answer (a child class that has pruned) and otherwise matched in the child's class,
+     * where a long run is looked up too ({@link #matchIn}); each of its substitutions continues
+     * to the next child in the order.
      */
-    void matchChildren(List<Pattern<L>> children, int i, int[] kids, int start, Subst subst,
+    void matchChildren(View<L> view, int[] order, int k, int[] kids, int start, Subst subst,
         List<Subst> out, boolean distinct) {
-      if (i == children.size()) {
+      if (k == order.length) {
         out.add(subst);
         return;
       }
+      int i = order[k];
       int child = kids[start + i];
-      switch (children.get(i)) {
+      switch (view.children[i]) {
         case Pattern.Var<L>(var name) -> {
           int bound = subst.idOrUnbound(name);
           int root = graph.find(child);
           if (bound == Subst.UNBOUND) {
-            matchChildren(children, i + 1, kids, start, subst.bindNew(name, root), out,
+            matchChildren(view, order, k + 1, kids, start, subst.bindNew(name, root), out,
                 distinct);
           } else if (graph.find(bound) == root) {
-            matchChildren(children, i + 1, kids, start, subst, out, distinct);
+            matchChildren(view, order, k + 1, kids, start, subst, out, distinct);
           }
         }
         case Pattern.Node<L> nested -> {
@@ -584,7 +671,7 @@ public final class Matcher {
           if (graph.classOf(childRoot).hasPruned() && !nested.children().isEmpty()
               && isGround(nested, subst)) {
             if (lookUp(nested, subst) == childRoot) {
-              matchChildren(children, i + 1, kids, start, subst, out, distinct);
+              matchChildren(view, order, k + 1, kids, start, subst, out, distinct);
             }
             return;
           }
@@ -592,8 +679,8 @@ public final class Matcher {
           // the children after it fill lists of their own, and returned once read.
           List<Subst> partial = free.isEmpty() ? new ArrayList<>() : free.remove(free.size() - 1);
           matchIn(nested, child, subst, Integer.MAX_VALUE, partial, distinct, true);
-          for (int k = 0; k < partial.size(); k++) {
-            matchChildren(children, i + 1, kids, start, partial.get(k), out, distinct);
+          for (int j = 0; j < partial.size(); j++) {
+            matchChildren(view, order, k + 1, kids, start, partial.get(j), out, distinct);
           }
           partial.clear();
           free.add(partial);

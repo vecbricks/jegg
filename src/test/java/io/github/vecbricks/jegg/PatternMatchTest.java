@@ -373,6 +373,31 @@ class PatternMatchTest {
   }
 
   @Test
+  void aKeepPredicateThatThrowsLeavesTheClassAsItWas() {
+    // The predicate is the caller's: it is asked about every node before the class changes, so
+    // a throw part-way leaves the nodes, their head ordinals and the table as they were. It
+    // drops the first sum, keeps the second, which would move down, and throws on the variable.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int ab = g.add(new Toy.Add(IntList.of(a, b)));
+    Toy ba = new Toy.Add(IntList.of(b, a));
+    g.merge(ab, g.add(ba));
+    g.merge(ab, g.add(new Toy.Var("e")));
+    g.rebuild();
+    Pattern<Toy> sum = Pattern.of(new Toy.Add(IntList.EMPTY), Pattern.var("x"), Pattern.var("y"));
+    List<Matcher.Match> before = Matcher.search(g, sum);
+    assertThrows(IllegalStateException.class, () -> g.retainNodes(ab, node -> {
+      if (node instanceof Toy.Var) {
+        throw new IllegalStateException("the caller's predicate failed");
+      }
+      return node.equals(ba);
+    }));
+    g.checkInvariants();
+    assertEquals(before, Matcher.search(g, sum));
+  }
+
+  @Test
   void aPrototypeWhoseHeadIsACheaperKeyNamesNoTypeAndStillMatches() {
     // A language whose head() is a string shared by two node classes: the head built from a
     // prototype must not start at the prototype's class alone, or the other class's nodes would

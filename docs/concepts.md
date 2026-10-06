@@ -78,13 +78,16 @@ is complete; a nested pattern node
 whose variables are all bound by the time it is reached is looked up in the
 hashcons, as egg's compiled matcher looks it up, where the child's class has
 pruned nodes (which only the hashcons still knows) or where its run of the head
-is long. The order is fixed, which is part of the determinism jegg promises. A `Rewrite` is a name, a left-hand `Searcher` (a pattern, or a
-`MultiPattern`: clauses `?var = pattern` joined on shared variables, egg's
-multi-pattern), a right-hand `Applier` (a pattern to instantiate, a
-multi-pattern's clauses, or a function of the graph and the substitution:
+is long; a node's nested children are matched the one with more free variables
+first and the smaller among equals, after egg's compiler, so the
+later ones are ground or narrower. The order is fixed by the graph and the pattern,
+which is part of the determinism jegg promises. A `Rewrite` is a name, a
+left-hand `Searcher` (a pattern, or a `MultiPattern`: clauses `?var = pattern`
+joined on shared variables, egg's multi-pattern), a right-hand `Applier` (a
+pattern to instantiate, a multi-pattern's clauses, or a function of the graph and the substitution:
 `Rewrite.dynamic`) and a `Condition` read at apply time.
 (Paper, section 2.2; egg's compiled matcher, `machine.rs`, is not ported as such, two of
-its devices are.)
+its devices are: the lookup and its order of the nested nodes.)
 
 ## The runner: equality saturation
 

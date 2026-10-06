@@ -20,8 +20,9 @@ import org.junit.jupiter.api.Test;
  * egg's lookup in the matcher: a nested pattern node that is ground when it is reached is looked
  * up in the hashcons rather than walked where the child's class has pruned, so it finds a node
  * {@code retainNodes} dropped, as egg's memo does, and where the run of its head in the class is
- * long. Neither changes the matches a walk finds, nor their order, on a graph without pruning: a
- * naive matcher that walks every node, child by child from the left, is the oracle for that.
+ * long. Neither changes the matches a walk finds on a graph without pruning, nor their order
+ * except where a node has two nested children, which are matched smallest run first: a naive
+ * matcher that walks every node, child by child from the left, is the oracle for that.
  */
 class GroundLookupTest {
 
@@ -127,13 +128,38 @@ class GroundLookupTest {
         Reference<EGraphPropertyTest.Op, ?> reference = new Reference<>(g);
         for (Pattern<EGraphPropertyTest.Op> pattern : PATTERNS) {
           List<Matcher.Match> found = Matcher.search(g, pattern);
-          assertEquals(reference.search(pattern), found,
-              () -> "seed " + which + ", " + pattern);
+          List<Matcher.Match> walked = reference.search(pattern);
+          if (reorders(pattern)) {
+            // A node with two nested children matches them smallest run first, so within a
+            // class the matches may come in another order than the walk's: the same set.
+            assertEquals(walked.size(), found.size(), () -> "seed " + which + ", " + pattern);
+            assertEquals(new java.util.HashSet<>(walked), new java.util.HashSet<>(found),
+                () -> "seed " + which + ", " + pattern);
+          } else {
+            assertEquals(walked, found, () -> "seed " + which + ", " + pattern);
+          }
           matches += found.size();
         }
       }
     }
     assertTrue(matches > 20_000, matches + " matches");
+  }
+
+  /** Whether a pattern node has two or more nested children, which the matcher may reorder. */
+  private static boolean reorders(Pattern<?> pattern) {
+    if (pattern instanceof Pattern.Node<?> node) {
+      int nested = 0;
+      for (Pattern<?> child : node.children()) {
+        if (child instanceof Pattern.Node) {
+          nested++;
+        }
+        if (reorders(child)) {
+          return true;
+        }
+      }
+      return nested >= 2;
+    }
+    return false;
   }
 
   @Test
@@ -157,7 +183,8 @@ class GroundLookupTest {
     // class, so the pattern matches, as egg's would; a walk of the class's nodes finds no sum.
     assertEquals(List.of(new Matcher.Match(prod, Subst.EMPTY.bind("x", a))),
         Matcher.search(g, pattern));
-    assertTrue(new Reference<>(g).search(pattern).isEmpty(), "a walk does not see the dropped node");
+    assertTrue(new Reference<>(g).search(pattern).isEmpty(),
+        "a walk does not see the dropped node");
     // The same subterm as a whole pattern is not ground at its root: the root is walked.
     assertTrue(Matcher.search(g, onePlusTwo).isEmpty());
     // A ground subterm the graph never had matches nothing.
