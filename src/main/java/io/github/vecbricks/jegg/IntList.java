@@ -73,6 +73,13 @@ public final class IntList {
   }
 
   /**
+   * The elements themselves, not a copy: for the matcher, which reads them and never writes.
+   */
+  int[] raw() {
+    return elements;
+  }
+
+  /**
    * The element at a position.
    *
    * @param index a position from 0 up to {@link #size} exclusive

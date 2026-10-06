@@ -252,6 +252,12 @@ class GroundLookupTest {
     int same = g.add(new Toy.Add(IntList.of(checked, checked)));
     int mixed = g.add(new Toy.Add(IntList.of(checked, unchecked)));
     g.rebuild();
+    // The checked division's class has pruned (a Num was merged in and the Div kept), so the
+    // ground second child is looked up, through the payload the first bound.
+    g.merge(checked, g.add(new Toy.Num(7)));
+    g.rebuild();
+    g.retainNodes(g.find(checked), node -> node instanceof Toy.Div);
+    g.rebuild();
     Pattern<Toy> pattern = Pattern.of(new Toy.Add(IntList.EMPTY),
         Pattern.node(anyDiv, Pattern.var("x"), Pattern.var("y")),
         Pattern.node(anyDiv, Pattern.var("x"), Pattern.var("y")));
@@ -260,5 +266,25 @@ class GroundLookupTest {
         Subst.EMPTY.bind("x", a).bind("y", b).bindPayload("c", true))), found);
     assertTrue(mixed != same);
     assertEquals(new Reference<>(g).search(pattern), found);
+  }
+
+  @Test
+  void aGroundClauseOfAMultiPatternAbsentFromTheGraphMatchesNothing() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    g.add(new Toy.Add(IntList.of(a, b)));
+    g.rebuild();
+    // ?s = (+ ?x ?y) binds ?x and ?y; ?p = (* ?x ?y) is then ground and looked up: no product
+    // is in the graph, so the join yields nothing; added, it yields the one match.
+    MultiPattern<Toy> multi = MultiPattern.of(
+        MultiPattern.clause("s", Pattern.of(new Toy.Add(IntList.EMPTY), Pattern.var("x"),
+            Pattern.var("y"))),
+        MultiPattern.clause("p", Pattern.of(new Toy.Mul(IntList.EMPTY), Pattern.var("x"),
+            Pattern.var("y"))));
+    assertTrue(Matcher.search(g, multi, Integer.MAX_VALUE).isEmpty());
+    g.add(new Toy.Mul(IntList.of(a, b)));
+    g.rebuild();
+    assertEquals(1, Matcher.search(g, multi, Integer.MAX_VALUE).size());
   }
 }

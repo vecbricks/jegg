@@ -71,9 +71,10 @@ to values.
 `Matcher.search(graph, pattern)` finds every match in the graph, class by class
 in id order, nodes in insertion order; where the root head names its node class
 (`Pattern.Head.type`, which jegg's own heads do), only the classes holding such
-a node are visited; inside a class of eight nodes or more, a pattern node
-visits only the nodes with its head (`Pattern.Head.key`) or of its node class,
-through an index the class keeps in insertion order; a nested pattern node
+a node are visited; a pattern node whose head has a key (`Pattern.Head.key`)
+reads the class's table, its nodes sorted by head with their children laid
+flat, so it touches only the run of its head and no node object until a match
+is complete; a nested pattern node
 whose variables are all bound by the time it is reached is looked up in the
 hashcons, as egg's compiled matcher looks it up, where the child's class has
 pruned nodes (which only the hashcons still knows) or where its run of the head

@@ -9,6 +9,7 @@
 
 package io.github.vecbricks.jegg;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -20,9 +21,10 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
- * The indexes a class keeps for the matcher: they name the nodes a walk would find, in its
- * order; they are dropped by every change of the node list; and the matcher reads them in a
- * class of {@link Matcher#INDEX_FROM} nodes or more and walks a smaller one, to the same matches.
+ * The views a class keeps of its node list for the matcher: the table, the nodes sorted by head
+ * ordinal with their children laid flat, and the type index. Each names the nodes a walk would
+ * find, in its order; each is dropped by every change of the node list; and the matcher finds
+ * the same matches through them as by a walk.
  */
 class ClassIndexTest {
 
@@ -39,8 +41,7 @@ class ClassIndexTest {
 
   /**
    * A graph with one big class: leaves a, b and the numbers 0 to n-1, and a class holding, in
-   * this order, (a+b), (b+a), a*b, b*a, then (a+k) and (k*a) for each k, and 0. Big enough that
-   * the matcher reads it through the indexes.
+   * this order, (a+b), (b+a), a*b, b*a, then (a+k) and (k*a) for each k, and 0.
    */
   private static EGraph<Toy, Void> bigClass(int n) {
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
@@ -62,7 +63,7 @@ class ClassIndexTest {
   }
 
   /** The positions a walk of the class would stop at for this head, in the walk's order. */
-  private static List<Integer> walk(EClass<Toy, Void> eclass, Pattern.Head<Toy> head) {
+  private static int[] walk(EClass<Toy, Void> eclass, Pattern.Head<Toy> head) {
     List<Integer> out = new ArrayList<>();
     List<Toy> nodes = eclass.nodes();
     for (int i = 0; i < nodes.size(); i++) {
@@ -70,7 +71,7 @@ class ClassIndexTest {
         out.add(i);
       }
     }
-    return out;
+    return out.stream().mapToInt(Integer::intValue).toArray();
   }
 
   private static List<Integer> list(IntArray positions) {
@@ -81,23 +82,40 @@ class ClassIndexTest {
     return out;
   }
 
+  private static int[] positions(EGraph<Toy, Void> g, EClass<Toy, Void> c, Pattern.Head<Toy> head) {
+    return c.positionsWithHead(g.headOrdinalOf(head.key().get()));
+  }
+
   @Test
-  void theHeadIndexNamesTheNodesAWalkFindsInItsOrder() {
+  void theTableNamesTheNodesAWalkFindsInItsOrder() {
     EGraph<Toy, Void> g = bigClass(10);
     EClass<Toy, Void> c = g.classOf(g.find(g.lookup(new Toy.Num(0)).getAsInt()));
-    assertTrue(c.nodes().size() >= Matcher.INDEX_FROM, "the class must be big enough to index");
     for (Toy prototype : List.of(new Toy.Add(IntList.EMPTY), new Toy.Mul(IntList.EMPTY),
         new Toy.Num(0), new Toy.Num(7))) {
       Pattern.Head<Toy> head = Pattern.head(prototype);
-      IntArray positions = c.positionsWithHead(head.key().get());
-      // Num(7) is in its own class, not this one: a walk finds nothing and the index has no entry.
-      assertEquals(walk(c, head), positions == null ? List.of() : list(positions),
-          head.toString());
+      // Num(7) is in its own class, not this one: a walk finds nothing and the run is empty.
+      assertArrayEquals(walk(c, head), positions(g, c, head), head.toString());
     }
-    // A head no node has: no positions, not an empty array.
-    assertNull(c.positionsWithHead(new Toy.Num(99).head()));
+    // A head no node of the graph ever had has no ordinal, and an empty run.
+    assertEquals(-1, g.headOrdinalOf(new Toy.Num(99).head()));
+    assertEquals(0, c.positionsWithHead(-1).length);
+    // The table holds every node once, each with its children, in head order.
+    EClass.Table t = c.table();
+    assertEquals(c.nodes().size(), t.heads.length);
+    for (int e = 0; e < t.heads.length; e++) {
+      Toy node = c.nodes().get(t.positions[e]);
+      assertEquals(g.headOrdinalOf(node.head()), t.heads[e]);
+      assertEquals(node.children().size(), t.arity(e));
+      for (int j = 0; j < t.arity(e); j++) {
+        assertEquals(node.children().get(j), t.kids[t.starts[e] + j]);
+      }
+      if (e > 0) {
+        assertTrue(t.heads[e - 1] < t.heads[e]
+            || (t.heads[e - 1] == t.heads[e] && t.positions[e - 1] < t.positions[e]));
+      }
+    }
+    // The type index: every Add and Mul node, in order, and the one Num; none for Div.
     assertNull(c.positionsOfType(Toy.Div.class));
-    // The type index: every Add and Mul node, in order, and the one Num.
     List<Integer> adds = new ArrayList<>();
     List<Integer> nums = new ArrayList<>();
     for (int i = 0; i < c.nodes().size(); i++) {
@@ -113,7 +131,7 @@ class ClassIndexTest {
   }
 
   @Test
-  void theMatcherFindsTheSameMatchesThroughTheIndexAsByAWalk() {
+  void theMatcherFindsTheSameMatchesThroughTheTableAsByAWalk() {
     EGraph<Toy, Void> g = bigClass(10);
     int a = g.find(g.lookup(new Toy.Var("a")).getAsInt());
     int b = g.find(g.lookup(new Toy.Var("b")).getAsInt());
@@ -164,7 +182,7 @@ class ClassIndexTest {
   }
 
   @Test
-  void everyChangeOfTheNodeListDropsTheIndexes() {
+  void everyChangeOfTheNodeListDropsTheViews() {
     EGraph<Toy, Void> g = bigClass(10);
     int big = g.find(g.lookup(new Toy.Num(0)).getAsInt());
     int a = g.find(g.lookup(new Toy.Var("a")).getAsInt());
@@ -177,7 +195,7 @@ class ClassIndexTest {
     g.merge(big, extra);
     g.rebuild();
     c = g.classOf(big);
-    assertTrue(!c.hasIndex() || list(c.positionsWithHead(addHead.key().get())).size() == 13);
+    assertTrue(!c.hasIndex() || positions(g, c, addHead).length == 13);
     assertEquals(13, Matcher.search(g, add(X, Y)).size());
     g.checkInvariants();
     // Dropped by a merge of a child class, which rebuild canonicalises the nodes for.
@@ -186,21 +204,22 @@ class ClassIndexTest {
     g.merge(a, b);
     g.rebuild();
     g.checkInvariants();
-    // (a+b), (b+a) and (a+a) are one node now, so one match fewer per duplicate dropped.
+    // (a+b), (b+a) and (a+a) are one node now, so one match fewer per duplicate dropped, and
+    // the head ordinals stay beside their nodes through the deduplication.
     List<Matcher.Match> sums = Matcher.search(g, add(X, Y));
-    assertEquals(walk(g.classOf(big), addHead).size(), sums.size());
+    assertEquals(walk(g.classOf(big), addHead).length, sums.size());
     g.checkInvariants();
-    // Dropped by pruning.
+    // Dropped by pruning, which keeps the ordinals aligned too.
     assertTrue(g.classOf(big).hasIndex());
     int dropped = g.retainNodes(big, node -> !(node instanceof Toy.Mul));
     assertTrue(dropped > 0);
     assertTrue(Matcher.search(g, mul(X, Y)).isEmpty());
-    assertEquals(walk(g.classOf(big), addHead).size(), Matcher.search(g, add(X, Y)).size());
+    assertEquals(walk(g.classOf(big), addHead).length, Matcher.search(g, add(X, Y)).size());
     g.checkInvariants();
   }
 
   @Test
-  void aSmallClassIsWalkedAndGivesTheSameMatches() {
+  void aSmallClassHasATableTooAndGivesTheSameMatches() {
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int a = g.add(new Toy.Var("a"));
     int b = g.add(new Toy.Var("b"));
@@ -211,47 +230,123 @@ class ClassIndexTest {
     assertTrue(c.nodes().size() < Matcher.INDEX_FROM);
     assertEquals(List.of(new Matcher.Match(g.find(ab), Subst.EMPTY.bind("x", a).bind("y", b))),
         Matcher.search(g, add(X, Y)));
-    assertTrue(!c.hasIndex(), "a small class is walked, not indexed");
+    assertTrue(c.hasIndex(), "a keyed head reads the table of a class of any size");
+    // A payload-binding head walks a class this small rather than building its type index.
+    Pattern<Toy> anyNum = Pattern.node(Pattern.binding(Toy.Num.class, "n", Toy.Num::value,
+        (n, kids) -> new Toy.Num((Long) n)));
+    assertTrue(Matcher.search(g, anyNum).isEmpty());
     g.checkInvariants();
   }
 
   @Test
-  void theInvariantCheckRefusesAnIndexThatDisagreesWithTheNodes() {
+  void theInvariantCheckRefusesAViewThatDisagreesWithTheNodes() {
     EGraph<Toy, Void> g = bigClass(10);
     int big = g.find(g.lookup(new Toy.Num(0)).getAsInt());
+    int a = g.find(g.lookup(new Toy.Var("a")).getAsInt());
+    int b = g.find(g.lookup(new Toy.Var("b")).getAsInt());
     EClass<Toy, Void> c = g.classOf(big);
     Matcher.search(g, add(X, Y));
     Matcher.search(g, Pattern.node(Pattern.binding(Toy.Num.class, "n", Toy.Num::value,
         (n, kids) -> new Toy.Num((Long) n))));
     assertTrue(c.hasIndex());
     g.checkInvariants();
-    // The live list changed behind the index's back: a node of another head at an indexed
-    // position, then a node the index does not list.
+    // The live list changed behind the views' back: a node of another head at a position, a
+    // node of the same head with other children, then a node the views do not list.
     List<Toy> live = c.readNodes();
     Toy first = live.get(0);
     live.set(0, new Toy.Div(true, IntList.of(big, big)));
-    assertThrows(IllegalStateException.class, c::checkIndexes);
+    assertThrows(IllegalStateException.class, g::checkInvariants);
+    live.set(0, new Toy.Add(IntList.of(b, a)));
+    assertThrows(IllegalStateException.class, g::checkInvariants);
     live.set(0, first);
-    c.checkIndexes();
-    live.add(new Toy.Var("z"));
-    assertThrows(IllegalStateException.class, c::checkIndexes);
-    live.remove(live.size() - 1);
-    c.checkIndexes();
     g.checkInvariants();
-    // The type index alone, built by a payload-binding head: the same two disagreements.
-    EGraph<Toy, Void> h = bigClass(10);
-    EClass<Toy, Void> d = h.classOf(h.find(h.lookup(new Toy.Num(0)).getAsInt()));
-    Matcher.search(h, Pattern.node(Pattern.binding(Toy.Num.class, "n", Toy.Num::value,
-        (n, kids) -> new Toy.Num((Long) n))));
-    assertTrue(d.hasIndex());
-    List<Toy> nodes = d.readNodes();
-    Toy head = nodes.get(0);
-    nodes.set(0, new Toy.Div(true, IntList.of(d.id(), d.id())));
-    assertThrows(IllegalStateException.class, d::checkIndexes);
-    nodes.set(0, head);
-    nodes.add(new Toy.Var("z"));
-    assertThrows(IllegalStateException.class, d::checkIndexes);
-    nodes.remove(nodes.size() - 1);
-    h.checkInvariants();
+    live.add(new Toy.Var("z"));
+    assertThrows(IllegalStateException.class, g::checkInvariants);
+    live.remove(live.size() - 1);
+    g.checkInvariants();
+    // The class's own check, asked directly, names each disagreement: a head ordinal that is
+    // not the node's, a node of the same head with another arity, one with other children, and
+    // a node the ordinals do not cover.
+    java.util.function.ToIntFunction<Toy> ordinal = node -> g.headOrdinalOf(node.head());
+    c.checkIndexes(ordinal);
+    assertThrows(IllegalStateException.class, () -> c.checkIndexes(node -> 99));
+    live.set(0, new Toy.Add(IntList.of(a)));
+    assertThrows(IllegalStateException.class, () -> c.checkIndexes(ordinal));
+    live.set(0, new Toy.Add(IntList.of(b, a)));
+    assertThrows(IllegalStateException.class, () -> c.checkIndexes(ordinal));
+    live.set(0, first);
+    live.add(new Toy.Var("z"));
+    assertThrows(IllegalStateException.class, () -> c.checkIndexes(ordinal));
+    live.remove(live.size() - 1);
+    c.checkIndexes(ordinal);
+    // A payload-binding head over a class of 8 nodes or more that holds no node of its type.
+    assertTrue(Matcher.search(g, Pattern.node(Pattern.binding(Toy.Div.class, "f",
+        Toy.Div::checked, (f, kids) -> new Toy.Div((Boolean) f, kids)), X, Y)).isEmpty());
+  }
+
+  /** Two node classes sharing one head key, as a language with a cheaper head() may have. */
+  sealed interface Shared extends Language<Shared> permits Shared.Plus, Shared.Minus {
+    record Plus(IntList children) implements Shared {
+      @Override
+      public Shared withChildren(IntList c) {
+        return new Plus(c);
+      }
+
+      @Override
+      public Object head() {
+        return "+";
+      }
+    }
+
+    record Minus(IntList children) implements Shared {
+      @Override
+      public Shared withChildren(IntList c) {
+        return new Minus(c);
+      }
+
+      @Override
+      public Object head() {
+        return "+";
+      }
+    }
+  }
+
+  @Test
+  void theTypeIndexIsCheckedWhereTheHeadCannotTellTheClass() {
+    // Plus and Minus share the head "+", so one ordinal covers both node classes and only the
+    // type index tells them apart; a Minus put where a Plus was passes the head check and fails
+    // the type check.
+    EGraph<Shared, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Shared.Plus(IntList.EMPTY));
+    int c = g.add(new Shared.Plus(IntList.of(a)));
+    int leaf = a;
+    for (int k = 0; k < 9; k++) {
+      // Distinct leaves, so the nine Minus nodes stay nine nodes after the rebuild.
+      leaf = g.add(new Shared.Plus(IntList.of(leaf, leaf)));
+      g.merge(c, g.add(new Shared.Minus(IntList.of(a, leaf))));
+      c = g.find(c);
+    }
+    g.rebuild();
+    g.checkInvariants();
+    EClass<Shared, Void> big = g.classOf(c);
+    assertTrue(big.nodes().size() >= Matcher.INDEX_FROM);
+    Pattern.Head<Shared> anyMinus = Pattern.binding(Shared.Minus.class, "m", n -> true,
+        (m, kids) -> new Shared.Minus(kids));
+    assertEquals(9, Matcher.search(g, Pattern.node(anyMinus, Pattern.var("x"),
+        Pattern.var("y"))).size());
+    java.util.function.ToIntFunction<Shared> ordinal = node -> g.headOrdinalOf(node.head());
+    big.checkIndexes(ordinal);
+    List<Shared> live = big.readNodes();
+    int plus = -1;
+    for (int i = 0; i < live.size(); i++) {
+      if (live.get(i) instanceof Shared.Plus) {
+        plus = i;
+      }
+    }
+    Shared was = live.get(plus);
+    live.set(plus, new Shared.Minus(was.children()));
+    assertThrows(IllegalStateException.class, () -> big.checkIndexes(ordinal));
+    live.set(plus, was);
+    big.checkIndexes(ordinal);
   }
 }
