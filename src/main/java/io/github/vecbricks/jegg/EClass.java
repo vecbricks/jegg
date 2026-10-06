@@ -11,7 +11,9 @@ package io.github.vecbricks.jegg;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -107,6 +109,12 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
   private final int id;
   private final List<L> nodes = new ArrayList<>();
   private final List<Parent<L>> parents = new ArrayList<>();
+  // The matcher's two indexes into the node list, each built on first use and dropped when the
+  // list changes: the positions of the nodes with a head, and of the nodes of a node class, in
+  // insertion order, so a pattern node visits only the nodes that can match it, in the order it
+  // would have met them. Only the positions are ever iterated, so a map's own order is not read.
+  private @Nullable Map<Object, IntArray> byHead;
+  private @Nullable Map<Class<?>, IntArray> byType;
   private D data;
   // Whether retainNodes ever dropped a node of this class: then a parent entry naming this class
   // may be a dropped node, and repair tells by the node list, not by the entry's form.
@@ -182,14 +190,107 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
 
   void addNode(L node) {
     nodes.add(node);
+    dropIndexes();
   }
 
   void addParent(Parent<L> entry) {
     parents.add(entry);
   }
 
-  List<L> mutableNodes() {
+  /** The live node list, for a reader that will not change it. */
+  List<L> readNodes() {
     return nodes;
+  }
+
+  /** The live node list, for a writer: the indexes into it are dropped first. */
+  List<L> mutableNodes() {
+    dropIndexes();
+    return nodes;
+  }
+
+  /** Forgets the indexes; called by whatever changes the node list through a reader's view. */
+  void dropIndexes() {
+    byHead = null;
+    byType = null;
+  }
+
+  /**
+   * The positions in the node list of the nodes whose {@link Language#head} equals {@code key},
+   * in insertion order, or null if there are none. The index is built on the first call after a
+   * change of the list, over every node's head once.
+   */
+  @Nullable IntArray positionsWithHead(Object key) {
+    if (byHead == null) {
+      Map<Object, IntArray> index = new HashMap<>();
+      for (int i = 0; i < nodes.size(); i++) {
+        index.computeIfAbsent(nodes.get(i).head(), k -> new IntArray()).add(i);
+      }
+      byHead = index;
+    }
+    return byHead.get(key);
+  }
+
+  /**
+   * The positions in the node list of the nodes of class {@code type}, in insertion order, or
+   * null if there are none; built as {@link #positionsWithHead} is.
+   */
+  @Nullable IntArray positionsOfType(Class<?> type) {
+    if (byType == null) {
+      Map<Class<?>, IntArray> index = new HashMap<>();
+      for (int i = 0; i < nodes.size(); i++) {
+        index.computeIfAbsent(nodes.get(i).getClass(), k -> new IntArray()).add(i);
+      }
+      byType = index;
+    }
+    return byType.get(type);
+  }
+
+  /** Whether an index is built, for the invariant check. */
+  boolean hasIndex() {
+    return byHead != null || byType != null;
+  }
+
+  /**
+   * Checks that a built index agrees with the node list: every position names a node with that
+   * head or of that class, and every node is at some position of its head's or class's entry.
+   *
+   * @throws IllegalStateException naming the first disagreement
+   */
+  void checkIndexes() {
+    if (byHead != null) {
+      int listed = 0;
+      for (Map.Entry<Object, IntArray> e : byHead.entrySet()) {
+        IntArray positions = e.getValue();
+        for (int i = 0; i < positions.size(); i++) {
+          if (!nodes.get(positions.get(i)).head().equals(e.getKey())) {
+            throw new IllegalStateException("class " + id + ": the head index lists position "
+                + positions.get(i) + " under " + e.getKey());
+          }
+        }
+        listed += positions.size();
+      }
+      if (listed != nodes.size()) {
+        throw new IllegalStateException("class " + id + ": the head index lists " + listed
+            + " positions for " + nodes.size() + " nodes");
+      }
+    }
+    if (byType != null) {
+      int listed = 0;
+      for (Map.Entry<Class<?>, IntArray> e : byType.entrySet()) {
+        IntArray positions = e.getValue();
+        for (int i = 0; i < positions.size(); i++) {
+          if (nodes.get(positions.get(i)).getClass() != e.getKey()) {
+            throw new IllegalStateException("class " + id + ": the type index lists position "
+                + positions.get(i) + " under " + e.getKey().getSimpleName());
+          }
+        }
+        listed += positions.size();
+      }
+      if (listed != nodes.size()) {
+        throw new IllegalStateException("class " + id + ": the type index lists " + listed
+            + " positions for " + nodes.size() + " nodes");
+      }
+    }
   }
 
   List<Parent<L>> mutableParents() {

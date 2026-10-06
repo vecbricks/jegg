@@ -127,6 +127,20 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
     default Optional<Class<? extends L>> type() {
       return Optional.empty();
     }
+
+    /**
+     * The one head this head matches, when it matches by head alone: present only if
+     * {@link #match} returns its substitution unchanged for every node whose
+     * {@link Language#head} equals the key, and null for every other node. The matcher then finds
+     * a class's candidate nodes through the class's index of heads and asks {@code match}
+     * nothing. Empty, the default, means {@code match} is asked about each candidate; a head
+     * that binds a payload has no key, and a class of nodes ({@link #type}) at most.
+     *
+     * @return the head key, or empty if this head is not a plain head comparison
+     */
+    default Optional<Object> key() {
+      return Optional.empty();
+    }
   }
 
   /**
@@ -246,6 +260,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
     @SuppressWarnings("unchecked")
     Optional<Class<? extends L>> type = key.getClass() == prototype.getClass()
         ? Optional.of((Class<? extends L>) prototype.getClass()) : Optional.empty();
+    Optional<Object> exact = Optional.of(key);
     return new Head<>() {
       @Override
       public @Nullable Subst match(L node, Subst subst) {
@@ -255,6 +270,11 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
       @Override
       public Optional<Class<? extends L>> type() {
         return type;
+      }
+
+      @Override
+      public Optional<Object> key() {
+        return exact;
       }
 
       @Override
@@ -292,10 +312,11 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
    */
   static <L extends Language<L>, N extends L> Head<L> binding(Class<N> type, String variable,
       Function<N, ?> payloadOf, BiFunction<@Nullable Object, IntList, L> build) {
+    Optional<Class<? extends L>> named = Optional.of(type);
     return new Head<>() {
       @Override
       public Optional<Class<? extends L>> type() {
-        return Optional.of(type);
+        return named;
       }
 
       @Override
