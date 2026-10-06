@@ -145,7 +145,7 @@ class GroundLookupTest {
     assertTrue(matches > 20_000, matches + " matches");
   }
 
-  /** Whether some node of the pattern has two or more nested children, which the matcher may reorder. */
+  /** Whether a pattern node has two or more nested children, which the matcher may reorder. */
   private static boolean reorders(Pattern<?> pattern) {
     if (pattern instanceof Pattern.Node<?> node) {
       int nested = 0;
@@ -183,7 +183,8 @@ class GroundLookupTest {
     // class, so the pattern matches, as egg's would; a walk of the class's nodes finds no sum.
     assertEquals(List.of(new Matcher.Match(prod, Subst.EMPTY.bind("x", a))),
         Matcher.search(g, pattern));
-    assertTrue(new Reference<>(g).search(pattern).isEmpty(), "a walk does not see the dropped node");
+    assertTrue(new Reference<>(g).search(pattern).isEmpty(),
+        "a walk does not see the dropped node");
     // The same subterm as a whole pattern is not ground at its root: the root is walked.
     assertTrue(Matcher.search(g, onePlusTwo).isEmpty());
     // A ground subterm the graph never had matches nothing.

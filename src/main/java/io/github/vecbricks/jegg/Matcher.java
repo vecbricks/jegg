@@ -48,10 +48,12 @@ import org.jspecify.annotations.Nullable;
  * place a walk of the class could miss a node; elsewhere it gives the matches the walk gives,
  * and is used only where the head's run in the child's class is longer than
  * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. And a
- * node's nested children are matched in the order egg's compiler gives a pattern's nodes, the one
- * with more free variables first and the smaller among equals, so that the ones after it are
- * ground, and looked up, or narrower; a node whose nested children tie keeps its written order,
- * so most patterns match as written. egg's third order, a node's variables bound before its
+ * node's nested children are matched in an order that follows egg's compiler, the one with more
+ * variables first and the smaller among equals, so that the ones after it are ground, and looked
+ * up, or narrower; egg counts only the variables not yet bound where it reaches a node, this
+ * counts all of a child's, which differs only for a variable an ancestor or an earlier sibling
+ * binds. A node whose nested children tie keeps its written order, so most patterns match as
+ * written. egg's third order, a node's variables bound before its
  * nested nodes, is not kept: with substitutions that are bound by allocation, it binds for every
  * candidate a nested node then rejects, and costs more than it saves (#74).
  */
@@ -368,9 +370,10 @@ public final class Matcher {
      * and the order its children are matched in. Made once per search per node.
      *
      * <p>The order is the written one, except that the nested children are matched the one with
-     * more free variables first and, among equals, the smaller first, as egg's compiler orders a
-     * pattern's nodes: a nested node that binds more variables first makes the ones after it
-     * ground, to be looked up, or narrower. So {@code (+ (* (field year ?d) 12) (field month ?d))}
+     * more variables first and, among equals, the smaller first, as egg's compiler orders a
+     * pattern's nodes, except that egg counts the variables not yet bound and this counts all of
+     * a child's: a nested node that binds more variables first makes the ones after it ground,
+     * to be looked up, or narrower. So {@code (+ (* (field year ?d) 12) (field month ?d))}
      * matches the field first and the product, then ground, is looked up; a node whose nested
      * children tie, {@code (& (-> ?a ?b) (-> (~ ?a) ?c))}, keeps its written order. A variable
      * child keeps its place: binding it ahead of a nested node costs a binding for every
@@ -401,11 +404,16 @@ public final class Matcher {
           }
         }
         if (nested.size() > 1) {
+          int[] variables = new int[arity];
+          int[] sizes = new int[arity];
+          for (int i : nested) {
+            variables[i] = children[i].subtermVariables().size();
+            sizes[i] = size(children[i]);
+          }
           List<Integer> sorted = new ArrayList<>(nested);
           sorted.sort((a, b) -> {
-            int byFree = Integer.compare(children[b].subtermVariables().size(),
-                children[a].subtermVariables().size());
-            return byFree != 0 ? byFree : Integer.compare(size(children[a]), size(children[b]));
+            int byVariables = Integer.compare(variables[b], variables[a]);
+            return byVariables != 0 ? byVariables : Integer.compare(sizes[a], sizes[b]);
           });
           for (int k = 0; k < nested.size(); k++) {
             order[nested.get(k)] = sorted.get(k);

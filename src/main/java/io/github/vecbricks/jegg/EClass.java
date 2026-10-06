@@ -309,10 +309,16 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
    * {@code dropped}; returns how many were dropped.
    */
   int retainNodes(Predicate<L> keep, List<L> dropped) {
+    // The predicate is the caller's and may throw: ask it about every node before the class
+    // changes, so that a throw leaves the class as it was.
+    boolean[] accepted = new boolean[nodes.size()];
+    for (int i = 0; i < accepted.length; i++) {
+      accepted[i] = keep.test(nodes.get(i));
+    }
     int kept = 0;
-    for (int i = 0; i < nodes.size(); i++) {
+    for (int i = 0; i < accepted.length; i++) {
       L node = nodes.get(i);
-      if (keep.test(node)) {
+      if (accepted[i]) {
         if (kept != i) {
           nodes.set(kept, node);
           headIds.set(kept, headIds.get(i));
