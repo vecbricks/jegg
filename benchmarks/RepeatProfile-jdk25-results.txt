@@ -4,46 +4,46 @@ Where a saturation spends its time: lambda_function_repeat, deferred, under JFR
 
 OpenJDK 64-Bit Server VM 25.0.4.1+1-1-26.04.4-Ubuntu on Linux 7.0.0-34-generic
 AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M; pinned to cpus 0-3,12-15 (taskset), governor performance
-commit 75e3c05, 2026-10-05T13:22+02:00
-load average before 0.30
+commit cdab9c6, 2026-10-06T12:10+02:00
+load average before 0.22, after 0.36
 taskset -c 0-3,12-15 mvn -B -q test -Dtest='LambdaTest#lambdaFunctionRepeat' \
     -DargLine='-XX:+UnlockDiagnosticVMOptions -XX:+ShowHiddenFrames -XX:FlightRecorderOptions:stackdepth=256 \
                -XX:StartFlightRecording=filename=repeat.jfr,settings=profile'
 jfr print --json --events jdk.ExecutionSample repeat.jfr, the samples grouped by the jegg phase on the stack
 
-Not a benchmark: a profile of one run of the test (58 iterations, 32,636 nodes, 3 s), for the share
-prediction 5 of PLAN.md 6.1 asks about. JFR samples every 10-20 ms per thread, hence the count.
-Regenerated after #15 (rebuild in time proportional to the work) and #13 (unboxed ids); the previous
-file, from 2142e96, is the baseline #45 scores against: 9 s, matcher 26.5%, rebuild 26.1%, node
-equality 45.5% unattributed.
+Not a benchmark: a profile of one run of the test (58 iterations, 32,636 nodes, 1.6 s of samples), for
+the share prediction 5 of PLAN.md 6.1 asks about. JFR samples every 10-20 ms per thread, hence the
+count. Regenerated after #80 (the class index), #81 (the deduplication set), #82 (allocation per
+match) and #83 (egg's lookup); the previous file, from 75e3c05, read 3 s, matcher 81.2%, rebuild 6.9%.
 
-288 execution samples, by phase (a phase is named when one of its frames is on the stack):
-   81.2%  matcher (Matcher.search, matchIn)
-           top of stack: Matcher.matchIn 57.3%, Pattern$1.match 7.6%, Subst.indexOf 3.8%
-    9.0%  unattributed (the stack walk stops at a method-handle frame; see the reading below)
-           top of stack: HashMap.getNode 1.0%, DirectMethodHandle$Holder.invokeStatic 0.7%, EGraph.checkParentEntries 0.7%
-    6.9%  rebuild (repair, canonicalizeNodes)
-           top of stack: EGraph.repair 1.4%, EGraph.canonicalize 1.0%, EGraph.rebuild 0.7%
-    2.4%  apply (instantiate, add, merge)
-           top of stack: HashMap.getNode 1.0%, AbstractPipeline.evaluate 0.3%, Subst.indexOf 0.3%
-    0.3%  the test's goal check
-           top of stack: Subst.indexOf 0.3%
+135 execution samples, by phase (a phase is named when one of its frames is on the stack):
+   44.4%  matcher (Matcher.search, matchIn)
+           top of stack: Matcher$Walk.matchIn 25.2%, Matcher$Walk.matchChildren 12.6%, Matcher.collect 1.5%
+   22.2%  rebuild (repair, canonicalizeNodes, the sweep)
+           top of stack: EGraph.repair 6.7%, IntList.map 3.0%, HashMap.removeNode 3.0%
+   21.5%  unattributed (outer frames cut off at JFR's stack depth of 64)
+           top of stack: EGraph.checkParentEntries 2.2%, Runner.run 1.5%, Objects.hashCode 1.5%
+   11.1%  apply (instantiate, add, merge)
+           top of stack: Matcher.instantiate 2.2%, LambdaTest$2.make 1.5%, 0x000000003c176000.guard 0.7%
+    0.7%  the test's goal check
+           top of stack: Subst.nodeOf 0.7%
 
 The innermost jegg frame on the stack, over all samples:
-   63.9%  Matcher.matchIn
-    7.6%  Pattern$1.match
-    4.5%  Subst.indexOf
-    2.8%  EGraph.repair
-    2.4%  Matcher.search
-    1.7%  Language.head
-    1.7%  EGraph.checkParentEntries
-    1.4%  EGraph.canonicalize
+   25.2%  Matcher$Walk.matchIn
+   14.1%  Matcher$Walk.matchChildren
+   10.4%  EGraph.repair
+    4.4%  IntList.map
+    4.4%  EGraph.checkParentEntries
+    3.7%  EGraph.canonicalizeNodes
+    2.2%  UnionFind.find
+    2.2%  Subst.nodeOf
 
-Reading: the run is a third of what it was (3 s against 9 s), and the time that left was rebuild's:
-the node equality that was 45% of the samples (IntList.equals through records' method-handle equals,
-from repair's hashcons re-keying and list scans) is gone from the top of the stack, since repair
-re-keys one shared entry per node and the whole-hashcons sweep no longer runs; rebuild is 7% of what
-remains. The matcher is now four fifths of the run, almost all of it in Matcher.matchIn itself (the
-walk over a class's nodes, the per-node allocation of substitution lists and the hash set that
-deduplicates them), with Pattern head matching at 8% and Subst lookups at 4%: that is where #7 looks.
-EGraph.checkParentEntries is the test's checkInvariants after the run, not the saturation.
+Reading: the run is half what it was (1.6 s against 3 s) and what left was the matcher's: its share
+fell from 81% to 44% once a pattern node visited only the nodes with its head (#80, the index), the
+deduplication set went where no duplicate can arise (#81) and the per-candidate allocations were
+pooled or chained (#82). With 135 samples each line is worth 0.7%, so the shares are coarse. Of
+what remains, the matcher's time is in matchIn and matchChildren themselves - loading a candidate
+node and its children - which #74's next experiment, the class table, addresses; rebuild is now
+the second phase at 22%, in repair's hashcons re-keying and the canonicalisation of each parent
+entry (IntList.map). EGraph.checkParentEntries is the test's checkInvariants after the run, not
+the saturation; the unattributed fifth is mostly that check and the runner's own frames.

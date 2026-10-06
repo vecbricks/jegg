@@ -5,12 +5,12 @@ DeterminismProbe in fresh JVMs, the renderings compared byte for byte
 OpenJDK 64-Bit Server VM 25.0.4.1+1-1-26.04.4-Ubuntu on Linux 7.0.0-34-generic
 AMD Ryzen AI 9 HX PRO 370 w/ Radeon 890M, 8 threads
 pinned to cpus 0,1,2,3,12,13,14,15; max clock 5157895 kHz, governor performance, energy preference performance, platform profile performance
-commit 75e3c05, 2026-10-05T13:22:11.195177657+02:00
-load average before 0.58, after 0.58
+commit cdab9c6, 2026-10-06T12:08:44.584335397+02:00
+load average before 0.88, after 0.88
 JMH 1.37; mvn -Pbench -q test-compile exec:exec -Dbench=determinism
 
 Forked JVMs:
 10 fresh JVMs, byte-identical renderings
-47 classes rendered, sha-256 9512f3a568b7b18b
-0.4 s in all, 42 ms per JVM including its start
+47 classes rendered, sha-256 4163a3052830fa3b
+0.4 s in all, 45 ms per JVM including its start
 
