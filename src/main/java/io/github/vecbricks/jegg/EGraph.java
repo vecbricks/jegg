@@ -146,7 +146,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * @return the canonical form of {@code node}; {@code node} itself if its children are roots
    */
   public L canonicalize(L node) {
-    return node.withChildren(node.children().map(unionFind::find));
+    IntList children = node.children();
+    IntList canonical = children.map(unionFind::find);
+    return canonical == children ? node : node.withChildren(canonical);
   }
 
   /**
@@ -266,7 +268,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         return MISSING;
       }
     }
-    int id = step.applyAsInt(bridge.node(tree, IntList.of(ids)));
+    int id = step.applyAsInt(bridge.node(tree, IntList.wrap(ids)));
     if (id != MISSING) {
       seen.put(tree, id);
     }

@@ -23,6 +23,6 @@ record PatternApplier<L extends Language<L>, D extends @Nullable Object>(
     Pattern<L> rhs) implements Applier<L, D> {
   @Override
   public IntList apply(EGraph<L, D> graph, int eclass, Subst subst) {
-    return IntList.of(Matcher.instantiate(graph, rhs, subst));
+    return IntList.wrap(new int[] {Matcher.instantiate(graph, rhs, subst)});
   }
 }

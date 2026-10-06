@@ -9,9 +9,10 @@
 
 package io.github.vecbricks.jegg;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
@@ -24,36 +25,54 @@ import org.jspecify.annotations.Nullable;
  * payload value. A substitution is immutable; binding returns a new one, which is what lets
  * the matcher backtrack by discarding it.
  *
- * <p>The bindings are parallel arrays, a few entries long (a pattern binds a handful of
- * variables), copied on each bind and scanned on each lookup: no map, no boxed id. Two
- * substitutions are equal when they bind the same variables to the same values, in any order.
- * A value candidate (PLAN.md 3.1): immutable, compared by content, never by identity.
+ * <p>A substitution is a chain of bindings, newest first: each node holds one variable and what
+ * it stands for, and shares the rest with the substitution it was made from, so a bind allocates
+ * one node and copies nothing, and a lookup walks a few nodes (a pattern binds a handful of
+ * variables); no map, no boxed id. Two substitutions are equal when they bind the same variables
+ * to the same values, in any order. A value candidate (PLAN.md 3.1): immutable, compared by
+ * content, never by identity.
  */
 public final class Subst {
 
   /** The substitution that binds nothing. */
-  public static final Subst EMPTY = new Subst(new String[0], new int[0], new String[0],
-      new Object[0]);
+  public static final Subst EMPTY = new Subst();
 
-  private final String[] names;
-  private final int[] ids;
-  private final String[] payloadNames;
-  private final @Nullable Object[] payloads;
+  /** What {@link #idOrUnbound} answers for a variable that is not bound: no class has this id. */
+  static final int UNBOUND = -1;
 
-  private Subst(String[] names, int[] ids, String[] payloadNames, @Nullable Object[] payloads) {
-    this.names = names;
-    this.ids = ids;
-    this.payloadNames = payloadNames;
-    this.payloads = payloads;
+  // One binding and the rest of the chain: the variable's name, null in EMPTY alone; the id it
+  // stands for, or for a payload variable the value; and the substitution this one extends,
+  // which is EMPTY itself at the end of every chain.
+  private final @Nullable String name;
+  private final int id;
+  private final @Nullable Object payload;
+  private final boolean isPayload;
+  private final Subst next;
+
+  private Subst() {
+    this.name = null;
+    this.id = 0;
+    this.payload = null;
+    this.isPayload = false;
+    this.next = this;
   }
 
-  private static int indexOf(String[] names, String variable) {
-    for (int i = 0; i < names.length; i++) {
-      if (names[i].equals(variable)) {
-        return i;
+  private Subst(String name, int id, @Nullable Object payload, boolean isPayload, Subst next) {
+    this.name = name;
+    this.id = id;
+    this.payload = payload;
+    this.isPayload = isPayload;
+    this.next = next;
+  }
+
+  /** The node binding {@code variable} as a subterm or a payload variable, or null if none. */
+  private @Nullable Subst nodeOf(String variable, boolean payload) {
+    for (Subst n = this; n.name != null; n = n.next) {
+      if (n.isPayload == payload && (n.name == variable || n.name.equals(variable))) {
+        return n;
       }
     }
-    return -1;
+    return null;
   }
 
   /**
@@ -65,20 +84,22 @@ public final class Subst {
    * @return the new substitution, or this one if the variable is bound to {@code id} already
    */
   public Subst bind(String variable, int id) {
-    int i = indexOf(names, variable);
-    if (i >= 0) {
-      if (ids[i] == id) {
-        return this;
-      }
-      int[] next = ids.clone();
-      next[i] = id;
-      return new Subst(names, next, payloadNames, payloads);
+    Subst bound = nodeOf(variable, false);
+    if (bound == null) {
+      return new Subst(variable, id, null, false, this);
     }
-    String[] nextNames = Arrays.copyOf(names, names.length + 1);
-    int[] nextIds = Arrays.copyOf(ids, ids.length + 1);
-    nextNames[names.length] = variable;
-    nextIds[ids.length] = id;
-    return new Subst(nextNames, nextIds, payloadNames, payloads);
+    if (bound.id == id) {
+      return this;
+    }
+    return rebound(bound, new Subst(variable, id, null, false, bound.next));
+  }
+
+  /**
+   * This substitution with {@code variable}, which must not be bound, bound to {@code id}: a
+   * bind without the lookup, for the matcher, which has just looked.
+   */
+  Subst bindNew(String variable, int id) {
+    return new Subst(variable, id, null, false, this);
   }
 
   /**
@@ -90,20 +111,31 @@ public final class Subst {
    * @return the new substitution, or this one if the variable is bound to an equal value already
    */
   public Subst bindPayload(String variable, @Nullable Object value) {
-    int i = indexOf(payloadNames, variable);
-    if (i >= 0) {
-      if (Objects.equals(payloads[i], value)) {
-        return this;
-      }
-      @Nullable Object[] next = payloads.clone();
-      next[i] = value;
-      return new Subst(names, ids, payloadNames, next);
+    Subst bound = nodeOf(variable, true);
+    if (bound == null) {
+      return new Subst(variable, 0, value, true, this);
     }
-    String[] nextNames = Arrays.copyOf(payloadNames, payloadNames.length + 1);
-    @Nullable Object[] nextValues = Arrays.copyOf(payloads, payloads.length + 1);
-    nextNames[payloadNames.length] = variable;
-    nextValues[payloads.length] = value;
-    return new Subst(names, ids, nextNames, nextValues);
+    if (Objects.equals(bound.payload, value)) {
+      return this;
+    }
+    return rebound(bound, new Subst(variable, 0, value, true, bound.next));
+  }
+
+  /**
+   * This chain with the node {@code old} replaced by {@code fresh}, which extends what
+   * {@code old} extended: the nodes newer than {@code old} are remade over it, in their order.
+   */
+  private Subst rebound(Subst old, Subst fresh) {
+    List<Subst> newer = new ArrayList<>();
+    for (Subst n = this; n != old; n = n.next) {
+      newer.add(n);
+    }
+    Subst result = fresh;
+    for (int i = newer.size() - 1; i >= 0; i--) {
+      Subst n = newer.get(i);
+      result = new Subst(Objects.requireNonNull(n.name), n.id, n.payload, n.isPayload, result);
+    }
+    return result;
   }
 
   /**
@@ -113,8 +145,17 @@ public final class Subst {
    * @return the id as it was bound, empty if the variable is unbound
    */
   public OptionalInt id(String variable) {
-    int i = indexOf(names, variable);
-    return i < 0 ? OptionalInt.empty() : OptionalInt.of(ids[i]);
+    Subst bound = nodeOf(variable, false);
+    return bound == null ? OptionalInt.empty() : OptionalInt.of(bound.id);
+  }
+
+  /**
+   * The class a subterm variable is bound to, or {@link #UNBOUND}: {@link #id} without the
+   * {@code OptionalInt}, for the matcher.
+   */
+  int idOrUnbound(String variable) {
+    Subst bound = nodeOf(variable, false);
+    return bound == null ? UNBOUND : bound.id;
   }
 
   /**
@@ -125,11 +166,11 @@ public final class Subst {
    * @throws IllegalArgumentException if the variable is unbound
    */
   public int idOf(String variable) {
-    int i = indexOf(names, variable);
-    if (i < 0) {
+    Subst bound = nodeOf(variable, false);
+    if (bound == null) {
       throw new IllegalArgumentException("unbound variable " + variable + " in " + this);
     }
-    return ids[i];
+    return bound.id;
   }
 
   /**
@@ -139,7 +180,7 @@ public final class Subst {
    * @return true if it is bound, even to null
    */
   public boolean hasPayload(String variable) {
-    return indexOf(payloadNames, variable) >= 0;
+    return nodeOf(variable, true) != null;
   }
 
   /**
@@ -150,11 +191,23 @@ public final class Subst {
    * @throws IllegalArgumentException if the variable is unbound
    */
   public @Nullable Object payload(String variable) {
-    int i = indexOf(payloadNames, variable);
-    if (i < 0) {
+    Subst bound = nodeOf(variable, true);
+    if (bound == null) {
       throw new IllegalArgumentException("unbound payload variable " + variable + " in " + this);
     }
-    return payloads[i];
+    return bound.payload;
+  }
+
+  /** The nodes of one kind, oldest first: the order the variables were bound in. */
+  private List<Subst> bindings(boolean payload) {
+    List<Subst> out = new ArrayList<>();
+    for (Subst n = this; n.name != null; n = n.next) {
+      if (n.isPayload == payload) {
+        out.add(n);
+      }
+    }
+    Collections.reverse(out);
+    return out;
   }
 
   /**
@@ -163,9 +216,9 @@ public final class Subst {
    * @return a fresh unmodifiable map from variable name to e-class id
    */
   public Map<String, Integer> ids() {
-    LinkedHashMap<String, Integer> out = LinkedHashMap.newLinkedHashMap(names.length);
-    for (int i = 0; i < names.length; i++) {
-      out.put(names[i], ids[i]);
+    LinkedHashMap<String, Integer> out = new LinkedHashMap<>();
+    for (Subst n : bindings(false)) {
+      out.put(n.name, n.id);
     }
     return Collections.unmodifiableMap(out);
   }
@@ -176,9 +229,9 @@ public final class Subst {
    * @return a fresh unmodifiable map from variable name to payload value
    */
   public Map<String, Object> payloads() {
-    LinkedHashMap<String, Object> out = LinkedHashMap.newLinkedHashMap(payloadNames.length);
-    for (int i = 0; i < payloadNames.length; i++) {
-      out.put(payloadNames[i], payloads[i]);
+    LinkedHashMap<String, Object> out = new LinkedHashMap<>();
+    for (Subst n : bindings(true)) {
+      out.put(n.name, n.payload);
     }
     return Collections.unmodifiableMap(out);
   }
@@ -188,23 +241,25 @@ public final class Subst {
     if (this == o) {
       return true;
     }
-    if (!(o instanceof Subst s) || names.length != s.names.length
-        || payloadNames.length != s.payloadNames.length) {
+    if (!(o instanceof Subst s)) {
       return false;
     }
-    for (int i = 0; i < names.length; i++) {
-      int j = indexOf(s.names, names[i]);
-      if (j < 0 || s.ids[j] != ids[i]) {
+    // Each variable is bound once in a chain, so the same count and every binding of this one
+    // found in the other with the same value is equality.
+    int mine = 0;
+    for (Subst n = this; n.name != null; n = n.next) {
+      mine++;
+      Subst theirs = s.nodeOf(n.name, n.isPayload);
+      if (theirs == null
+          || (n.isPayload ? !Objects.equals(theirs.payload, n.payload) : theirs.id != n.id)) {
         return false;
       }
     }
-    for (int i = 0; i < payloadNames.length; i++) {
-      int j = indexOf(s.payloadNames, payloadNames[i]);
-      if (j < 0 || !Objects.equals(s.payloads[j], payloads[i])) {
-        return false;
-      }
+    int others = 0;
+    for (Subst n = s; n.name != null; n = n.next) {
+      others++;
     }
-    return true;
+    return mine == others;
   }
 
   @Override
@@ -213,11 +268,8 @@ public final class Subst {
     // mixed first, so that two variables with their ids swapped (what a commutative rule yields
     // in every class) do not cancel out to one bucket.
     int h = 0;
-    for (int i = 0; i < names.length; i++) {
-      h += mix(31 * names[i].hashCode() + ids[i]);
-    }
-    for (int i = 0; i < payloadNames.length; i++) {
-      h += mix(31 * payloadNames[i].hashCode() + Objects.hashCode(payloads[i]));
+    for (Subst n = this; n.name != null; n = n.next) {
+      h += mix(31 * n.name.hashCode() + (n.isPayload ? Objects.hashCode(n.payload) : n.id));
     }
     return h;
   }

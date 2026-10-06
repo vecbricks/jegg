@@ -47,6 +47,14 @@ public final class IntList {
   }
 
   /**
+   * The list over {@code elements} itself, not a copy: for a caller that made the array for
+   * this list and gives it up, never to change it again.
+   */
+  static IntList wrap(int[] elements) {
+    return elements.length == 0 ? EMPTY : new IntList(elements);
+  }
+
+  /**
    * The number of elements.
    *
    * @return the length of the list, 0 for {@link #EMPTY}

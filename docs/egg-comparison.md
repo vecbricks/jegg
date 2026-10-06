@@ -117,7 +117,7 @@ The shape of the port in four lines:
 | `Pattern`, `ENodeOrVar` | `Pattern` (`Node`, `Var`) | built from a prototype node, `Pattern.of(prototype, children...)`; not parsed from text |
 | `Pattern::from_str`, `pretty`, `alpha_rename` | out by design | patterns are built from the client's IR, so there is no text to parse |
 | `Var` (`?x`) | `String` names | a variable is a name |
-| `Subst` | `Subst` | immutable, parallel arrays, an order-free hash; binding returns a new one |
+| `Subst` | `Subst` | immutable, a chain of bindings sharing its tail, an order-free hash; binding returns a new one |
 | (none) | payload variables | added: a pattern binds an operator's payload as well as subterms (`Subst.payload`), and a head may match a payload by predicate |
 | `Searcher` over `SearchMatches` | `Matcher.search` returning `Match(eclass, subst)` | one record per substitution; a class's matches in node order |
 | the compiled machine (`machine.rs`: `Program`, `compile_from_pat`) | a backtracking matcher (`Matcher.matchIn`) | the machine is deferred behind a measurement: #7 |
