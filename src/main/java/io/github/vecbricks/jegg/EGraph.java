@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -75,6 +74,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   static final int MISSING = -1;
   // Indexed by id; an entry is null once its id is no longer a root.
   private final List<EClass<L, D>> classes = new ArrayList<>();
+  // Each distinct head key, numbered as it is first met: a node's head ordinal, kept by its
+  // class beside the node, is what the matcher compares heads by. Never iterated.
+  private final Map<Object, Integer> headOrdinals = new HashMap<>();
   // How many entries of classes are not null, kept by add and merge so counting is free.
   private int liveClasses;
   // How many times the graph changed: a class made by add, two roots joined by merge. The
@@ -187,11 +189,6 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     return idOf(canonical);
   }
 
-  /** Whether {@link #retainNodes} has dropped a node that is still remembered. */
-  boolean hasPrunedNodes() {
-    return !pruned.isEmpty();
-  }
-
   /**
    * Adds {@code node} and returns its class: the class already holding an equal canonical node,
    * or a new class of this node alone, recorded as a parent of each child's class (paper
@@ -211,7 +208,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     classes.add(eclass);
     liveClasses++;
     changes++;
-    eclass.addNode(canonical);
+    eclass.addNode(canonical, headOrdinal(canonical.head()));
     index(canonical, id);
     IntList children = canonical.children();
     // One entry, shared by every child's list, so that a repair through any child re-keys the
@@ -306,6 +303,25 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       throw new IllegalStateException("no class is rooted at " + id);
     }
     return eclass;
+  }
+
+  /** The ordinal of a head key, assigned on first sight: the number of keys met before it. */
+  private int headOrdinal(Object key) {
+    Integer ordinal = headOrdinals.get(key);
+    if (ordinal == null) {
+      ordinal = headOrdinals.size();
+      headOrdinals.put(key, ordinal);
+    }
+    return ordinal;
+  }
+
+  /**
+   * The ordinal of a head key, or -1 if no node with that head was ever added: what the matcher
+   * finds a pattern head's run in a class's table by.
+   */
+  int headOrdinalOf(Object key) {
+    Integer ordinal = headOrdinals.get(key);
+    return ordinal == null ? -1 : ordinal;
   }
 
   /**
@@ -482,7 +498,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       index(node, root);
       unindex(node.getClass(), other);
     }
-    kept.mutableNodes().addAll(gone.readNodes());
+    kept.appendNodes(gone);
     kept.setMergedNodes(true);
     kept.mutableParents().addAll(gone.mutableParents());
     kept.setData(joined);
@@ -513,12 +529,12 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    */
   public int retainNodes(int eclass, Predicate<L> keep) {
     EClass<L, D> c = classOf(eclass);
-    List<L> nodes = c.mutableNodes();
+    List<L> nodes = c.readNodes();
     if (nodes.stream().noneMatch(keep)) {
       throw new IllegalArgumentException("retainNodes would empty class " + c.id());
     }
     List<L> dropped = new ArrayList<>();
-    nodes.removeIf(node -> !keep.test(node) && dropped.add(node));
+    c.retainNodes(keep, dropped);
     if (dropped.isEmpty()) {
       return 0;
     }
@@ -632,18 +648,12 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     for (int i = 0; i < nodes.size(); i++) {
       L node = nodes.get(i);
       if (!isCanonical(node)) {
-        eclass.dropIndexes();
-        nodes.set(i, canonicalize(node));
+        eclass.setNode(i, canonicalize(node));
         changed = true;
       }
     }
     if (changed && nodes.size() > 1) {
-      LinkedHashSet<L> distinct = LinkedHashSet.newLinkedHashSet(nodes.size());
-      distinct.addAll(nodes);
-      if (distinct.size() < nodes.size()) {
-        nodes.clear();
-        nodes.addAll(distinct);
-      }
+      eclass.dedupNodes();
     }
   }
 
@@ -833,7 +843,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
 
   private void checkIndex() {
     for (EClass<L, D> eclass : classes()) {
-      eclass.checkIndexes();
+      eclass.checkIndexes(node -> headOrdinalOf(node.head()));
       for (L node : eclass.nodes()) {
         BitSet holding = byNodeClass.get(node.getClass());
         if (holding == null || !holding.get(eclass.id())) {

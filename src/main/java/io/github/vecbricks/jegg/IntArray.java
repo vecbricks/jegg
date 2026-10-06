@@ -37,6 +37,21 @@ final class IntArray {
     elements[size++] = value;
   }
 
+  /** Replaces the value at an index below the size. */
+  void set(int index, int value) {
+    if (index >= size) {
+      throw new IndexOutOfBoundsException(index);
+    }
+    elements[index] = value;
+  }
+
+  /** Drops the values from {@code size} on; a no-op if the array is not longer. */
+  void truncate(int newSize) {
+    if (newSize < size) {
+      size = newSize;
+    }
+  }
+
   int get(int index) {
     if (index < 0 || index >= size) {
       throw new IndexOutOfBoundsException(index + " of " + size);

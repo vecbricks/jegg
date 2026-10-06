@@ -12,7 +12,9 @@ package io.github.vecbricks.jegg;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -27,12 +29,15 @@ import org.jspecify.annotations.Nullable;
  * <p>Order is fixed: classes in id order, a class's nodes in insertion order, a node's children
  * depth-first, so the list of matches is a function of the graph. A search starts at the classes
  * holding a node of the root head's class where the head names it, and allocates per match, not
- * per class visited. In a class of {@link #INDEX_FROM} nodes or more, a pattern node whose head
- * has a {@link Pattern.Head#key} visits only the nodes with that head, and one whose head names
- * a {@link Pattern.Head#type} only the nodes of that class, through the indexes the class keeps
- * ({@code EClass}); the positions come in insertion order, so the matches are the ones a walk of
- * every node would find, in its order. A smaller class is walked, which costs less than
- * building its index.
+ * per class visited. A pattern node whose head has a {@link Pattern.Head#key} reads the class's
+ * table ({@code EClass.Table}): the nodes sorted by head, insertion order kept within a head,
+ * with every node's arity and children laid flat, so the run of its head is found by binary
+ * search and read as consecutive ints, and no node object is touched until a match is complete;
+ * egg's sorted node list, kept as a cache the class drops when its list changes. A head that
+ * names a {@link Pattern.Head#type} and reads the node's payload visits the nodes of that class
+ * through the class's type index, in a class of {@link #INDEX_FROM} nodes or more, and walks a
+ * smaller class; a head with neither walks every node. The candidates come in insertion order
+ * either way, so the matches are the ones a walk of every node would find, in its order.
  *
  * <p>One of egg's compiled matcher's devices is kept. A nested pattern node whose variables are
  * all bound when it is reached, and that is not a leaf, may be looked up instead of walked: the
@@ -47,7 +52,10 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Matcher {
 
-  /** The size from which a class's nodes are found through its indexes rather than walked. */
+  /**
+   * The size from which a class's nodes of one node class are found through the class's type
+   * index rather than by a walk, for a head that names its type and has no key.
+   */
   static final int INDEX_FROM = 8;
 
   /**
@@ -342,9 +350,22 @@ public final class Matcher {
   private static final class Walk<L extends Language<L>, D extends @Nullable Object> {
     private final EGraph<L, D> graph;
     private final List<List<Subst>> free = new ArrayList<>();
+    // The graph's ordinal of each pattern head's key met in this search, by the head object: a
+    // pattern has a handful of heads, each asked about once per class it is tried in.
+    private final Map<Pattern.Head<L>, Integer> ordinals = new IdentityHashMap<>();
 
     Walk(EGraph<L, D> graph) {
       this.graph = graph;
+    }
+
+    /** The graph's ordinal of the head's key, or -1 if no node has that head. */
+    private int ordinalOf(Pattern.Head<L> head, Object key) {
+      Integer ordinal = ordinals.get(head);
+      if (ordinal == null) {
+        ordinal = graph.headOrdinalOf(key);
+        ordinals.put(head, ordinal);
+      }
+      return ordinal;
     }
 
     /**
@@ -438,30 +459,39 @@ public final class Matcher {
         case Pattern.Node<L>(var head, var children) -> {
           Set<Subst> seen = null;
           EClass<L, D> eclass = graph.classOf(root);
-          List<L> nodes = eclass.readNodes();
-          // The candidates: every node of a small class; in a larger one, the positions of the
-          // nodes with the head's key (whose heads then need no test) or of the head's node class.
+          int arity = children.size();
+          // The candidates: for a head with a key, the run of its ordinal in the class's table,
+          // whose heads need no test; for a head that names its node class, the positions of
+          // that class's nodes (or every node of a small class); for any other head, every node.
+          EClass.Table table = null;
+          int lo = 0;
+          int hi = 0;
+          List<L> nodes = null;
           IntArray positions = null;
-          boolean indexed = false;
-          boolean headsMatch = false;
-          if (nodes.size() >= INDEX_FROM) {
-            Optional<Object> key = head.key();
-            if (key.isPresent()) {
-              positions = eclass.positionsWithHead(key.get());
-              indexed = true;
-              headsMatch = true;
-            } else {
-              Optional<Class<? extends L>> type = head.type();
-              if (type.isPresent()) {
-                positions = eclass.positionsOfType(type.get());
-                indexed = true;
+          int candidates;
+          Optional<Object> key = head.key();
+          if (key.isPresent()) {
+            int headId = ordinalOf(head, key.get());
+            if (headId < 0) {
+              return;
+            }
+            table = eclass.table();
+            lo = table.lower(headId);
+            hi = table.upper(headId, lo);
+            candidates = hi - lo;
+          } else {
+            nodes = eclass.readNodes();
+            Optional<Class<? extends L>> type = head.type();
+            if (type.isPresent() && nodes.size() >= INDEX_FROM) {
+              positions = eclass.positionsOfType(type.get());
+              if (positions == null) {
+                return;
               }
+              candidates = positions.size();
+            } else {
+              candidates = nodes.size();
             }
           }
-          if (indexed && positions == null) {
-            return;
-          }
-          int candidates = indexed ? positions.size() : nodes.size();
           // egg's Lookup where it pays: a long run of the head, for a ground nested node (in a
           // class that has pruned, matchChildren has looked it up before coming here).
           if (nested && candidates > LOOKUP_FROM && !children.isEmpty()
@@ -472,16 +502,32 @@ public final class Matcher {
             return;
           }
           for (int i = 0; i < candidates && out.size() < limit; i++) {
-            L node = nodes.get(indexed ? positions.get(i) : i);
-            if (node.children().size() != children.size()) {
-              continue;
-            }
-            Subst headBound = headsMatch ? subst : head.match(node, subst);
-            if (headBound == null) {
-              continue;
+            int[] kids;
+            int start;
+            Subst headBound;
+            if (table != null) {
+              int entry = lo + i;
+              if (table.arity(entry) != arity) {
+                continue;
+              }
+              kids = table.kids;
+              start = table.starts[entry];
+              headBound = subst;
+            } else {
+              L node = nodes.get(positions == null ? i : positions.get(i));
+              IntList nodeKids = node.children();
+              if (nodeKids.size() != arity) {
+                continue;
+              }
+              headBound = head.match(node, subst);
+              if (headBound == null) {
+                continue;
+              }
+              kids = nodeKids.raw();
+              start = 0;
             }
             int before = out.size();
-            matchChildren(children, 0, node, headBound, out, distinct);
+            matchChildren(children, 0, kids, start, headBound, out, distinct);
             int added = out.size() - before;
             if (!distinct && (added > 1 || (added > 0 && before > 0))) {
               if (seen == null) {
@@ -505,28 +551,29 @@ public final class Matcher {
     }
 
     /**
-     * Matches {@code node}'s children from the {@code i}th on against the child patterns under
-     * {@code subst}, appending each complete substitution to {@code out}: a variable child binds
-     * or agrees in place; a node child that is ground is looked up where that alone gives egg's
-     * answer (a child class that has pruned) and otherwise matched in the child's class, where a
-     * long run is looked up too ({@link #matchIn}); each of its substitutions continues to the
-     * next child.
+     * Matches a candidate node's children, {@code kids} from {@code start} on, from the
+     * {@code i}th on against the child patterns under {@code subst}, appending each complete
+     * substitution to {@code out}: a variable child binds or agrees in place; a node child that
+     * is ground is looked up where that alone gives egg's answer (a child class that has pruned)
+     * and otherwise matched in the child's class, where a long run is looked up too
+     * ({@link #matchIn}); each of its substitutions continues to the next child.
      */
-    void matchChildren(List<Pattern<L>> children, int i, L node, Subst subst, List<Subst> out,
-        boolean distinct) {
+    void matchChildren(List<Pattern<L>> children, int i, int[] kids, int start, Subst subst,
+        List<Subst> out, boolean distinct) {
       if (i == children.size()) {
         out.add(subst);
         return;
       }
-      int child = node.children().get(i);
+      int child = kids[start + i];
       switch (children.get(i)) {
         case Pattern.Var<L>(var name) -> {
           int bound = subst.idOrUnbound(name);
           int root = graph.find(child);
           if (bound == Subst.UNBOUND) {
-            matchChildren(children, i + 1, node, subst.bindNew(name, root), out, distinct);
+            matchChildren(children, i + 1, kids, start, subst.bindNew(name, root), out,
+                distinct);
           } else if (graph.find(bound) == root) {
-            matchChildren(children, i + 1, node, subst, out, distinct);
+            matchChildren(children, i + 1, kids, start, subst, out, distinct);
           }
         }
         case Pattern.Node<L> nested -> {
@@ -537,7 +584,7 @@ public final class Matcher {
           if (graph.classOf(childRoot).hasPruned() && !nested.children().isEmpty()
               && isGround(nested, subst)) {
             if (lookUp(nested, subst) == childRoot) {
-              matchChildren(children, i + 1, node, subst, out, distinct);
+              matchChildren(children, i + 1, kids, start, subst, out, distinct);
             }
             return;
           }
@@ -546,7 +593,7 @@ public final class Matcher {
           List<Subst> partial = free.isEmpty() ? new ArrayList<>() : free.remove(free.size() - 1);
           matchIn(nested, child, subst, Integer.MAX_VALUE, partial, distinct, true);
           for (int k = 0; k < partial.size(); k++) {
-            matchChildren(children, i + 1, node, partial.get(k), out, distinct);
+            matchChildren(children, i + 1, kids, start, partial.get(k), out, distinct);
           }
           partial.clear();
           free.add(partial);
