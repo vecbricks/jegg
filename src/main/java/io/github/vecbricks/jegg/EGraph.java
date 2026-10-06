@@ -71,7 +71,8 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   // so that it still holds exactly the graph's nodes.
   private final Map<L, Integer> pruned = new HashMap<>();
   // What a lookup answers for a node the graph does not hold; ids are never negative.
-  private static final int MISSING = -1;
+  /** What {@link #lookupOrMissing} answers for a node the graph does not hold: no class has it. */
+  static final int MISSING = -1;
   // Indexed by id; an entry is null once its id is no longer a root.
   private final List<EClass<L, D>> classes = new ArrayList<>();
   // How many entries of classes are not null, kept by add and merge so counting is free.
@@ -160,17 +161,35 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    *     {@link #retainNodes} dropped from its class is still found, with that class
    */
   public OptionalInt lookup(L node) {
-    int id = idOf(canonicalize(node));
+    int id = lookupOrMissing(node);
     return id == MISSING ? OptionalInt.empty() : OptionalInt.of(id);
+  }
+
+  /** {@link #lookup} without the {@code OptionalInt}: the root id, or {@link #MISSING}. */
+  int lookupOrMissing(L node) {
+    return idOf(canonicalize(node));
   }
 
   /** The class of a canonical node, from the hashcons or the pruned memory, or MISSING. */
   private int idOf(L canonical) {
     Integer id = hashcons.get(canonical);
-    if (id == null) {
+    if (id == null && !pruned.isEmpty()) {
       id = pruned.get(canonical);
     }
     return id == null ? MISSING : unionFind.find(id);
+  }
+
+  /**
+   * {@link #lookupOrMissing} for a node whose children are roots already, for the matcher's
+   * lookup of a ground pattern node, which builds its node over roots.
+   */
+  int lookupCanonical(L canonical) {
+    return idOf(canonical);
+  }
+
+  /** Whether {@link #retainNodes} has dropped a node that is still remembered. */
+  boolean hasPrunedNodes() {
+    return !pruned.isEmpty();
   }
 
   /**
