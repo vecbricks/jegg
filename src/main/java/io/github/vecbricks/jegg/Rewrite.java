@@ -55,9 +55,9 @@ public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Ap
     // As egg's Rewrite::new: a pattern right-hand side may use only what the left binds, so a
     // misspelt variable fails here and not in the middle of an apply phase, with the graph
     // half-applied. A dynamic applier cannot be checked; its variables are its own business.
-    if (rhs instanceof Applier.PatternApplier<L, D>(var pattern)) {
+    if (rhs instanceof PatternApplier<L, D>(var pattern)) {
       checkBound(name, lhs, lhs.subtermVariables(), pattern);
-    } else if (rhs instanceof Applier.MultiApplier<L, D>(var multi)) {
+    } else if (rhs instanceof MultiApplier<L, D>(var multi)) {
       // A multi-pattern right-hand side binds each clause's variable for the clauses after it
       // ("?z = (baz ?y), ?x = ?z"), so a variable is checked against the left's and the
       // earlier clauses'.

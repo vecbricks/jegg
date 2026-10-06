@@ -45,6 +45,17 @@ import java.util.function.ToIntFunction;
  * are kept in insertion order, so everything the graph exposes is a function of the sequence of
  * calls that built it; the hashcons is a {@link HashMap}, but nothing iterates over it.
  *
+ * <p><b>Threads.</b> An e-graph is confined to one thread at a time: nothing in it is
+ * synchronized, so another thread may use it only after a handover that makes its writes visible
+ * (a {@code Future}, an executor's {@code submit}, a lock, a volatile write and read), as for any
+ * object that is not thread-safe. This holds for the {@link Runner} and the
+ * {@link Extractor} built over it and for a {@link BackoffScheduler}, which holds one run's bans.
+ * Separate e-graphs share no state, so one per thread needs no coordination. The language's
+ * nodes must be immutable, as they are hashcons keys; a client's {@link Analysis},
+ * {@link Condition}, {@link Applier} and {@link CostFunction} are called from the thread that
+ * calls the graph, and need to be thread-safe only if one instance is given to graphs that run
+ * at the same time.
+ *
  * @param <L> the language
  * @param <D> the analysis fact, {@code Void} under {@link Analysis#none}
  */

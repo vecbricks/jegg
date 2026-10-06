@@ -20,7 +20,7 @@ import java.util.Arrays;
  * places this port fixes an order egg leaves to chance: which of two merged classes survives is
  * then a function of the input, not of which was found first.
  */
-public final class UnionFind {
+final class UnionFind {
 
   private int[] parent = new int[16];
   private int size = 0;
