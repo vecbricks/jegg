@@ -14,6 +14,7 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.function.ToDoubleFunction;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Extraction: the cheapest term in a class under a {@link CostFunction}, as a bottom-up fixed
@@ -28,7 +29,7 @@ import java.util.function.ToDoubleFunction;
  * @param <L> the language
  * @param <D> the analysis fact
  */
-public final class Extractor<L extends Language<L>, D> {
+public final class Extractor<L extends Language<L>, D extends @Nullable Object> {
 
   /**
    * A class's best node and the cost of the tree rooted there. A value candidate (PLAN.md 3.1):
@@ -49,7 +50,7 @@ public final class Extractor<L extends Language<L>, D> {
   private final double[] bestCost;
   // The memo of one tree extraction, by class id, kept between calls and cleared of what a call
   // wrote, so that a call costs the term it builds and not the graph.
-  private Object[] built;
+  private @Nullable Object @Nullable [] built;
   private final IntArray builtIds = new IntArray();
   // The graph's size when priced: a changed size means the prices are stale.
   private final int nodes;
@@ -139,7 +140,7 @@ public final class Extractor<L extends Language<L>, D> {
   }
 
   @SuppressWarnings("unchecked")
-  private Extracted<L> extract(int root, Object[] built) {
+  private Extracted<L> extract(int root, @Nullable Object[] built) {
     if (built[root] != null) {
       return (Extracted<L>) built[root];
     }
@@ -249,7 +250,8 @@ public final class Extractor<L extends Language<L>, D> {
    * @throws IllegalStateException if a root has no finite-cost term, or if the graph changed or
    *     is dirty since this extractor priced it
    */
-  public Selection<L> extractAll(IntList roots, ToDoubleFunction<Selection<L>> score) {
+  public Selection<L> extractAll(IntList roots,
+      @Nullable ToDoubleFunction<Selection<L>> score) {
     checkUnchanged();
     IntList canonical = roots.map(graph::find);
     for (int i = 0; i < canonical.size(); i++) {
@@ -263,7 +265,7 @@ public final class Extractor<L extends Language<L>, D> {
   }
 
   /** A descent started from the greedy choice, or from the tree choice if that closes a cycle. */
-  private Descent started(IntList canonical, ToDoubleFunction<Selection<L>> score) {
+  private Descent started(IntList canonical, @Nullable ToDoubleFunction<Selection<L>> score) {
     Descent descent = new Descent(canonical, score);
     if (!descent.start(greedy())) {
       // The greedy choices, each made against its children's choices at the time, can close
@@ -308,8 +310,8 @@ public final class Extractor<L extends Language<L>, D> {
     private static final double EPSILON = 1e-9;
 
     private final IntList roots;
-    private final ToDoubleFunction<Selection<L>> score;
-    private final Object[] assigned;
+    private final @Nullable ToDoubleFunction<Selection<L>> score;
+    private final @Nullable Object[] assigned;
     private final int[] refs;
     private double cost;
     // The undo log: a class whose count changed and its old count, and a class whose node
@@ -327,7 +329,7 @@ public final class Extractor<L extends Language<L>, D> {
     private final int[] seen;
     private int walk;
 
-    Descent(IntList roots, ToDoubleFunction<Selection<L>> score) {
+    Descent(IntList roots, @Nullable ToDoubleFunction<Selection<L>> score) {
       this.roots = roots;
       this.score = score;
       int size = bestNode.length;
@@ -346,7 +348,7 @@ public final class Extractor<L extends Language<L>, D> {
      * whole array null for the best nodes alone) and selects from the roots; false, and nothing
      * kept, on a cycle.
      */
-    boolean start(Object[] assignment) {
+    boolean start(@Nullable Object @Nullable [] assignment) {
       System.arraycopy(bestNode, 0, assigned, 0, assigned.length);
       java.util.Arrays.fill(refs, 0);
       cost = 0.0;
@@ -660,11 +662,11 @@ public final class Extractor<L extends Language<L>, D> {
   }
 
   @SuppressWarnings("unchecked")
-  private Choice<L> choice(Object[] choice, int id) {
+  private @Nullable Choice<L> choice(@Nullable Object[] choice, int id) {
     return (Choice<L>) choice[id];
   }
 
-  private Choice<L> dagChoice(int id, L node, Object[] choice) {
+  private @Nullable Choice<L> dagChoice(int id, L node, @Nullable Object[] choice) {
     BitSet classes = new BitSet();
     classes.set(id);
     IntList children = node.children();

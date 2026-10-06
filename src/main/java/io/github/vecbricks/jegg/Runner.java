@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Equality saturation (the paper's Figure 5b): each iteration searches every rule over the
@@ -35,7 +36,7 @@ import java.util.Set;
  * @param <L> the language
  * @param <D> the analysis fact
  */
-public final class Runner<L extends Language<L>, D> {
+public final class Runner<L extends Language<L>, D extends @Nullable Object> {
 
   private final EGraph<L, D> graph;
   private final List<Rewrite<L, D>> rules;
@@ -54,7 +55,7 @@ public final class Runner<L extends Language<L>, D> {
    * @param <D> the analysis fact
    */
   @FunctionalInterface
-  public interface Hook<L extends Language<L>, D> {
+  public interface Hook<L extends Language<L>, D extends @Nullable Object> {
     /**
      * Called before an iteration, on the rebuilt graph.
      *
@@ -97,8 +98,8 @@ public final class Runner<L extends Language<L>, D> {
    * @param rules the rules, searched and applied in this order; their names must differ
    * @return a new runner
    */
-  public static <L extends Language<L>, D> Runner<L, D> of(EGraph<L, D> graph,
-      List<Rewrite<L, D>> rules) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      Runner<L, D> of(EGraph<L, D> graph, List<Rewrite<L, D>> rules) {
     return new Runner<>(graph, rules, RunLimits.DEFAULT, new BackoffScheduler<>());
   }
 
@@ -206,7 +207,7 @@ public final class Runner<L extends Language<L>, D> {
     return new RunReport(iterations, stop);
   }
 
-  private StopReason askHooks() {
+  private @Nullable StopReason askHooks() {
     for (Hook<L, D> hook : hooks) {
       Optional<String> reason = hook.beforeIteration(graph);
       if (reason.isPresent()) {
@@ -216,7 +217,7 @@ public final class Runner<L extends Language<L>, D> {
     return null;
   }
 
-  private StopReason overLimit() {
+  private @Nullable StopReason overLimit() {
     if (graph.numNodes() > limits.nodes()) {
       return new StopReason.NodeLimit(graph.numNodes());
     }

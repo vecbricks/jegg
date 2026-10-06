@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /**
  * E-matching, the naive way: a pattern is matched against a class by trying each of the class's
@@ -54,8 +55,8 @@ public final class Matcher {
    * @param pattern the pattern to match at each class
    * @return a fresh list of the matches, empty if there are none
    */
-  public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
-      Pattern<L> pattern) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      List<Match> search(EGraph<L, D> graph, Pattern<L> pattern) {
     return search(graph, pattern, Integer.MAX_VALUE);
   }
 
@@ -77,8 +78,8 @@ public final class Matcher {
    * @return a fresh list of at most {@code limit} matches, empty if there are none
    * @throws IllegalArgumentException if {@code limit} is less than 1
    */
-  public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
-      Pattern<L> pattern, int limit) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      List<Match> search(EGraph<L, D> graph, Pattern<L> pattern, int limit) {
     if (limit < 1) {
       throw new IllegalArgumentException("the limit must be positive, not " + limit);
     }
@@ -134,8 +135,8 @@ public final class Matcher {
    * @throws IllegalArgumentException if {@code limit} is less than 1, or the first clause's
    *     pattern is a bare variable, which has no class to start from
    */
-  public static <L extends Language<L>, D> List<Match> search(EGraph<L, D> graph,
-      MultiPattern<L> multi, int limit) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      List<Match> search(EGraph<L, D> graph, MultiPattern<L> multi, int limit) {
     if (limit < 1) {
       throw new IllegalArgumentException("the limit must be positive, not " + limit);
     }
@@ -149,7 +150,7 @@ public final class Matcher {
   }
 
   /** The state of one multi-pattern search: the clauses, a buffer per clause, the leaves seen. */
-  private static final class Join<L extends Language<L>, D> {
+  private static final class Join<L extends Language<L>, D extends @Nullable Object> {
     private final EGraph<L, D> graph;
     private final List<MultiPattern.Clause<L>> clauses;
     private final int limit;
@@ -279,8 +280,9 @@ public final class Matcher {
     }
   }
 
-  private static <L extends Language<L>, D> void collect(EGraph<L, D> graph, Pattern<L> pattern,
-      int id, int limit, List<Match> matches, List<Subst> found) {
+  private static <L extends Language<L>, D extends @Nullable Object>
+      void collect(EGraph<L, D> graph, Pattern<L> pattern, int id, int limit, List<Match> matches,
+          List<Subst> found) {
     found.clear();
     matchIn(graph, pattern, id, Subst.EMPTY, limit - matches.size(), found);
     for (Subst subst : found) {
@@ -301,7 +303,8 @@ public final class Matcher {
    * @return a fresh list of the distinct substitutions, each extending {@code subst}, in match
    *     order; empty if the pattern does not match
    */
-  public static <L extends Language<L>, D> List<Subst> matchIn(EGraph<L, D> graph,
+  public static <L extends Language<L>, D extends @Nullable Object>
+      List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
     List<Subst> out = new ArrayList<>();
     matchIn(graph, pattern, id, subst, Integer.MAX_VALUE, out);
@@ -319,8 +322,9 @@ public final class Matcher {
    * nodes and not others), so the results are deduplicated, keeping the first; the set that does
    * it is made only once a node yields more than one result or a second node yields any.
    */
-  private static <L extends Language<L>, D> void matchIn(EGraph<L, D> graph,
-      Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out) {
+  private static <L extends Language<L>, D extends @Nullable Object>
+      void matchIn(EGraph<L, D> graph, Pattern<L> pattern, int id, Subst subst, int limit,
+          List<Subst> out) {
     int root = graph.find(id);
     switch (pattern) {
       case Pattern.Var<L>(var name) -> {
@@ -372,8 +376,9 @@ public final class Matcher {
    * {@code subst}, appending each complete substitution to {@code out}: a variable child binds
    * or agrees in place, a node child's substitutions each continue to the next child.
    */
-  private static <L extends Language<L>, D> void matchChildren(EGraph<L, D> graph,
-      List<Pattern<L>> children, int i, L node, Subst subst, List<Subst> out) {
+  private static <L extends Language<L>, D extends @Nullable Object>
+      void matchChildren(EGraph<L, D> graph, List<Pattern<L>> children, int i, L node, Subst subst,
+          List<Subst> out) {
     if (i == children.size()) {
       out.add(subst);
       return;
@@ -411,8 +416,8 @@ public final class Matcher {
    *     an {@link IllegalArgumentException}
    * @return the canonical id of the class the instantiated pattern is in
    */
-  public static <L extends Language<L>, D> int instantiate(EGraph<L, D> graph,
-      Pattern<L> pattern, Subst subst) {
+  public static <L extends Language<L>, D extends @Nullable Object>
+      int instantiate(EGraph<L, D> graph, Pattern<L> pattern, Subst subst) {
     switch (pattern) {
       case Pattern.Var<L>(var name) -> {
         return graph.find(subst.idOf(name));
