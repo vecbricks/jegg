@@ -90,10 +90,11 @@ machine and load it was measured under (`benchmarks/README.md` says how):
 
 - [`RebuildBenchmark`](benchmarks/RebuildBenchmark-jdk25-results.txt):
   deferred rebuilding against rebuilding after every merge, on the ported
-  suites; within noise below 300 nodes, 430x on a 31,000-node run.
+  suites; within noise below 300 nodes, over 10x on a 14,600-node run
+  (`lambda_fib`: 3.1 s against 0.2 s).
 - [`ProjectionBenchmark`](benchmarks/ProjectionBenchmark-jdk25-results.txt):
   a 64-node projection with 20 rules, as a compiler would run it; saturation to
-  a 200-node limit in 0.27 ms warm, extraction over 20 roots in 0.13 ms.
+  a 200-node limit in 0.10 ms warm, extraction over 20 roots in 0.11 ms.
 - [`DeterminismRun`](benchmarks/DeterminismRun-jdk25-results.txt): ten fresh
   JVMs render the same graph byte for byte.
 
