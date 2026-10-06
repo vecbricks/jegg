@@ -122,9 +122,21 @@ public final class Matcher {
     if (limit < 1) {
       throw new IllegalArgumentException("the limit must be positive, not " + limit);
     }
-    List<Match> matches = new ArrayList<>();
-    List<Subst> found = new ArrayList<>();
-    Walk<L, D> walk = new Walk<>(graph);
+    ArrayList<Match> matches = new ArrayList<>();
+    Scratch scratch = graph.borrowScratch();
+    try {
+      search(graph, pattern, limit, matches, scratch);
+    } finally {
+      graph.returnScratch(scratch);
+    }
+    return matches;
+  }
+
+  private static <L extends Language<L>, D extends @Nullable Object>
+      void search(EGraph<L, D> graph, Pattern<L> pattern, int limit, ArrayList<Match> matches,
+          Scratch scratch) {
+    List<Subst> found = scratch.found;
+    Walk<L, D> walk = new Walk<>(graph, scratch);
     boolean distinct = distinctByConstruction(graph, pattern);
     Class<?> type = pattern instanceof Pattern.Node<L> node
         ? node.head().type().orElse(null) : null;
@@ -140,7 +152,6 @@ public final class Matcher {
         collect(walk, pattern, id, limit, matches, found, distinct);
       }
     }
-    return matches;
   }
 
   /**
@@ -183,7 +194,12 @@ public final class Matcher {
           "a multi-pattern cannot start with a bare variable: " + multi);
     }
     List<Match> matches = new ArrayList<>();
-    new Join<>(graph, multi.clauses(), limit, matches).join(0, Subst.EMPTY, -1);
+    Scratch scratch = graph.borrowScratch();
+    try {
+      new Join<>(graph, scratch, multi.clauses(), limit, matches).join(0, Subst.EMPTY, -1);
+    } finally {
+      graph.returnScratch(scratch);
+    }
     return matches;
   }
 
@@ -203,18 +219,18 @@ public final class Matcher {
     // (matchIn), so that the walk of the class needs no set of its own.
     private final boolean[] distinct;
 
-    Join(EGraph<L, D> graph, List<MultiPattern.Clause<L>> clauses, int limit, List<Match> out) {
+    Join(EGraph<L, D> graph, Scratch scratch, List<MultiPattern.Clause<L>> clauses, int limit,
+        List<Match> out) {
       this.graph = graph;
-      this.walk = new Walk<>(graph);
+      this.walk = new Walk<>(graph, scratch);
       this.clauses = clauses;
       this.limit = limit;
       this.out = out;
-      this.buffers = new ArrayList<>(clauses.size());
+      this.buffers = scratch.clauseBuffers(clauses.size());
       this.variables = new ArrayList<>(clauses.size());
       this.distinct = new boolean[clauses.size()];
       for (int i = 0; i < clauses.size(); i++) {
         MultiPattern.Clause<L> clause = clauses.get(i);
-        buffers.add(new ArrayList<>());
         variables.add(clause.pattern().subtermVariables());
         distinct[i] = distinctByConstruction(graph, clause.pattern());
       }
@@ -286,10 +302,11 @@ public final class Matcher {
   }
 
   private static <L extends Language<L>, D extends @Nullable Object>
-      void collect(Walk<L, D> walk, Pattern<L> pattern, int id, int limit, List<Match> matches,
-          List<Subst> found, boolean distinct) {
+      void collect(Walk<L, D> walk, Pattern<L> pattern, int id, int limit,
+          ArrayList<Match> matches, List<Subst> found, boolean distinct) {
     found.clear();
     walk.matchIn(pattern, id, Subst.EMPTY, limit - matches.size(), found, distinct);
+    matches.ensureCapacity(matches.size() + found.size());
     for (Subst subst : found) {
       matches.add(new Match(id, subst));
     }
@@ -312,7 +329,7 @@ public final class Matcher {
       List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
     List<Subst> out = new ArrayList<>();
-    new Walk<>(graph).matchIn(pattern, id, subst, Integer.MAX_VALUE, out,
+    new Walk<>(graph, new Scratch()).matchIn(pattern, id, subst, Integer.MAX_VALUE, out,
         distinctByConstruction(graph, pattern));
     return out;
   }
@@ -351,17 +368,50 @@ public final class Matcher {
   }
 
   /**
+   * The lists searches gather substitutions in, which a graph keeps between searches so that
+   * their capacity is not grown again by each one: the walk's pool for nested pattern nodes, the
+   * list of one class's substitutions, and a multi-pattern's list per clause. A search borrows
+   * them from the graph ({@link EGraph#borrowScratch}) and gives them back emptied; a search that
+   * starts while they are lent, from inside another, gets lists of its own. The graph is
+   * confined to one thread, so nothing here is shared between threads.
+   */
+  static final class Scratch {
+    final List<List<Subst>> free = new ArrayList<>();
+    final List<Subst> found = new ArrayList<>();
+    private final List<List<Subst>> clauses = new ArrayList<>();
+
+    /** The first {@code count} clause lists, made as needed, each empty. */
+    List<List<Subst>> clauseBuffers(int count) {
+      while (clauses.size() < count) {
+        clauses.add(new ArrayList<>());
+      }
+      return clauses.subList(0, count);
+    }
+
+    /** Empties every list, so that a scratch kept between searches holds no substitution. */
+    void clear() {
+      found.clear();
+      for (List<Subst> list : clauses) {
+        list.clear();
+      }
+    }
+  }
+
+  /**
    * One search's walk of the graph: the graph, and a pool of the lists a nested pattern node's
    * substitutions are gathered in, so that a search allocates per match, not per candidate.
    */
   private static final class Walk<L extends Language<L>, D extends @Nullable Object> {
     private final EGraph<L, D> graph;
-    private final List<List<Subst>> free = new ArrayList<>();
+    private final List<List<Subst>> free;
     // Each pattern node met in this search, compiled once ({@link View}), by the node object.
+    // Not kept between searches: a view holds the graph's ordinal for its head, which a later
+    // add can give a head that has none yet.
     private final Map<Pattern.Node<L>, View<L>> views = new IdentityHashMap<>();
 
-    Walk(EGraph<L, D> graph) {
+    Walk(EGraph<L, D> graph, Scratch scratch) {
       this.graph = graph;
+      this.free = scratch.free;
     }
 
     /**
@@ -543,7 +593,7 @@ public final class Matcher {
         }
         case Pattern.Node<L> patternNode -> {
           Set<Subst> seen = null;
-          EClass<L, D> eclass = graph.classOf(root);
+          EClass<L, D> eclass = graph.rootClass(root);
           View<L> view = viewOf(patternNode);
           Pattern.Head<L> head = view.head;
           int arity = view.arity;
@@ -668,7 +718,8 @@ public final class Matcher {
           // the class's list no longer holds a dropped node and the hashcons still does. A class
           // that never pruned, or was never joined by one, lists every node it holds.
           int childRoot = graph.find(child);
-          if (graph.classOf(childRoot).hasPruned() && !nested.children().isEmpty()
+          if (graph.anyPruned() && graph.rootClass(childRoot).hasPruned()
+              && !nested.children().isEmpty()
               && isGround(nested, subst)) {
             if (lookUp(nested, subst) == childRoot) {
               matchChildren(view, order, k + 1, kids, start, subst, out, distinct);

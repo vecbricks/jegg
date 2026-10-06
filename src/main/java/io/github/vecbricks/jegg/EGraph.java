@@ -97,6 +97,11 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   // current on set and recomputed after a clear or a new node class.
   private final Map<Class<?>, BitSet> unions = new LinkedHashMap<>();
   private boolean unionsStale;
+  // Whether retainNodes ever dropped a node: until then no class has pruned, and the matcher
+  // skips asking each class.
+  private boolean anyPruned;
+  // The matcher's lists between searches (Matcher.Scratch); null while a search holds them.
+  private Matcher.@Nullable Scratch scratch = new Matcher.Scratch();
   private int parentSerial;
   // Parent entries whose class's fact may have grown because a child's fact did (paper
   // section 4.1, egg's analysis_pending): each is re-made and joined into its class's fact.
@@ -303,6 +308,38 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       throw new IllegalStateException("no class is rooted at " + id);
     }
     return eclass;
+  }
+
+  /**
+   * The class rooted at {@code root}, for a caller that has just found the root: the same class
+   * {@link #classOf} gives, without a second {@code find}.
+   */
+  EClass<L, D> rootClass(int root) {
+    return classes.get(root);
+  }
+
+  /** Whether {@link #retainNodes} has dropped a node from any class of this graph. */
+  boolean anyPruned() {
+    return anyPruned;
+  }
+
+  /**
+   * The matcher's lists, lent to one search at a time: a search that starts while they are lent
+   * (from inside another) gets new ones.
+   */
+  Matcher.Scratch borrowScratch() {
+    Matcher.Scratch lent = scratch;
+    if (lent == null) {
+      return new Matcher.Scratch();
+    }
+    scratch = null;
+    return lent;
+  }
+
+  /** Takes back lists {@link #borrowScratch} lent, emptied so they hold no substitution. */
+  void returnScratch(Matcher.Scratch returned) {
+    returned.clear();
+    scratch = returned;
   }
 
   /** The ordinal of a head key, assigned on first sight: the number of keys met before it. */
@@ -539,6 +576,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       return 0;
     }
     c.markPruned();
+    anyPruned = true;
     for (L node : dropped) {
       // Inside a rebuild a listed node may be stale while the hashcons holds its canonical form,
       // so both are removed; the canonical form is remembered, and repair keeps it current.
