@@ -1,6 +1,6 @@
 # The code, mapped
 
-One package, `io.github.vecbricks.jegg`, 24 files. The Javadoc of each is at
+One package, `io.github.vecbricks.jegg`, 27 files. The Javadoc of each is at
 https://vecbricks.github.io/jegg/; this page says what each is for, how an iteration flows
 through them, and where the invariants hold and where they may not.
 
@@ -18,8 +18,9 @@ through them, and where the invariants hold and where they may not.
 | `Analysis` | `make`, `join` (a semilattice join), `modify`; `Analysis.none()`. |
 | `Pattern`, `Pattern.Head` | a pattern tree of nodes and variables; a head matches an operator and payload exactly (`Pattern.of`) or binds the payload to a variable (`Pattern.binding`) and declares what it binds. |
 | `Subst` | the bindings of a match: subterm variables to class ids, payload variables to values; immutable. |
-| `Matcher` | the backtracking matcher: `search` over the graph (optionally to a limit), starting at the classes holding the root head's node class when the head names it (`Pattern.Head.type`, an index `EGraph` keeps per node class), `matchIn` one class in one depth-first walk, `instantiate` a right-hand side. Order fixed: classes by id, nodes by insertion, children depth-first. |
-| `Rewrite`, `Applier`, `Condition` | a named rule: left pattern, right-hand side (a pattern or a function), condition read at apply time; `Rewrite` refuses a right-hand variable the left does not bind. |
+| `Matcher` | the backtracking matcher: `search` over the graph (optionally to a limit; for a `MultiPattern`, a depth-first join of its clauses), starting at the classes holding the root head's node class when the head names it (`Pattern.Head.type`, an index `EGraph` keeps per node class), `matchIn` one class in one depth-first walk, `instantiate` a right-hand side. Order fixed: classes by id, nodes by insertion, children depth-first. |
+| `Searcher`, `MultiPattern` | what a rule searches with: a `Pattern`, or several clauses `?var = pattern` joined on shared variables (egg's multi-pattern, which also serves as a right-hand side through `Applier.multi`). |
+| `Rewrite`, `Applier`, `Applied`, `Condition` | a named rule: left searcher, right-hand side (a pattern, a multi-pattern or a function), condition read at apply time; `applyTo` applies one match and returns `Applied` (unions made, and what egg counts as applied); `Rewrite` refuses a right-hand variable the left does not bind. |
 | `Scheduler`, `BackoffScheduler` | which matches are applied each iteration; the backoff bans a rule past its threshold and searches it only one match past it. |
 | `RunLimits`, `StopReason`, `RunReport` | the bounds of a run, why it stopped, what each iteration did. |
 | `Runner` | equality saturation: the loop below, with hooks. |
@@ -34,16 +35,19 @@ hooks                            each may stop the run (StopReason.Other) or cha
 rebuild                          after the hooks
 for each rule: scheduler.search  all matches read before any is applied (a banned rule: none)
 for each rule, each match:       condition read now; right-hand side added; unioned with the match
+                                 (a multi-pattern: with the classes its clause variables name)
    after each rule: limits       a passed limit skips the rules after it (report.skipped)
 rebuild                          congruence restored once, repairs counted
 report the iteration
-stop if: a limit passed | unions == 0 && scheduler.canStop && changes unchanged (saturated)
+stop if: a limit passed | counted == 0 && scheduler.canStop && changes unchanged (saturated)
        | the iteration limit
 ```
 
-Two orders matter and are egg's: the scheduler is asked whenever no rule merged, even if nodes
-were added (its bans are released there); and the limits are checked between rules, not only
-after the iteration.
+Two orders matter and are egg's: the scheduler is asked whenever nothing was counted as applied,
+even if nodes were added (its bans are released there); and the limits are checked between rules,
+not only after the iteration. `counted` is the unions, plus one for every match of a rule whose
+right-hand side is a multi-pattern, as egg counts them (`Applied`), so a run in which such a rule
+matches never saturates.
 
 ## Where the invariants hold, and where they do not
 

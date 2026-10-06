@@ -66,7 +66,7 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
 
 | | |
 |---|---|
-| the library | `src/main/java/io/github/vecbricks/jegg`, one package, 24 files; `docs/architecture.md` maps them |
+| the library | `src/main/java/io/github/vecbricks/jegg`, one package, 27 files; `docs/architecture.md` maps them |
 | the tests | `src/test/java/...`: egg's suites (`SimpleRulesTest`, `PropRulesTest`, `LambdaTest`, `MathTest`), the invariant and determinism tests, the extraction oracles, `Toy` and `Term` as fixtures |
 | the harness | `src/jmh/java/...`: `Benchmarks` (the main), `Saturation` (the loop in two modes), the three benchmarks, `CoverageSummary` |
 | the measurements | `benchmarks/*-results.txt`, each naming its commit, JDK, machine and load |

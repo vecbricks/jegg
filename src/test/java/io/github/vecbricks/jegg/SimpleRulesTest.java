@@ -61,7 +61,7 @@ class SimpleRulesTest {
       int changed = 0;
       for (int i = 0; i < rules.size(); i++) {
         for (Matcher.Match m : matches.get(i)) {
-          changed += rules.get(i).apply(g, m).orElse(0);
+          changed += rules.get(i).apply(g, m).map(Applied::unions).orElse(0);
         }
       }
       g.rebuild();

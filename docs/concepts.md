@@ -72,16 +72,20 @@ to values.
 in id order, nodes in insertion order; where the root head names its node class
 (`Pattern.Head.type`, which jegg's own heads do), only the classes holding such
 a node are visited. The order is fixed, which is part of the determinism jegg
-promises. A `Rewrite` is a name, a left-hand pattern, a
-right-hand `Applier` (a pattern to instantiate, or a function of the graph and
-the substitution: `Rewrite.dynamic`) and a `Condition` read at apply time.
+promises. A `Rewrite` is a name, a left-hand `Searcher` (a pattern, or a
+`MultiPattern`: clauses `?var = pattern` joined on shared variables, egg's
+multi-pattern), a right-hand `Applier` (a pattern to instantiate, a
+multi-pattern's clauses, or a function of the graph and the substitution:
+`Rewrite.dynamic`) and a `Condition` read at apply time.
 (Paper, section 2.2; the compiled matcher of egg's `machine.rs` is not ported.)
 
 ## The runner: equality saturation
 
 `Runner.run()` repeats: search every rule on the graph as it stands, apply every
 match found (adding right-hand sides and merging them with the matched classes),
-rebuild once; and stops when an iteration changes nothing (**saturation**), a
+rebuild once; and stops when an iteration changes nothing and counts nothing as
+applied (**saturation**: a rule whose right-hand side is a multi-pattern counts
+every match, as egg's does, so a run in which one matches does not saturate), a
 `RunLimits` limit (iterations, nodes, classes) is hit, or a `Runner.Hook` asks.
 A `Scheduler` decides which matches are applied: `BackoffScheduler`, egg's
 default, bans a rule whose matches pass a threshold for a few iterations and

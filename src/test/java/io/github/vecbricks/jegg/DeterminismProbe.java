@@ -169,7 +169,14 @@ public final class DeterminismProbe {
         Rewrite.of("commute-mul", Pattern.of(mul, x, y), Pattern.of(mul, y, x)),
         Rewrite.of("assoc-add", Pattern.of(add, Pattern.of(add, x, y), z),
             Pattern.of(add, x, Pattern.of(add, y, z))),
-        Rewrite.of("mul-1", Pattern.of(mul, x, Pattern.of(new Probe.Num(1))), x));
+        Rewrite.of("mul-1", Pattern.of(mul, x, Pattern.of(new Probe.Num(1))), x),
+        // A multi-pattern: two sums sharing a term, joined across classes, give a product of
+        // their other terms. Its join order, its leaf deduplication and its count of every match
+        // as applied go through the same fresh JVMs as the rest.
+        Rewrite.multi("join-sums",
+            MultiPattern.of(MultiPattern.clause("s", Pattern.of(add, x, y)),
+                MultiPattern.clause("t", Pattern.of(add, y, z))),
+            MultiPattern.of(MultiPattern.clause("u", Pattern.of(mul, x, z)))));
     RunReport report = new Runner<>(g, rules, RunLimits.DEFAULT.withNodes(40),
         new BackoffScheduler<>(20, 2)).run();
     return render(g) + report;

@@ -9,27 +9,29 @@
 
 package io.github.vecbricks.jegg;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 
 /**
- * A named rewrite: a left-hand pattern, a right-hand {@link Applier} and a {@link Condition}.
+ * A named rewrite: a left-hand {@link Searcher} (a pattern, or several joined in a
+ * {@link MultiPattern}), a right-hand {@link Applier} and a {@link Condition}.
  * Searching finds the matches; applying one adds the right-hand side and unions it with the
- * matched class. The runner does both for every rule each iteration, reading all matches
+ * matched class, or, for a multi-pattern right-hand side, with the classes its clause variables
+ * name. The runner does both for every rule each iteration, reading all matches
  * before writing any, which is the equality-saturation loop of the paper's Figure 5b.
  *
  * @param <L> the language
  * @param <D> the analysis fact
  * @param name the rule's name, as {@link #toString} shows it; not null
- * @param lhs the left-hand pattern to search for; not null
+ * @param lhs the left-hand pattern or multi-pattern to search for; not null
  * @param rhs what to add for each match; not null. A pattern applier's variables are checked
  *     against {@code lhs}'s on construction
  * @param condition whether a match may be applied, read at apply time; not null
  */
-public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, Applier<L, D> rhs,
+public record Rewrite<L extends Language<L>, D>(String name, Searcher<L> lhs, Applier<L, D> rhs,
     Condition<L, D> condition) {
 
   /**
@@ -37,34 +39,53 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
    * left-hand side binds.
    *
    * @throws IllegalArgumentException if the right-hand side has a subterm or payload variable the
-   *     left-hand side does not bind
+   *     left-hand side does not bind (or, for a multi-pattern right-hand side, no earlier clause
+   *     binds), or if the left-hand side is a multi-pattern whose first clause is a bare
+   *     variable; egg refuses that one only when it searches
    */
   public Rewrite {
     Objects.requireNonNull(name, "name");
     Objects.requireNonNull(lhs, "lhs");
     Objects.requireNonNull(rhs, "rhs");
     Objects.requireNonNull(condition, "condition");
+    if (lhs instanceof MultiPattern<L> multi && multi.startsWithBareVariable()) {
+      throw new IllegalArgumentException("rewrite " + name
+          + ": a multi-pattern cannot start with a bare variable: " + multi);
+    }
     // As egg's Rewrite::new: a pattern right-hand side may use only what the left binds, so a
     // misspelt variable fails here and not in the middle of an apply phase, with the graph
     // half-applied. A dynamic applier cannot be checked; its variables are its own business.
     if (rhs instanceof Applier.PatternApplier<L, D>(var pattern)) {
-      Set<String> bound = lhs.subtermVariables();
-      for (String v : pattern.subtermVariables()) {
-        if (!bound.contains(v)) {
-          throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's ?" + v
-              + " is not bound by the left-hand side " + lhs);
-        }
+      checkBound(name, lhs, lhs.subtermVariables(), pattern);
+    } else if (rhs instanceof Applier.MultiApplier<L, D>(var multi)) {
+      // A multi-pattern right-hand side binds each clause's variable for the clauses after it
+      // ("?z = (baz ?y), ?x = ?z"), so a variable is checked against the left's and the
+      // earlier clauses'.
+      Set<String> bound = new LinkedHashSet<>(lhs.subtermVariables());
+      for (MultiPattern.Clause<L> clause : multi.clauses()) {
+        checkBound(name, lhs, bound, clause.pattern());
+        bound.add(clause.var());
       }
-      // Payload variables only when every head on both sides declares what it binds
-      // (Pattern.Head.variables): a head that does not say is unchecked, never wrongly refused.
-      Optional<Set<String>> boundPayloads = lhs.payloadVariables();
-      Optional<Set<String>> usedPayloads = pattern.payloadVariables();
-      if (boundPayloads.isPresent() && usedPayloads.isPresent()) {
-        for (String v : usedPayloads.get()) {
-          if (!boundPayloads.get().contains(v)) {
-            throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's"
-                + " payload variable ?" + v + " is not bound by the left-hand side " + lhs);
-          }
+    }
+  }
+
+  private static <L extends Language<L>> void checkBound(String name, Searcher<L> lhs,
+      Set<String> bound, Pattern<L> pattern) {
+    for (String v : pattern.subtermVariables()) {
+      if (!bound.contains(v)) {
+        throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's ?" + v
+            + " is not bound by the left-hand side " + lhs);
+      }
+    }
+    // Payload variables only when every head on both sides declares what it binds
+    // (Pattern.Head.variables): a head that does not say is unchecked, never wrongly refused.
+    Optional<Set<String>> boundPayloads = lhs.payloadVariables();
+    Optional<Set<String>> usedPayloads = pattern.payloadVariables();
+    if (boundPayloads.isPresent() && usedPayloads.isPresent()) {
+      for (String v : usedPayloads.get()) {
+        if (!boundPayloads.get().contains(v)) {
+          throw new IllegalArgumentException("rewrite " + name + ": the right-hand side's"
+              + " payload variable ?" + v + " is not bound by the left-hand side " + lhs);
         }
       }
     }
@@ -86,16 +107,34 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
   }
 
   /**
-   * A rewrite from a pattern to a computed right-hand side, unconditional.
+   * A rewrite from a multi-pattern to a multi-pattern, unconditional: egg's {@code
+   * multi_rewrite!}. Each match applies the right-hand clauses in order.
    *
    * @param <L> the language
    * @param <D> the analysis fact
    * @param name the rule's name
-   * @param lhs the pattern to search for
-   * @param rhs computes the classes to union with each match, whose variables are not checked
+   * @param lhs the clauses to join for a match; the first is not a bare variable
+   * @param rhs the clauses to apply for each match, over variables {@code lhs} binds or an
+   *     earlier right-hand clause does
    * @return the rewrite, whose condition always holds
    */
-  public static <L extends Language<L>, D> Rewrite<L, D> dynamic(String name, Pattern<L> lhs,
+  public static <L extends Language<L>, D> Rewrite<L, D> multi(String name, MultiPattern<L> lhs,
+      MultiPattern<L> rhs) {
+    return new Rewrite<>(name, lhs, Applier.multi(rhs), Condition.always());
+  }
+
+  /**
+   * A rewrite from a pattern or multi-pattern to a computed right-hand side, unconditional.
+   *
+   * @param <L> the language
+   * @param <D> the analysis fact
+   * @param name the rule's name
+   * @param lhs the pattern or multi-pattern to search for
+   * @param rhs computes the classes to union with each match; a function's variables are not
+   *     checked, a pattern's or a multi-pattern's ({@link Applier#multi}) are
+   * @return the rewrite, whose condition always holds
+   */
+  public static <L extends Language<L>, D> Rewrite<L, D> dynamic(String name, Searcher<L> lhs,
       Applier<L, D> rhs) {
     return new Rewrite<>(name, lhs, rhs, Condition.always());
   }
@@ -119,25 +158,27 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
    * @return a fresh list of matches, empty if there are none
    */
   public List<Matcher.Match> search(EGraph<L, D> graph) {
-    return Matcher.search(graph, lhs);
+    return lhs.search(graph, Integer.MAX_VALUE);
   }
 
   /**
-   * The first {@code limit} matches, the search stopped within the node that reached the limit
-   * ({@link Matcher#search(EGraph, Pattern, int)}).
+   * The first {@code limit} matches, a prefix of all of them ({@link Searcher#search}); a
+   * pattern's search stops within the node that reached the limit, a multi-pattern's within the
+   * class of its first clause.
    *
    * @param graph the graph to search; not changed
    * @param limit the most matches to return; must be positive
    * @return a fresh list of at most {@code limit} matches, in the matcher's order
    */
   public List<Matcher.Match> search(EGraph<L, D> graph, int limit) {
-    return Matcher.search(graph, lhs, limit);
+    return lhs.search(graph, limit);
   }
 
   /**
-   * Applies one match if its condition holds: the right-hand side's classes are unioned with
-   * the matched class. Returns how many unions changed the graph (merged two classes that were
-   * different), or empty if the condition did not hold and nothing was applied.
+   * Applies one match if its condition holds: the right-hand side's {@link Applier#applyTo}
+   * adds its classes and unions them with the matched class, or, for a multi-pattern, does its
+   * own unions. Returns what that did, or empty if the condition did not hold and nothing was
+   * applied.
    *
    * <p>The condition is read here, at apply time, not at search: the runner applies a match
    * only after the matches before it in the iteration, whose merges may have made the
@@ -146,23 +187,28 @@ public record Rewrite<L extends Language<L>, D>(String name, Pattern<L> lhs, App
    * @param graph the graph to write to; the match must come from a search of it
    * @param match a match of this rewrite's left-hand side: the matched class and the
    *     substitution for the variables
-   * @return the number of unions that changed the graph, which may be zero, or empty if the
-   *     condition did not hold
+   * @return the unions that changed the graph and the number egg counts as applied, or empty if
+   *     the condition did not hold
    */
-  public OptionalInt apply(EGraph<L, D> graph, Matcher.Match match) {
+  public Optional<Applied> apply(EGraph<L, D> graph, Matcher.Match match) {
     if (!condition.holds(graph, match.eclass(), match.subst())) {
-      return OptionalInt.empty();
+      return Optional.empty();
     }
-    IntList added = rhs.apply(graph, match.eclass(), match.subst());
-    int changed = 0;
-    for (int i = 0; i < added.size(); i++) {
-      if (graph.find(match.eclass()) != graph.find(added.get(i))) {
-        graph.merge(match.eclass(), added.get(i));
-        changed++;
-      }
+    Applied done = rhs.applyTo(graph, match);
+    // The common results are shared, so an application allocates nothing for them.
+    if (done == Applied.NOTHING) {
+      return NOTHING;
+    } else if (done == Applied.ONE_UNION) {
+      return ONE_UNION;
+    } else if (done == Applied.COUNTED_ONLY) {
+      return COUNTED_ONLY;
     }
-    return OptionalInt.of(changed);
+    return Optional.of(done);
   }
+
+  private static final Optional<Applied> NOTHING = Optional.of(Applied.NOTHING);
+  private static final Optional<Applied> ONE_UNION = Optional.of(Applied.ONE_UNION);
+  private static final Optional<Applied> COUNTED_ONLY = Optional.of(Applied.COUNTED_ONLY);
 
   @Override
   public String toString() {
