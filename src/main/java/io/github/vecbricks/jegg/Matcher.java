@@ -404,6 +404,10 @@ public final class Matcher {
    */
   private static final class Walk<L extends Language<L>, D extends @Nullable Object> {
     private final EGraph<L, D> graph;
+    // Whether the graph was rebuilt when the search began: then every node of every class is
+    // canonical, so the children the walk reads from a class are roots and need no find. A
+    // search between a merge and the rebuild finds each child's root.
+    private final boolean rebuilt;
     private final List<List<Subst>> free;
     // Each pattern node met in this search, compiled once ({@link View}), by the node object.
     // Not kept between searches: a view holds the graph's ordinal for its head, which a later
@@ -412,6 +416,7 @@ public final class Matcher {
 
     Walk(EGraph<L, D> graph, Scratch scratch) {
       this.graph = graph;
+      this.rebuilt = !graph.isDirty();
       this.free = scratch.free;
     }
 
@@ -582,7 +587,12 @@ public final class Matcher {
      */
     void matchIn(Pattern<L> pattern, int id, Subst subst, int limit, List<Subst> out,
         boolean distinct, boolean nested) {
-      int root = graph.find(id);
+      matchInRoot(pattern, graph.find(id), subst, limit, out, distinct, nested);
+    }
+
+    /** As {@link #matchIn(Pattern, int, Subst, int, List, boolean, boolean)} for a root id. */
+    private void matchInRoot(Pattern<L> pattern, int root, Subst subst, int limit,
+        List<Subst> out, boolean distinct, boolean nested) {
       switch (pattern) {
         case Pattern.Var<L>(var name) -> {
           int bound = subst.idOrUnbound(name);
@@ -706,7 +716,7 @@ public final class Matcher {
       switch (view.children[i]) {
         case Pattern.Var<L>(var name) -> {
           int bound = subst.idOrUnbound(name);
-          int root = graph.find(child);
+          int root = rebuilt ? child : graph.find(child);
           if (bound == Subst.UNBOUND) {
             matchChildren(view, order, k + 1, kids, start, subst.bindNew(name, root), out,
                 distinct);
@@ -718,7 +728,7 @@ public final class Matcher {
           // In a class that has pruned, a ground nested node is looked up without entering it:
           // the class's list no longer holds a dropped node and the hashcons still does. A class
           // that never pruned, or was never joined by one, lists every node it holds.
-          int childRoot = graph.find(child);
+          int childRoot = rebuilt ? child : graph.find(child);
           if (graph.anyPruned() && graph.rootClass(childRoot).hasPruned()
               && !nested.children().isEmpty()
               && isGround(nested, subst)) {
@@ -730,7 +740,7 @@ public final class Matcher {
           // The nested node's substitutions go into a list from the pool, read by index while
           // the children after it fill lists of their own, and returned once read.
           List<Subst> partial = free.isEmpty() ? new ArrayList<>() : free.remove(free.size() - 1);
-          matchIn(nested, child, subst, Integer.MAX_VALUE, partial, distinct, true);
+          matchInRoot(nested, childRoot, subst, Integer.MAX_VALUE, partial, distinct, true);
           for (int j = 0; j < partial.size(); j++) {
             matchChildren(view, order, k + 1, kids, start, partial.get(j), out, distinct);
           }

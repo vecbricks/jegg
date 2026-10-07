@@ -100,6 +100,30 @@ class MatcherScratchTest {
   }
 
   @Test
+  void aSearchBetweenAMergeAndTheRebuildStillFindsEachChildsRoot() {
+    // On a rebuilt graph the children a search reads are roots and are taken as they are; between
+    // a merge and the rebuild a node can still name a class that is no longer a root, so a
+    // search then finds each child's root. Here (a + b) lists b, which a merge makes a non-root.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int sum = g.add(new Toy.Add(IntList.of(a, b)));
+    g.add(new Toy.Add(IntList.of(sum, g.add(new Toy.Num(1)))));
+    g.merge(a, b);
+    assertTrue(g.isDirty());
+    assertTrue(g.find(b) != b, "b is no longer a root");
+    Pattern<Toy> same = add(v("x"), v("x"));
+    Pattern<Toy> nested = add(add(v("x"), v("x")), v("z"));
+    List<Matcher.Match> dirtySame = Matcher.search(g, same);
+    List<Matcher.Match> dirtyNested = Matcher.search(g, nested);
+    assertEquals(1, dirtySame.size(), dirtySame.toString());
+    assertEquals(1, dirtyNested.size(), dirtyNested.toString());
+    g.rebuild();
+    assertEquals(dirtySame, Matcher.search(g, same), "the rebuilt graph gives the same matches");
+    assertEquals(dirtyNested, Matcher.search(g, nested));
+  }
+
+  @Test
   void theGraphRemembersWhetherAnyClassHasPruned() {
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int a = g.add(new Toy.Var("a"));
