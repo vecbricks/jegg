@@ -100,6 +100,8 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   // Whether retainNodes ever dropped a node: until then no class has pruned, and the matcher
   // skips asking each class.
   private boolean anyPruned;
+  // The classes instantiate found for the nodes pure heads built (ApplyMemo); made on first use.
+  private @Nullable ApplyMemo applyMemo;
   // The matcher's lists between searches (Matcher.Scratch); null while a search holds them.
   private Matcher.@Nullable Scratch scratch = new Matcher.Scratch();
   private int parentSerial;
@@ -316,6 +318,29 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    */
   EClass<L, D> rootClass(int root) {
     return classes.get(root);
+  }
+
+  /**
+   * The root of the class {@link #add} returned for the node {@code head} builds over the root
+   * ids {@code ids}, if {@code instantiate} has added it before, or {@link #MISSING}.
+   */
+  int recall(Object head, int[] ids) {
+    ApplyMemo memo = applyMemo;
+    if (memo == null) {
+      return MISSING;
+    }
+    int id = memo.get(head, ids);
+    return id < 0 ? MISSING : unionFind.find(id);
+  }
+
+  /** Remembers the class {@link #add} returned for the node {@code head} built over {@code ids}. */
+  void remember(Object head, int[] ids, int id) {
+    ApplyMemo memo = applyMemo;
+    if (memo == null) {
+      memo = new ApplyMemo();
+      applyMemo = memo;
+    }
+    memo.put(head, ids, id);
   }
 
   /** Whether {@link #retainNodes} has dropped a node from any class of this graph. */
