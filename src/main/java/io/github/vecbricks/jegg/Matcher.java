@@ -774,15 +774,15 @@ public final class Matcher {
         for (int i = 0; i < ids.length; i++) {
           ids[i] = instantiate(graph, children.get(i), subst);
         }
-        if (head instanceof PureHead<L>) {
-          // The node such a head builds is a function of the children, which are roots here: the
+        if (head instanceof PureHead<L> pure) {
+          // The node such a head builds is a function of the children; when they are roots, the
           // class add found for it before is the class it finds now, so add is not asked again.
-          int known = graph.recall(head, ids);
+          int known = graph.recall(pure, ids);
           if (known != EGraph.MISSING) {
             return known;
           }
           int id = graph.add(head.build(subst, IntList.wrap(ids)));
-          graph.remember(head, ids, id);
+          graph.remember(pure, ids, id);
           return id;
         }
         return graph.add(head.build(subst, IntList.wrap(ids)));

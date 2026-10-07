@@ -11,6 +11,7 @@
 package io.github.vecbricks.jegg;
 
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -30,18 +31,25 @@ final class ApplyMemo {
   /** The most children an entry holds. */
   static final int MAX_ARITY = 4;
 
+  private static final AtomicInteger SERIALS = new AtomicInteger();
+
   private static final int INITIAL = 1 << 10;
   private static final int LIMIT = 1 << 20;
 
-  private @Nullable Object[] heads = new Object[INITIAL];
+  private @Nullable PureHead<?>[] heads = new PureHead<?>[INITIAL];
   private int[] arities = new int[INITIAL];
   private int[] kids = new int[INITIAL * MAX_ARITY];
   private int[] classes = new int[INITIAL];
   private int mask = INITIAL - 1;
   private int filled;
 
-  private static int hash(Object head, int[] ids) {
-    int h = System.identityHashCode(head);
+  /** The next head serial: heads are numbered in the order they are made. */
+  static int nextSerial() {
+    return SERIALS.getAndIncrement();
+  }
+
+  private static int hash(PureHead<?> head, int[] ids) {
+    int h = head.serial() * 0x7FEB352D;
     for (int id : ids) {
       h = h * 0x9E3779B1 + id;
     }
@@ -52,7 +60,7 @@ final class ApplyMemo {
   }
 
   /** The class remembered for {@code head} over {@code ids}, or -1 if none is. */
-  int get(Object head, int[] ids) {
+  int get(PureHead<?> head, int[] ids) {
     if (ids.length > MAX_ARITY) {
       return -1;
     }
@@ -70,7 +78,7 @@ final class ApplyMemo {
   }
 
   /** Remembers that {@code head} over {@code ids} is in class {@code id}. */
-  void put(Object head, int[] ids, int id) {
+  void put(PureHead<?> head, int[] ids, int id) {
     if (ids.length > MAX_ARITY) {
       return;
     }
@@ -80,7 +88,7 @@ final class ApplyMemo {
     store(head, ids, id);
   }
 
-  private void store(Object head, int[] ids, int id) {
+  private void store(PureHead<?> head, int[] ids, int id) {
     int slot = hash(head, ids) & mask;
     if (heads[slot] == null) {
       filled++;
@@ -95,23 +103,39 @@ final class ApplyMemo {
   }
 
   private void grow() {
-    @Nullable Object[] oldHeads = heads;
+    @Nullable PureHead<?>[] oldHeads = heads;
     int[] oldArities = arities;
     int[] oldKids = kids;
     int[] oldClasses = classes;
     int capacity = (mask + 1) * 2;
-    heads = new Object[capacity];
+    heads = new PureHead<?>[capacity];
     arities = new int[capacity];
     kids = new int[capacity * MAX_ARITY];
     classes = new int[capacity];
     mask = capacity - 1;
     filled = 0;
     for (int slot = 0; slot < oldHeads.length; slot++) {
-      Object head = oldHeads[slot];
+      PureHead<?> head = oldHeads[slot];
       if (head != null) {
         int n = oldArities[slot];
         store(head, Arrays.copyOfRange(oldKids, slot * MAX_ARITY, slot * MAX_ARITY + n),
             oldClasses[slot]);
+      }
+    }
+  }
+
+  /** What {@link #forEach} shows of an entry. */
+  interface Entries {
+    void accept(PureHead<?> head, int[] ids, int id);
+  }
+
+  /** Calls {@code visitor} for every entry, in slot order, with a copy of its ids. */
+  void forEach(Entries visitor) {
+    for (int slot = 0; slot < heads.length; slot++) {
+      PureHead<?> head = heads[slot];
+      if (head != null) {
+        int base = slot * MAX_ARITY;
+        visitor.accept(head, Arrays.copyOfRange(kids, base, base + arities[slot]), classes[slot]);
       }
     }
   }
