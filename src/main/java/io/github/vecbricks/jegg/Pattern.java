@@ -268,7 +268,7 @@ public sealed interface Pattern<L extends Language<L>> extends Searcher<L>
         ? Optional.of((Class<? extends L>) prototype.getClass()) : Optional.empty();
     Optional<Object> exact = Optional.of(key);
     Optional<Set<String>> declared = Optional.of(Set.of());
-    return new Head<>() {
+    return new PureHead<L>() {
       @Override
       public @Nullable Subst match(L node, Subst subst) {
         return key.equals(node.head()) ? subst : null;
