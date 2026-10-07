@@ -72,7 +72,7 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
 
 | | |
 |---|---|
-| the library | `src/main/java/io/github/vecbricks/jegg`, one package, 27 files; `docs/architecture.md` maps them |
+| the library | `src/main/java/io/github/vecbricks/jegg`, one package, 32 files; `docs/architecture.md` maps them |
 | the tests | `src/test/java/...`: egg's suites (`SimpleRulesTest`, `PropRulesTest`, `LambdaTest`, `MathTest`, `DatalogTest`), `MultiPatternTest`, the invariant and determinism tests, the extraction oracles, `Toy` and `Term` as fixtures |
 | trying a rule set | `dev/explore.sh <prop|math> <rules-file> '<term>' [--limits i,n,c] [--json]` (`Explore`, test scope): one unconditional, single-pattern rewrite per line, egg's syntax `name: lhs => rhs`, no multi-patterns or conditions |
 | the harness | `src/jmh/java/...`: `Benchmarks` (the main), `Saturation` (the loop in two modes), the three benchmarks, `CoverageSummary` |

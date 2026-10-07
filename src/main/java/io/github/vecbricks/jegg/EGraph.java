@@ -324,23 +324,40 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * The root of the class {@link #add} returned for the node {@code head} builds over the root
    * ids {@code ids}, if {@code instantiate} has added it before, or {@link #MISSING}.
    */
-  int recall(Object head, int[] ids) {
+  int recall(PureHead<?> head, int[] ids) {
     ApplyMemo memo = applyMemo;
-    if (memo == null) {
+    if (memo == null || !allRoots(ids)) {
       return MISSING;
     }
     int id = memo.get(head, ids);
     return id < 0 ? MISSING : unionFind.find(id);
   }
 
-  /** Remembers the class {@link #add} returned for the node {@code head} built over {@code ids}. */
-  void remember(Object head, int[] ids, int id) {
+  /**
+   * Remembers the class {@link #add} returned for the node {@code head} built over {@code ids},
+   * if they are all roots. A child can stop being one while its siblings are added, when an
+   * analysis's {@code modify} merges classes of its own; the node is then not the one the
+   * entry's ids would name, and nothing is remembered.
+   */
+  void remember(PureHead<?> head, int[] ids, int id) {
+    if (!allRoots(ids)) {
+      return;
+    }
     ApplyMemo memo = applyMemo;
     if (memo == null) {
       memo = new ApplyMemo();
       applyMemo = memo;
     }
     memo.put(head, ids, id);
+  }
+
+  private boolean allRoots(int[] ids) {
+    for (int id : ids) {
+      if (unionFind.find(id) != id) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Whether {@link #retainNodes} has dropped a node from any class of this graph. */
@@ -902,6 +919,31 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     }
     checkParentEntries();
     checkIndex();
+    checkApplyMemo();
+  }
+
+  /**
+   * On a graph that is not dirty, every entry of the memo whose children are all roots must name
+   * the class the graph has for the node its head builds over them: the memo's exactness, which
+   * the argument in {@code ApplyMemo} rests on, checked wherever the invariants are.
+   */
+  @SuppressWarnings("unchecked")
+  private void checkApplyMemo() {
+    ApplyMemo memo = applyMemo;
+    if (memo == null || isDirty()) {
+      return;
+    }
+    memo.forEach((head, ids, id) -> {
+      if (!allRoots(ids)) {
+        return;
+      }
+      L node = ((PureHead<L>) head).build(Subst.EMPTY, IntList.wrap(ids));
+      int found = lookupOrMissing(node);
+      if (found != unionFind.find(id)) {
+        throw new IllegalStateException("the memo has " + node + " in class " + unionFind.find(id)
+            + " and the graph has it in " + (found == MISSING ? "no class" : "class " + found));
+      }
+    });
   }
 
   private void checkIndex() {

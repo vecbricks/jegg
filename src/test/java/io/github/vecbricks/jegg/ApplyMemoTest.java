@@ -11,6 +11,7 @@ package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -59,6 +60,12 @@ class ApplyMemoTest {
         yield g.add(head.build(subst, IntList.wrap(ids)));
       }
     };
+  }
+
+  /** The head {@code Pattern.of(prototype)} gives its node: a pure head. */
+  @SuppressWarnings("unchecked")
+  private static PureHead<Toy> pureHead(Toy prototype) {
+    return (PureHead<Toy>) Pattern.head(prototype);
   }
 
   private static Pattern<Toy> randomPattern(Random r, int depth) {
@@ -236,7 +243,10 @@ class ApplyMemoTest {
     // whatever it answers must be what the last put of that exact key said, and it may answer
     // nothing (it is a cache). A key that reached another key's slot is told apart by its
     // children and its head.
-    Object[] heads = {new Object(), new Object(), new Object()};
+    List<PureHead<Toy>> heads = new ArrayList<>();
+    for (int i = 0; i < 3; i++) {
+      heads.add(pureHead(new Toy.Num(i)));
+    }
     java.util.Map<List<Object>, Integer> truth = new java.util.HashMap<>();
     ApplyMemo memo = new ApplyMemo();
     Random r = new Random(7);
@@ -245,7 +255,7 @@ class ApplyMemoTest {
       int arity = r.nextInt(ApplyMemo.MAX_ARITY + 1);
       int[] ids = new int[arity];
       List<Object> key = new ArrayList<>();
-      Object head = heads[r.nextInt(heads.length)];
+      PureHead<Toy> head = heads.get(r.nextInt(heads.size()));
       key.add(head);
       for (int k = 0; k < arity; k++) {
         ids[k] = r.nextInt(12);
@@ -262,8 +272,181 @@ class ApplyMemoTest {
       assertEquals(cls, memo.get(head, ids), "the key just put is found");
     }
     assertTrue(answered > 1000, "the memo answered often enough to be tested: " + answered);
-    assertEquals(-1, memo.get(heads[0], new int[ApplyMemo.MAX_ARITY + 1]),
+    assertEquals(-1, memo.get(heads.get(0), new int[ApplyMemo.MAX_ARITY + 1]),
         "more children than an entry holds is never answered");
+  }
+
+  /** Adding a node named {@code boom} merges its class into class 1 and class 2 into class 0. */
+  private static final Analysis<Toy, Void> HOSTILE = new Analysis<>() {
+    @Override
+    public Void make(EGraph<Toy, Void> g, Toy node) {
+      return null;
+    }
+
+    @Override
+    public Void join(Void a, Void b) {
+      return null;
+    }
+
+    @Override
+    public void modify(EGraph<Toy, Void> g, int id) {
+      for (Toy node : g.classOf(id).nodes()) {
+        if (node instanceof Toy.Var v && v.name().equals("boom")) {
+          g.merge(g.find(1), id);
+          g.merge(g.find(2), g.find(0));
+          return;
+        }
+      }
+    }
+  };
+
+  @Test
+  void aModifyThatMergesAnEarlierSiblingMidInstantiateDoesNotMakeTheMemoAnswerForIt() {
+    // (x + boom): the child x is found first, then boom is added, and its modify merges class 2,
+    // x's, into class 0, so x is no longer a root when the sum is looked for. The sum of the
+    // roots 2 and 1 is in the memo from an earlier call; add, asked with the ids as they stand,
+    // looks under the canonical form (0, 1), which the hashcons has not been rebuilt to hold, and
+    // makes a class. The memo must not answer with the old one.
+    EGraph<Toy, Void> memo = new EGraph<>(HOSTILE);
+    EGraph<Toy, Void> plain = new EGraph<>(HOSTILE);
+    for (EGraph<Toy, Void> g : List.of(memo, plain)) {
+      assertEquals(0, g.add(new Toy.Num(0)));
+      assertEquals(1, g.add(new Toy.Num(5)));
+      assertEquals(2, g.add(new Toy.Var("a")));
+    }
+    // One head for both sums: the memo is keyed by the head, as a rule's right-hand side is the
+    // same head each time it fires.
+    Pattern.Head<Toy> sum = Pattern.head(new Toy.Add(IntList.EMPTY));
+    Pattern<Toy> first = Pattern.node(sum, v("x"), num(5));
+    Pattern<Toy> second = Pattern.node(sum, v("x"), Pattern.of(new Toy.Var("boom")));
+    Subst s = Subst.EMPTY.bind("x", 2);
+    assertEquals(reference(plain, first, s), Matcher.instantiate(memo, first, s));
+    sameGraph(memo, plain, "after the first sum");
+    assertEquals(reference(plain, second, s), Matcher.instantiate(memo, second, s),
+        "the class of the second sum");
+    sameGraph(memo, plain, "after the second sum");
+    assertTrue(memo.find(2) != 2, "class 2 was merged away while the sum was built");
+    memo.rebuild();
+    plain.rebuild();
+    memo.checkInvariants();
+    for (int id = 0; id < 6; id++) {
+      assertEquals(plain.find(id), memo.find(id), "the partition at id " + id);
+    }
+  }
+
+  /**
+   * Rebuilds both graphs; false if the analysis refused (two constants in one class, which a
+   * random merge can lead to), when the other graph must refuse too and the run is over.
+   */
+  private static boolean rebuildBoth(EGraph<Toy, Long> memo, EGraph<Toy, Long> plain) {
+    try {
+      memo.rebuild();
+    } catch (IllegalStateException e) {
+      assertThrows(IllegalStateException.class, plain::rebuild);
+      return false;
+    }
+    plain.rebuild();
+    return true;
+  }
+
+  @Test
+  void theTwinGraphsAgreeUnderAnAnalysisThatFoldsMergesAndPrunes() {
+    int finished = 0;
+    for (long seed = 1; seed <= 40; seed++) {
+      Random r = new Random(seed);
+      EGraph<Toy, Long> memo = new EGraph<>(EGraphMergeTest.PRUNING_FOLD);
+      EGraph<Toy, Long> plain = new EGraph<>(EGraphMergeTest.PRUNING_FOLD);
+      List<Integer> ids = new ArrayList<>();
+      List<Pattern<Toy>> seenPatterns = new ArrayList<>();
+      List<Subst> seenSubsts = new ArrayList<>();
+      for (int i = 0; i < 3; i++) {
+        ids.add(memo.add(new Toy.Num(i)));
+        assertEquals(ids.get(i), plain.add(new Toy.Num(i)));
+      }
+      ids.add(memo.add(new Toy.Var("a")));
+      assertEquals(ids.get(3), plain.add(new Toy.Var("a")));
+      boolean alive = true;
+      for (int step = 0; step < 250 && alive; step++) {
+        String when = "seed " + seed + " step " + step;
+        int op = r.nextInt(10);
+        if (op < 7) {
+          Pattern<Toy> p;
+          Subst s;
+          if (seenPatterns.size() > 3 && r.nextBoolean()) {
+            int which = r.nextInt(seenPatterns.size());
+            p = seenPatterns.get(which);
+            s = seenSubsts.get(which);
+          } else {
+            s = Subst.EMPTY.bind("x", ids.get(r.nextInt(ids.size())))
+                .bind("y", ids.get(r.nextInt(ids.size())))
+                .bind("z", ids.get(r.nextInt(ids.size())))
+                .bindPayload("c", true);
+            p = randomPattern(r, 3);
+            seenPatterns.add(p);
+            seenSubsts.add(s);
+          }
+          int expected = referenceFold(plain, p, s);
+          int got = Matcher.instantiate(memo, p, s);
+          assertEquals(expected, got, "the class of " + p + " " + when);
+          ids.add(got);
+        } else if (op < 9) {
+          int a = ids.get(r.nextInt(ids.size()));
+          int b = ids.get(r.nextInt(ids.size()));
+          Long fa = memo.data(a);
+          Long fb = memo.data(b);
+          if (fa != null && fb != null && !fa.equals(fb)) {
+            continue; // two different constants cannot be one class
+          }
+          assertEquals(plain.merge(a, b), memo.merge(a, b), "merge " + when);
+        } else {
+          alive = rebuildBoth(memo, plain);
+        }
+        if (alive) {
+          assertEquals(plain.numClasses(), memo.numClasses(), "classes " + when);
+          assertEquals(plain.numNodes(), memo.numNodes(), "nodes " + when);
+        }
+      }
+      if (alive && rebuildBoth(memo, plain)) {
+        memo.checkInvariants();
+        plain.checkInvariants();
+        for (int id : ids) {
+          assertEquals(plain.find(id), memo.find(id), "the partition at id " + id);
+        }
+        finished++;
+      }
+    }
+    assertTrue(finished >= 10, "enough runs reached the end to be compared: " + finished);
+  }
+
+  /** {@link #reference} over an analysed graph. */
+  private static int referenceFold(EGraph<Toy, Long> g, Pattern<Toy> pattern, Subst subst) {
+    return switch (pattern) {
+      case Pattern.Var<Toy>(var name) -> g.find(subst.idOf(name));
+      case Pattern.Node<Toy>(var head, var children) -> {
+        int[] ids = new int[children.size()];
+        for (int i = 0; i < ids.length; i++) {
+          ids[i] = referenceFold(g, children.get(i), subst);
+        }
+        yield g.add(head.build(subst, IntList.wrap(ids)));
+      }
+    };
+  }
+
+  @Test
+  void theInvariantsRefuseAMemoEntryThatNamesTheWrongClass() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    Pattern<Toy> sum = add(v("x"), v("y"));
+    int ab = Matcher.instantiate(g, sum, Subst.EMPTY.bind("x", a).bind("y", b));
+    g.checkInvariants();
+    @SuppressWarnings("unchecked")
+    PureHead<Toy> head = (PureHead<Toy>) ((Pattern.Node<Toy>) sum).head();
+    g.remember(head, new int[] {a, b}, a); // a is not where a + b is
+    IllegalStateException e = assertThrows(IllegalStateException.class, g::checkInvariants);
+    assertTrue(e.getMessage().contains("the memo has"), e.getMessage());
+    g.remember(head, new int[] {a, b}, ab);
+    g.checkInvariants();
   }
 
   @Test

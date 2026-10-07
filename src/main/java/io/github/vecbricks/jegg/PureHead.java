@@ -18,4 +18,14 @@ package io.github.vecbricks.jegg;
  *
  * @param <L> the language
  */
-interface PureHead<L extends Language<L>> extends Pattern.Head<L> {}
+interface PureHead<L extends Language<L>> extends Pattern.Head<L> {
+
+  /**
+   * A number the head was given when it was made, from {@link ApplyMemo#nextSerial}: what the
+   * memo hashes, so that its layout does not depend on object identity and a run is the same
+   * run every time.
+   *
+   * @return the head's serial
+   */
+  int serial();
+}
