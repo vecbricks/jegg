@@ -95,5 +95,6 @@ model over a candidate.
 
 ## What to read next
 
-`docs/concepts.md` for the ideas; the Javadoc for the surface; `PLAN.md` 3.2 for
-why these three things are in the API; `CONTRIBUTING.md` to change something.
+`docs/concepts.md` for the ideas; [`docs/why-jegg.md`](why-jegg.md) for what a small
+e-graph of your own would have to re-solve; the Javadoc for the surface; `PLAN.md` 3.2
+for why these three things are in the API; `CONTRIBUTING.md` to change something.
