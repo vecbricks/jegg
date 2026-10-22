@@ -80,7 +80,8 @@ measurement harness. egg's five test suites (`simple`, `prop`, `lambda`,
 iteration, node and class counts; the library has egg's multi-patterns too. Every build prints the tests' coverage of
 `src/main` (98% of lines). Version 0.1.0 is on Maven Central ([`Using it`](#using-it));
 the API still moves between minor versions while it is 0.x, and `CHANGELOG.md` and
-`CONTRIBUTING.md` ("Releases") say what each release changed and how versions are numbered.
+`CONTRIBUTING.md` ("Releases") say what each release changed, how versions are numbered and
+[what a 0.x adopter can rely on](CONTRIBUTING.md#migration).
 
 ## What it is
 

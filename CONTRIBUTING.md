@@ -57,6 +57,25 @@ that changes what a user sees (the API, a behaviour, a speed worth quoting) adds
 number under `Unreleased`, in Added, Changed or Fixed; a change to tests, docs or the build alone
 does not.
 
+### Migration
+
+While jegg is 0.x, a minor version may break the public API and a patch may not: that is the one
+promise. A breaking change is visible in two places:
+
+- Its `CHANGELOG.md` line starts with `**Breaking:**` and says what a client must do: the call,
+  the type or the behaviour that changed, and its replacement. A line that does not start so is
+  not breaking.
+- The pull request that makes it names the same change in its description.
+
+The newest minor is the one maintained: fixes land there, and there are no maintenance branches
+for older minors before 1.0. An adopter who must stay on an older minor opens an issue; a fix
+there is a decision, not a promise.
+
+1.0.0 is the first version that promises the public surface stays: additions and patches
+continue, and a breaking change needs a new major. It is not scheduled yet. It comes after the
+rename to `io.vecbricks` (#91) and after Varka's client mapping has used a released version,
+since both can still change the surface.
+
 Cutting a release is the owner's, since the Central token and the signing key are theirs:
 
 1. Move the `Unreleased` lines under a `## [<version>]` heading of `CHANGELOG.md` and add its
