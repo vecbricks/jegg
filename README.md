@@ -78,7 +78,7 @@ backoff scheduler, extraction over one root and over several, and the
 measurement harness. egg's five test suites (`simple`, `prop`, `lambda`,
 `math`, `datalog`) are ported test for test, each run checked against egg's own
 iteration, node and class counts; the library has egg's multi-patterns too. Every build prints the tests' coverage of
-`src/main` (98% of lines). Version 0.1.0 is on Maven Central ([`Using it`](#using-it));
+`src/main` (98% of lines). Version 0.1.1 is on Maven Central ([`Using it`](#using-it));
 the API still moves between minor versions while it is 0.x, and `CHANGELOG.md` and
 `CONTRIBUTING.md` ("Releases") say what each release changed, how versions are numbered and
 [what a 0.x adopter can rely on](CONTRIBUTING.md#migration).
@@ -154,13 +154,13 @@ have their plans written and are sized for a first pull request.
 
 ## Using it
 
-jegg 0.1.0 is on Maven Central:
+jegg 0.1.1 is on Maven Central:
 
 ```xml
 <dependency>
   <groupId>io.github.vecbricks</groupId>
   <artifactId>jegg</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
