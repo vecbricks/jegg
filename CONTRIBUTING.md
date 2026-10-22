@@ -81,8 +81,9 @@ Cutting a release is the owner's, since the Central token and the signing key ar
 1. Move the `Unreleased` lines under a `## [<version>]` heading of `CHANGELOG.md` and add its
    link line, in a pull request.
 2. On an up-to-date `main`, `dev/release.sh <version>` checks the tree, sets the version, runs
-   `mvn -B verify` with every test, commits "Release <version>", tags `v<version>`, and commits
-   the next `-SNAPSHOT`. It pushes nothing; `dev/release.sh --check <version>` only checks.
+   `mvn -B clean verify` with every test, checks the jar's module metadata (`dev/module-check.sh`),
+   commits "Release <version>", tags `v<version>`, and commits the next `-SNAPSHOT`. It pushes
+   nothing; `dev/release.sh --check <version>` only checks.
 3. `git checkout v<version> && mvn -B -Prelease deploy` builds the sources and Javadoc jars,
    signs them and uploads them to Central's portal; publish the deployment there. Then
    `git checkout main && git push origin main v<version>`.

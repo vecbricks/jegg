@@ -54,7 +54,8 @@ trap 'git tag -d "$tag" >/dev/null 2>&1 || true; git reset -q --hard "$start"' E
 set_version "$version"
 sed -i -E "s|(<project.build.outputTimestamp>)[^<]*|\\1$(date -u +%FT%TZ)|" pom.xml
 sed -i -E "s/^## \[$version\].*/## [$version] - $(date +%F)/" CHANGELOG.md
-mvn -B verify                        # everything, the slow tests included, as CI runs it
+mvn -B clean verify                   # everything, the slow tests included, from no stale target
+dev/module-check.sh "$version"        # the jar names this version, and a modular client builds
 git commit -q -am "Release $version"
 git tag -a "$tag" -m "jegg $version"
 

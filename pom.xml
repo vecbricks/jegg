@@ -66,13 +66,14 @@
   </properties>
 
   <dependencies>
-    <!-- Nullness annotations only (CLASS retention): needed to compile, not to run, so the module
-         descriptor says "requires static" and consumers do not inherit it. -->
+    <!-- Nullness annotations only (CLASS retention): needed to compile, not to run. The module
+         descriptor says "requires static", so the jar is not needed at run time; the dependency
+         is compile scope so that a Maven or Gradle build puts it on the module path of a modular
+         client, which would otherwise have to add it by hand (#105). -->
     <dependency>
       <groupId>org.jspecify</groupId>
       <artifactId>jspecify</artifactId>
       <version>1.0.1</version>
-      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
