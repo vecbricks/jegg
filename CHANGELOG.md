@@ -43,7 +43,7 @@ minor version may break it (`CONTRIBUTING.md`, "Releases"). Each pull request ad
   allocates per match, builds its deduplication set only where duplicates can arise, and looks up
   a ground nested node in the hashcons where that finds more or costs less. Saturation is 3 to 10
   times faster than before on the ported suites and the projection, with the same matches and
-  counts (#52, #80, #81, #82, #83, #86, #89).
+  counts (#52, #80, #81, #82, #83, #86, #89, #93, #94, #96).
 - Four types left the public surface (#78).
 - The backoff scheduler stops searching one match past its threshold, as egg's does (#31).
 
