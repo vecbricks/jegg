@@ -110,6 +110,8 @@ Spark dependency and nothing in it is specific to Varka.
 
 - [`docs/concepts.md`](docs/concepts.md): the ideas, each with the jegg type
   that embodies it and the paper's section, for a reader new to e-graphs.
+- [`docs/why-jegg.md`](docs/why-jegg.md): for the Java developer weighing a small e-graph of
+  their own, the pitfalls jegg already handles and when writing one is the better call.
 - [`docs/egg-comparison.md`](docs/egg-comparison.md): for a reader who knows egg, what is and is
   not ported, module by module, and what jegg adds.
 - [`docs/first-language.md`](docs/first-language.md): a language with a
