@@ -8,6 +8,8 @@ do (`CONTRIBUTING.md`, "Migration").
 
 ## [Unreleased]
 
+## [0.1.1] - unreleased
+
 ### Fixed
 
 - The jar's module descriptor names the release version, not a snapshot, and a modular client
@@ -60,5 +62,6 @@ do (`CONTRIBUTING.md`, "Migration").
   both found by fuzzing against egg (#73).
 - The Javadoc workflow builds again, so the API docs deploy (#88).
 
-[Unreleased]: https://github.com/vecbricks/jegg/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vecbricks/jegg/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/vecbricks/jegg/releases/tag/v0.1.1
 [0.1.0]: https://github.com/vecbricks/jegg/releases/tag/v0.1.0
