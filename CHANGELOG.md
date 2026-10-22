@@ -7,7 +7,7 @@ minor version may break it (`CONTRIBUTING.md`, "Releases"). Each pull request ad
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-10-22
 
 ### Added
 
