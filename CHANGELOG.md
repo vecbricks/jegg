@@ -8,6 +8,11 @@ do (`CONTRIBUTING.md`, "Migration").
 
 ## [Unreleased]
 
+### Fixed
+
+- The jar's module descriptor names the release version, not a snapshot, and a modular client
+  gets JSpecify through the pom instead of adding it by hand (#105).
+
 ## [0.1.0] - 2026-10-22
 
 ### Added

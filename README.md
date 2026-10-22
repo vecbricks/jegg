@@ -165,7 +165,8 @@ jegg 0.1.0 is on Maven Central:
 ```
 
 The artifact is a module, `io.github.vecbricks.jegg`; its only dependency, JSpecify's
-annotations, is `static` and is not needed at run time. Java 25.
+annotations, is `requires static` (not needed at run time), and the pom supplies it at compile
+time, so a modular build finds it on the module path. Java 25.
 
 ## Building
 

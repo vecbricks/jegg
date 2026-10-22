@@ -17,3 +17,5 @@ jobs:
           cache: maven
       - name: Build and test
         run: mvn -B --no-transfer-progress verify
+      - name: Check the jar's module metadata
+        run: dev/module-check.sh
