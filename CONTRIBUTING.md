@@ -68,9 +68,21 @@ Cutting a release is the owner's, since the Central token and the signing key ar
    signs them and uploads them to Central's portal; publish the deployment there. Then
    `git checkout main && git push origin main v<version>`.
 
-What the owner needs once: a Central portal account with the namespace `io.github.vecbricks`
-verified, a GPG key published to a key server, and `~/.m2/settings.xml` with a `central` server
-holding the portal's token.
+What the owner needs once:
+
+- **The namespace `io.github.vecbricks`, registered by hand.** Signing in to the Central portal
+  with GitHub creates only `io.github.<your username>`; an organisation's namespace is not made
+  for you. Under "View Namespaces", "Add Namespace" takes `io.github.vecbricks`, which starts
+  "Unverified"; "Verify Namespace" gives a verification key, and the verification is a public
+  repository named exactly that key in the `vecbricks` organisation, which can be deleted once
+  the namespace shows "Verified". If the portal refuses the organisation's namespace or the
+  verification fails, Central Support (central-support@sonatype.com) registers it.
+- **A user token** from the portal's account page ("Generate User Token"), in
+  `~/.m2/settings.xml` as the server `central`.
+- **A GPG key**, its public half published to a key server (`keyserver.ubuntu.com` or
+  `keys.openpgp.org`, which also asks for the email to be confirmed). Maven signs with the
+  default key; so that `mvn -B -Prelease deploy` need not prompt, run `export GPG_TTY=$(tty)` and
+  sign something once (`echo x | gpg --clearsign`) to cache the passphrase in the agent.
 
 ## The practical half
 
