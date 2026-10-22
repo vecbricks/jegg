@@ -3,7 +3,8 @@
 All notable changes to jegg are listed here, newest first, in the form of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). jegg is at 0.x: while the API moves, a
 minor version may break it (`CONTRIBUTING.md`, "Releases"). Each pull request adds its line under
-`Unreleased`.
+`Unreleased`. A line for a breaking change starts with `**Breaking:**` and says what a client must
+do (`CONTRIBUTING.md`, "Migration").
 
 ## [Unreleased]
 
