@@ -4,6 +4,48 @@ E-graphs and equality saturation for Java 25, a port of
 [egg](https://github.com/egraphs-good/egg) (Willsey et al., POPL 2021), with
 extraction over several roots that keeps a shared subterm in one form.
 
+## Quick start
+
+A language is one record: the operator and its payload in `op`, the children in the record's
+`IntList`.
+
+```java
+record Node(String op, IntList children) implements Language<Node> {
+  public Node withChildren(IntList c) { return new Node(op, c); }
+}
+```
+
+With it, the rewrite `x + 0 -> x` is seven lines; the dependency is in [`Using it`](#using-it):
+
+```java
+EGraph<Node, Void> g = EGraph.withoutAnalysis();
+int x = g.add(new Node("x", IntList.EMPTY));
+int sum = g.add(new Node("+", IntList.of(x, g.add(new Node("0", IntList.EMPTY)))));
+Pattern<Node> v = Pattern.var("v");
+Runner.of(g, List.of(Rewrite.of("x + 0 -> x", Pattern.of(new Node("+", IntList.EMPTY), v,
+    Pattern.of(new Node("0", IntList.EMPTY))), v))).run();
+Extracted<Node> best = new Extractor<>(g, CostFunction.astSize()).extract(sum); // Node[op=x]
+```
+
+It saturates in one iteration, and `best.node()` is the `x` node;
+[`QuickStartTest`](src/test/java/io/github/vecbricks/jegg/QuickStartTest.java) runs it on every
+build. [`docs/first-language.md`](docs/first-language.md) goes further: payloads, a `TreeBridge`,
+a rule that binds a payload, and extraction over several roots.
+
+## Who it is for
+
+- **A compiler or query optimizer** choosing among equivalent forms for many outputs: an e-class
+  is every way to compute one value, and extraction chooses one form per class, paying a shared
+  subterm once.
+- **A DSL or rules engine** simplifying terms with rules that interact: saturation runs them to a
+  fixpoint, and analyses carry facts the rules read.
+- **A simplifier or verifier** that wants the cheapest or smallest term, or all roots at once:
+  extraction under a client cost function, over one root or several.
+- **Not for** a fixed, small rule set with no analysis and one root, where a hand-written pass is
+  simpler; [`docs/egg-comparison.md`](docs/egg-comparison.md) lists what else is not ported.
+
+## A larger example
+
 ```java
 sealed interface Arith extends Language<Arith> permits Num, Var, Add, Mul {}
 record Num(long value) implements Arith { /* no children */ }
