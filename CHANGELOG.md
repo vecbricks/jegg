@@ -8,6 +8,14 @@ do (`CONTRIBUTING.md`, "Migration").
 
 ## [Unreleased]
 
+### Added
+
+- `RunReport.toJson()`; `-Dbench.json=true` for the measurement harness's summary and
+  `CoverageSummary --json`; so an agent parses structured output instead of matching text (#39,
+  #48).
+- `dev/explore.sh prop|math <rules-file> '<term>'`: runs a rule set and a term without writing
+  Java (#39, #48).
+
 ## [0.1.1] - 2026-10-22
 
 ### Fixed

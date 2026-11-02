@@ -284,6 +284,7 @@
       <properties>
         <bench>all</bench>
         <bench.quick>false</bench.quick>
+        <bench.json>false</bench.json>
       </properties>
       <build>
         <plugins>
@@ -299,6 +300,7 @@
                 <classpath/>
                 <argument>-Dbench=${bench}</argument>
                 <argument>-Dbench.quick=${bench.quick}</argument>
+                <argument>-Dbench.json=${bench.json}</argument>
                 <argument>io.github.vecbricks.jegg.Benchmarks</argument>
               </arguments>
             </configuration>

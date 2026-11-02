@@ -19,6 +19,8 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import java.util.OptionalInt;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -84,6 +86,34 @@ class BenchmarksUsageTest {
         "bench.quick", "bench.force", "bench.pin"}) {
       assertTrue(Benchmarks.USAGE.contains(word), word);
     }
+  }
+
+  @Test
+  void theJsonSummaryHasOneEntryPerWriteWithNoEscaping() {
+    List<Benchmarks.Report.Summary> summaries = List.of(
+        new Benchmarks.Report.Summary("RebuildBenchmark",
+            "benchmarks/RebuildBenchmark-jdk25-results.txt", "abc1234", 0.42, 0.58),
+        new Benchmarks.Report.Summary("ProjectionBenchmark",
+            "benchmarks/ProjectionBenchmark-jdk25-results.txt", "abc1234+dirty", 0.58, 0.61));
+    String json = Benchmarks.Report.summariesToJson(summaries);
+    @SuppressWarnings("unchecked")
+    List<Object> parsed = (List<Object>) Json.parse(json);
+    assertEquals(2, parsed.size());
+    @SuppressWarnings("unchecked")
+    Map<String, Object> first = (Map<String, Object>) parsed.get(0);
+    assertEquals("RebuildBenchmark", first.get("name"));
+    assertEquals("benchmarks/RebuildBenchmark-jdk25-results.txt", first.get("file"));
+    assertEquals("abc1234", first.get("commit"));
+    assertEquals(0.42, first.get("loadBefore"));
+    assertEquals(0.58, first.get("loadAfter"));
+    @SuppressWarnings("unchecked")
+    Map<String, Object> second = (Map<String, Object>) parsed.get(1);
+    assertEquals("abc1234+dirty", second.get("commit"));
+  }
+
+  @Test
+  void theEmptySummaryIsAnEmptyArray() {
+    assertEquals("[]", Benchmarks.Report.summariesToJson(List.of()));
   }
 
   @Test

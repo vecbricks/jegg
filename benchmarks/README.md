@@ -20,6 +20,8 @@ harness's `--help` does:
       -Dbench.pin=<auto|none|cpu list>
                             the cores to pin to: the fast cores sharing cpu0's L3, none, or
                             a taskset list such as 0-3,12-15 (default auto)
+      -Dbench.json=true     the files written, as one JSON array, instead of a line each
+                            (default false)
 
     --help, -h, or -Dbench=help prints this text.
 

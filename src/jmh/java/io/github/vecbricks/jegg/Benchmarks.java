@@ -58,6 +58,9 @@ public final class Benchmarks {
   // The commit, read once before anything is written: a results file this run writes is an
   // untracked file, which would otherwise mark the next file in the same run dirty.
   private static String commit;
+  // Each benchmark's write, collected so that -Dbench.json=true can print them as one array
+  // once every requested benchmark has run, instead of each write's own line.
+  private static final List<Report.Summary> SUMMARIES = new ArrayList<>();
 
   private Benchmarks() {
   }
@@ -86,6 +89,8 @@ public final class Benchmarks {
         -Dbench.pin=<auto|none|cpu list>
                               the cores to pin to: the fast cores sharing cpu0's L3, none, or
                               a taskset list such as 0-3,12-15 (default auto)
+        -Dbench.json=true     the files written, as one JSON array, instead of a line each
+                              (default false)
 
       --help, -h, or -Dbench=help prints this text.""";
 
@@ -144,6 +149,9 @@ public final class Benchmarks {
     }
     if (which.contains("all") || which.contains("determinism")) {
       determinism(quick);
+    }
+    if (Boolean.getBoolean("bench.json")) {
+      System.out.println(Report.summariesToJson(SUMMARIES));
     }
   }
 
@@ -254,7 +262,7 @@ public final class Benchmarks {
       List<String> command = new ArrayList<>(List.of("taskset", "-c", cpus,
           System.getProperty("java.home") + "/bin/java", "-cp",
           System.getProperty("java.class.path"), "-Dbench.pinned=" + cpus));
-      for (String key : List.of("bench", "bench.quick", "bench.force")) {
+      for (String key : List.of("bench", "bench.quick", "bench.force", "bench.json")) {
         if (System.getProperty(key) != null) {
           command.add("-D" + key + "=" + System.getProperty(key));
         }
@@ -343,7 +351,9 @@ public final class Benchmarks {
   }
 
   /** One results file: the header, then each section as it is produced. */
-  private static final class Report {
+  // Package-private, not private: BenchmarksUsageTest calls Report.summariesToJson directly, to
+  // test -Dbench.json=true's output without running a benchmark.
+  static final class Report {
     private final String name;
     private final StringBuilder body = new StringBuilder();
     private final double loadBefore = load();
@@ -393,7 +403,34 @@ public final class Benchmarks {
       Files.createDirectories(file.getParent());
       Files.writeString(file, body.substring(0, body.indexOf("\n\n") + 2) + header + "\n"
           + body.substring(body.indexOf("\n\n") + 2));
-      System.out.println("wrote " + file);
+      double loadAfter = load();
+      SUMMARIES.add(new Summary(name, file.toString(), commit, loadBefore, loadAfter));
+      if (!Boolean.getBoolean("bench.json")) {
+        System.out.println("wrote " + file);
+      }
+    }
+
+    /** One benchmark's write, for {@code -Dbench.json=true}'s summary. */
+    record Summary(String name, String file, String commit, double loadBefore,
+        double loadAfter) {
+    }
+
+    /**
+     * The summaries as one JSON array, each an object with this record's field names; a path
+     * and a commit hash need no escaping, so this has none.
+     */
+    static String summariesToJson(List<Summary> summaries) {
+      StringBuilder b = new StringBuilder("[");
+      for (int i = 0; i < summaries.size(); i++) {
+        if (i > 0) {
+          b.append(',');
+        }
+        Summary s = summaries.get(i);
+        b.append("{\"name\":\"").append(s.name()).append("\",\"file\":\"").append(s.file())
+            .append("\",\"commit\":\"").append(s.commit()).append("\",\"loadBefore\":")
+            .append(s.loadBefore()).append(",\"loadAfter\":").append(s.loadAfter()).append('}');
+      }
+      return b.append(']').toString();
     }
 
     private static String describe(Options o) {

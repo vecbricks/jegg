@@ -71,6 +71,93 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
     return iterations.size();
   }
 
+  /**
+   * This report as JSON: {@code iterations} an array of objects with this record's field names,
+   * {@code matches} an object keyed by rule name, {@code banned} and {@code skipped} arrays;
+   * {@code stop} an object with a {@code type} naming the {@link StopReason} and that reason's
+   * own fields, if it has any ({@code iterations}, {@code nodes}, {@code classes} or
+   * {@code reason}). No library: the shape is fixed and small enough to write by hand, which is
+   * also why no JSON is read back into a {@code RunReport} - a client parses the text with
+   * whatever JSON reader it already has.
+   *
+   * @return the JSON text, one line
+   */
+  public String toJson() {
+    StringBuilder b = new StringBuilder("{\"iterations\":[");
+    for (int i = 0; i < iterations.size(); i++) {
+      if (i > 0) {
+        b.append(',');
+      }
+      iterationJson(b, iterations.get(i));
+    }
+    return b.append("],\"stop\":").append(stopJson(stop)).append('}').toString();
+  }
+
+  private static void iterationJson(StringBuilder b, Iteration it) {
+    b.append("{\"number\":").append(it.number()).append(",\"classes\":").append(it.classes())
+        .append(",\"nodes\":").append(it.nodes()).append(",\"matches\":{");
+    boolean first = true;
+    for (Map.Entry<String, Integer> e : it.matches().entrySet()) {
+      if (!first) {
+        b.append(',');
+      }
+      first = false;
+      b.append(quoted(e.getKey())).append(':').append(e.getValue());
+    }
+    b.append("},\"banned\":").append(stringArray(it.banned()))
+        .append(",\"skipped\":").append(stringArray(it.skipped()))
+        .append(",\"applied\":").append(it.applied()).append(",\"unions\":").append(it.unions())
+        .append(",\"counted\":").append(it.counted()).append(",\"repaired\":")
+        .append(it.repaired()).append('}');
+  }
+
+  private static String stringArray(Iterable<String> strings) {
+    StringBuilder b = new StringBuilder("[");
+    boolean first = true;
+    for (String s : strings) {
+      if (!first) {
+        b.append(',');
+      }
+      first = false;
+      b.append(quoted(s));
+    }
+    return b.append(']').toString();
+  }
+
+  private static String stopJson(StopReason stop) {
+    return switch (stop) {
+      case StopReason.Saturated s -> "{\"type\":\"Saturated\"}";
+      case StopReason.IterationLimit s ->
+          "{\"type\":\"IterationLimit\",\"iterations\":" + s.iterations() + "}";
+      case StopReason.NodeLimit s -> "{\"type\":\"NodeLimit\",\"nodes\":" + s.nodes() + "}";
+      case StopReason.ClassLimit s -> "{\"type\":\"ClassLimit\",\"classes\":" + s.classes() + "}";
+      case StopReason.Other s -> "{\"type\":\"Other\",\"reason\":" + quoted(s.reason()) + "}";
+    };
+  }
+
+  /** A JSON string literal: the common escapes, and {@code \\u00xx} for a control character. */
+  private static String quoted(String s) {
+    StringBuilder b = new StringBuilder("\"");
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      switch (c) {
+        case '"' -> b.append("\\\"");
+        case '\\' -> b.append("\\\\");
+        case '\n' -> b.append("\\n");
+        case '\r' -> b.append("\\r");
+        case '\t' -> b.append("\\t");
+        default -> {
+          if (c < 0x20) {
+            b.append(String.format("\\u%04x", (int) c));
+          } else {
+            b.append(c);
+          }
+        }
+      }
+    }
+    return b.append('"').toString();
+  }
+
   @Override
   public String toString() {
     StringBuilder b = new StringBuilder();
