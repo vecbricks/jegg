@@ -54,11 +54,11 @@ import org.jspecify.annotations.Nullable;
  * child's class per candidate (egg's compiler emits {@code Lookup} for every subterm that is
  * ground where it is reached and is not a leaf, then {@code Compare}); on a rebuilt graph only,
  * since between a merge and the rebuild the hashcons can hold a node under a stale key that a
- * walk still finds, and for a leaf only on a graph that never pruned, since egg's {@code Bind}
- * scans the class's list and misses a pruned leaf where the lookup would find it. And a
- * node's nested children are matched in an order that follows egg's compiler, the one with more
- * variables first and the smaller among equals, so that the ones after it are ground, and looked
- * up, or narrower; egg counts only the variables not yet bound where it reaches a node, this
+ * walk still finds, and a leaf through the hashcons alone, not the pruned memory, since egg's
+ * {@code Bind} scans the class's list and misses a pruned leaf where the lookup would find it.
+ * And a node's nested children are matched in an order that follows egg's compiler, the one with
+ * more variables first and the smaller among equals, so that the ones after it are ground, and
+ * looked up, or narrower; egg counts only the variables not yet bound where it reaches a node, this
  * counts all of a child's, which differs only for a variable an ancestor or an earlier sibling
  * binds. A node whose nested children tie keeps its written order, so most patterns match as
  * written. egg's third order, a node's variables bound before its
@@ -670,21 +670,21 @@ public final class Matcher {
           }
           // egg's Lookup then Compare: a nested child that is ground at entry is looked up once
           // and each candidate's child compared with the class found, instead of the child's
-          // class being walked per candidate. On a rebuilt graph only, and for a leaf only where
-          // nothing has pruned (the class Javadoc says why); a child the graph has no node for
-          // ends the scan, as no candidate can match. The entry substitution decides: a payload
-          // the head binds cannot rebind a variable bound here.
+          // class being walked per candidate. On a rebuilt graph only, and a leaf through the
+          // hashcons alone (the class Javadoc says why); a child the graph has no node for ends
+          // the scan, as no candidate can match. The entry substitution decides: a payload the
+          // head binds cannot rebind a variable bound here.
           int[] want = null;
           if (rebuilt) {
             for (int i = 0; i < arity; i++) {
-              if (view.children[i] instanceof Pattern.Node<L> child
-                  && (!child.children().isEmpty() || !graph.anyPruned())
-                  && isGround(child, subst)) {
+              if (view.children[i] instanceof Pattern.Node<L> child && isGround(child, subst)) {
                 if (want == null) {
                   want = new int[arity];
                   Arrays.fill(want, NOT_HOISTED);
                 }
-                want[i] = lookUp(child, subst);
+                want[i] = child.children().isEmpty()
+                    ? graph.lookupLive(child.head().build(subst, IntList.EMPTY))
+                    : lookUp(child, subst);
                 if (want[i] == EGraph.MISSING) {
                   return;
                 }
@@ -750,8 +750,8 @@ public final class Matcher {
      * binds or agrees in place; a node child that is ground is looked up where that alone gives
      * egg's answer (a child class that has pruned) and otherwise matched in the child's class,
      * where a long run is looked up too ({@link #matchIn}); each of its substitutions continues
-     * to the next child in the order. A child {@code want} holds a class for was looked up before
-     * the scan and compared on this candidate, so it is stepped over.
+     * to the next child in the order. A child for which {@code want} holds a class was looked up
+     * before the scan and compared on this candidate, so it is stepped over.
      */
     void matchChildren(View<L> view, int[] order, int k, int[] kids, int start, Subst subst,
         List<Subst> out, boolean distinct, int @Nullable [] want) {

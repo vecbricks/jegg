@@ -195,6 +195,16 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   }
 
   /**
+   * {@link #lookupCanonical} through the hashcons alone, not the pruned memory: the class whose
+   * node list holds the canonical node, or MISSING, which is what a walk of the lists finds; for
+   * the matcher's lookup of a ground leaf, which egg's compiler scans for rather than looks up.
+   */
+  int lookupLive(L canonical) {
+    Integer id = hashcons.get(canonical);
+    return id == null ? MISSING : unionFind.find(id);
+  }
+
+  /**
    * Adds {@code node} and returns its class: the class already holding an equal canonical node,
    * or a new class of this node alone, recorded as a parent of each child's class (paper
    * Figure 4, lines 1-11). The children must be ids this graph issued.

@@ -274,8 +274,8 @@ class GroundLookupTest {
     // A class of sums longer than LOOKUP_FROM: (a + k) for k up to 11, (a + b), (3 + b) and
     // ((a * a) + 7), under (a * sums). A pattern over the product binds ?x to a first, then
     // enters the sums' run with a ground nested child: (* ?x ?x) is looked up once and compared
-    // on each of the 15 candidates, so is the leaf 3 while nothing has pruned, and (* ?x 5),
-    // which the graph lacks, ends the scan before it starts. Each against the reference walk.
+    // on each of the 15 candidates, so is the leaf 3, and (* ?x 5), which the graph lacks, ends
+    // the scan before it starts. Each against the reference walk.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int a = g.add(new Toy.Var("a"));
     int b = g.add(new Toy.Var("b"));
@@ -312,9 +312,11 @@ class GroundLookupTest {
         Subst.EMPTY.bind("x", a).bind("y", g.find(b))));
     assertEquals(viaLeaf, Matcher.search(g, leaf));
     assertEquals(new Reference<>(g).search(leaf), Matcher.search(g, leaf));
-    // (3 + b) pruned from the sums: the graph has pruned, so the leaf is no longer looked up
-    // and the walk finds no such node, as egg's Bind would not; the ground (a * a) is still
-    // looked up and its sum still found. The reference agrees on both.
+    // (3 + b) pruned from the sums: the leaf 3 is still found, but no candidate carries it, as
+    // egg's Bind would find none; the ground (a * a) is looked up and its sum still found. The
+    // reference agrees on both. (A pruned leaf itself is missed, as the lookup through the
+    // hashcons alone misses it: aGroundSubtermFindsANodeThatWasPrunedAsEggsMemoDoes has the
+    // non-leaf case, which egg's memo finds.)
     g.retainNodes(sums, n -> !(n instanceof Toy.Add add && add.children().get(0) == three));
     g.rebuild();
     g.checkInvariants();
