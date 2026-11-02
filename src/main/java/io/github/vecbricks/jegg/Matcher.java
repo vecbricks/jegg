@@ -675,7 +675,7 @@ public final class Matcher {
           // the scan, as no candidate can match. The entry substitution decides: a payload the
           // head binds cannot rebind a variable bound here.
           int[] want = null;
-          if (rebuilt) {
+          if (rebuilt && candidates > 0) {
             for (int i = 0; i < arity; i++) {
               if (view.children[i] instanceof Pattern.Node<L> child && isGround(child, subst)) {
                 if (want == null) {

@@ -312,11 +312,21 @@ class GroundLookupTest {
         Subst.EMPTY.bind("x", a).bind("y", g.find(b))));
     assertEquals(viaLeaf, Matcher.search(g, leaf));
     assertEquals(new Reference<>(g).search(leaf), Matcher.search(g, leaf));
-    // (3 + b) pruned from the sums: the leaf 3 is still found, but no candidate carries it, as
-    // egg's Bind would find none; the ground (a * a) is looked up and its sum still found. The
-    // reference agrees on both. (A pruned leaf itself is missed, as the lookup through the
-    // hashcons alone misses it: aGroundSubtermFindsANodeThatWasPrunedAsEggsMemoDoes has the
-    // non-leaf case, which egg's memo finds.)
+    // The leaf 3 itself pruned from its class, which keeps (1 + 2): the lookup through the
+    // hashcons alone misses it, as the walk and egg's Bind do, where the lookup through the pruned
+    // memory would still find it and match (3 + b). The reference agrees.
+    int numOne = g.lookup(new Toy.Num(1)).orElseThrow();
+    int numTwo = g.lookup(new Toy.Num(2)).orElseThrow();
+    g.merge(three, g.add(new Toy.Add(IntList.of(numOne, numTwo))));
+    g.rebuild();
+    assertEquals(three, g.find(three));
+    g.retainNodes(three, n -> n instanceof Toy.Add);
+    g.rebuild();
+    g.checkInvariants();
+    assertTrue(Matcher.search(g, leaf).isEmpty());
+    assertTrue(new Reference<>(g).search(leaf).isEmpty());
+    // (3 + b) pruned from the sums too: still nothing for the leaf pattern, while the ground
+    // (a * a), a non-leaf, is looked up and its sum still found. The reference agrees on both.
     g.retainNodes(sums, n -> !(n instanceof Toy.Add add && add.children().get(0) == three));
     g.rebuild();
     g.checkInvariants();
