@@ -75,6 +75,117 @@ public final class Matcher {
   }
 
   /**
+   * A temporary counter for the long-run probe of #84's item 3: candidate visits in
+   * {@code matchInRoot} by path and by the length of the run scanned. Not for merging.
+   */
+  static final class Probe {
+    static final String[] LABELS = {"1", "2-4", "5-16", "17-64", "65-256", ">256"};
+    static long[] tableRuns = new long[6];
+    static long[] tableVisits = new long[6];
+    static long[] boundRuns = new long[6];
+    static long[] boundVisits = new long[6];
+    static long[] lookupRuns = new long[6];
+    static long[] lookupVisits = new long[6];
+    static long indexRuns;
+    static long indexVisits;
+    static long allRuns;
+    static long allVisits;
+    static final Map<String, long[]> LONG_BY_HEAD = new java.util.HashMap<>();
+
+    private Probe() {
+    }
+
+    static int bucket(int n) {
+      return n <= 1 ? 0 : n <= 4 ? 1 : n <= 16 ? 2 : n <= 64 ? 3 : n <= 256 ? 4 : 5;
+    }
+
+    static void reset() {
+      for (long[] a : List.of(tableRuns, tableVisits, boundRuns, boundVisits, lookupRuns,
+          lookupVisits)) {
+        java.util.Arrays.fill(a, 0);
+      }
+      indexRuns = indexVisits = allRuns = allVisits = 0;
+      LONG_BY_HEAD.clear();
+    }
+
+    static <L extends Language<L>> void record(boolean table, boolean index, int candidates,
+        boolean looked, Pattern.Head<L> head, Pattern<L>[] children, Subst subst) {
+      int b = bucket(candidates);
+      if (looked) {
+        lookupRuns[b]++;
+        lookupVisits[b] += candidates;
+        return;
+      }
+      if (!table) {
+        if (index) {
+          indexRuns++;
+          indexVisits += candidates;
+        } else {
+          allRuns++;
+          allVisits += candidates;
+        }
+        return;
+      }
+      tableRuns[b]++;
+      tableVisits[b] += candidates;
+      boolean bound = false;
+      for (Pattern<L> child : children) {
+        if (child instanceof Pattern.Var<L>(var name) && subst.idOrUnbound(name) != Subst.UNBOUND) {
+          bound = true;
+          break;
+        }
+      }
+      if (bound) {
+        boundRuns[b]++;
+        boundVisits[b] += candidates;
+      }
+      if (candidates > 16) {
+        long[] h = LONG_BY_HEAD.computeIfAbsent(head.toString(), k -> new long[2]);
+        h[0]++;
+        h[1] += candidates;
+      }
+    }
+
+    static String report(String name) {
+      StringBuilder sb = new StringBuilder();
+      long tv = 0;
+      long tr = 0;
+      long lv = 0;
+      long lr = 0;
+      for (int i = 0; i < 6; i++) {
+        tv += tableVisits[i];
+        tr += tableRuns[i];
+        lv += lookupVisits[i];
+        lr += lookupRuns[i];
+      }
+      long longV = tableVisits[3] + tableVisits[4] + tableVisits[5];
+      long longR = tableRuns[3] + tableRuns[4] + tableRuns[5];
+      long longBoundV = boundVisits[3] + boundVisits[4] + boundVisits[5];
+      long lookupLongV = lookupVisits[3] + lookupVisits[4] + lookupVisits[5];
+      long total = tv + indexVisits + allVisits;
+      sb.append(String.format("PROBE %s: visits total %d = table %d + index %d + all-nodes %d;"
+          + " table runs %d (avg %.2f candidates); lookup short-circuits %d runs / %d would-be"
+          + " visits (%d in runs >16)%n", name, total, tv, indexVisits, allVisits, tr,
+          tr == 0 ? 0.0 : (double) tv / tr, lr, lv, lookupLongV));
+      for (int i = 0; i < 6; i++) {
+        sb.append(String.format("PROBE %s: run %-7s runs %10d visits %11d (%5.1f%% of all)"
+            + " with a bound var child: runs %10d visits %11d%n", name, LABELS[i], tableRuns[i],
+            tableVisits[i], total == 0 ? 0.0 : 100.0 * tableVisits[i] / total, boundRuns[i],
+            boundVisits[i]));
+      }
+      sb.append(String.format("PROBE %s: runs >16: %d runs, %d visits = %.1f%% of all visits;"
+          + " of those with a bound var child %d visits = %.1f%% of the long-run visits%n", name,
+          longR, longV, total == 0 ? 0.0 : 100.0 * longV / total, longBoundV,
+          longV == 0 ? 0.0 : 100.0 * longBoundV / longV));
+      LONG_BY_HEAD.entrySet().stream()
+          .sorted((a, c) -> Long.compare(c.getValue()[1], a.getValue()[1])).limit(5)
+          .forEach(e -> sb.append(String.format("PROBE %s: long-run head %-12s runs %10d"
+              + " visits %11d%n", name, e.getKey(), e.getValue()[0], e.getValue()[1])));
+      return sb.toString();
+    }
+  }
+
+  /**
    * One match: the class the pattern's root matched in, and what its variables stand for. A
    * value candidate (PLAN.md 3.1): immutable, compared by content.
    *
@@ -641,7 +752,11 @@ public final class Matcher {
           }
           // egg's Lookup where it pays: a long run of the head, for a ground nested node (in a
           // class that has pruned, matchChildren has looked it up before coming here).
-          if (nested && candidates > LOOKUP_FROM && arity > 0 && isGround(pattern, subst)) {
+          boolean looked = nested && candidates > LOOKUP_FROM && arity > 0
+              && isGround(pattern, subst);
+          Probe.record(table != null, positions != null, candidates, looked, head,
+              view.children, subst);
+          if (looked) {
             if (lookUp(pattern, subst) == root) {
               out.add(subst);
             }
