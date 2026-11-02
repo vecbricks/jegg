@@ -10,6 +10,7 @@
 package io.github.vecbricks.jegg;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -47,10 +48,17 @@ import org.jspecify.annotations.Nullable;
  * as egg's memo finds it, so it is always used where the child's class has pruned, the one
  * place a walk of the class could miss a node; elsewhere it gives the matches the walk gives,
  * and is used only where the head's run in the child's class is longer than
- * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. And a
- * node's nested children are matched in an order that follows egg's compiler, the one with more
- * variables first and the smaller among equals, so that the ones after it are ground, and looked
- * up, or narrower; egg counts only the variables not yet bound where it reaches a node, this
+ * {@link #LOOKUP_FROM} nodes, since a lookup costs about as much as walking that many. A nested
+ * node that is ground when its parent is entered is looked up once before the parent's run is
+ * scanned and each candidate's child compared with the class found, in place of a walk of the
+ * child's class per candidate (egg's compiler emits {@code Lookup} for every subterm that is
+ * ground where it is reached and is not a leaf, then {@code Compare}); on a rebuilt graph only,
+ * since between a merge and the rebuild the hashcons can hold a node under a stale key that a
+ * walk still finds, and a leaf through the hashcons alone, not the pruned memory, since egg's
+ * {@code Bind} scans the class's list and misses a pruned leaf where the lookup would find it.
+ * And a node's nested children are matched in an order that follows egg's compiler, the one with
+ * more variables first and the smaller among equals, so that the ones after it are ground, and
+ * looked up, or narrower; egg counts only the variables not yet bound where it reaches a node, this
  * counts all of a child's, which differs only for a variable an ancestor or an earlier sibling
  * binds. A node whose nested children tie keeps its written order, so most patterns match as
  * written. egg's third order, a node's variables bound before its
@@ -71,7 +79,20 @@ public final class Matcher {
    */
   static final int LOOKUP_FROM = 8;
 
+  // In the array of looked-up children a scan compares against: a child that was not looked up.
+  private static final int NOT_HOISTED = -2;
+
   private Matcher() {
+  }
+
+  /** Whether each looked-up child of the candidate at {@code start} is the class looked up. */
+  private static boolean childrenAgree(int[] want, int[] kids, int start) {
+    for (int i = 0; i < want.length; i++) {
+      if (want[i] != NOT_HOISTED && kids[start + i] != want[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -647,6 +668,29 @@ public final class Matcher {
             }
             return;
           }
+          // egg's Lookup then Compare: a nested child that is ground at entry is looked up once
+          // and each candidate's child compared with the class found, instead of the child's
+          // class being walked per candidate. On a rebuilt graph only, and a leaf through the
+          // hashcons alone (the class Javadoc says why); a child the graph has no node for ends
+          // the scan, as no candidate can match. The entry substitution decides: a payload the
+          // head binds cannot rebind a variable bound here.
+          int[] want = null;
+          if (rebuilt && candidates > 0) {
+            for (int i = 0; i < arity; i++) {
+              if (view.children[i] instanceof Pattern.Node<L> child && isGround(child, subst)) {
+                if (want == null) {
+                  want = new int[arity];
+                  Arrays.fill(want, NOT_HOISTED);
+                }
+                want[i] = child.children().isEmpty()
+                    ? graph.lookupLive(child.head().build(subst, IntList.EMPTY))
+                    : lookUp(child, subst);
+                if (want[i] == EGraph.MISSING) {
+                  return;
+                }
+              }
+            }
+          }
           for (int i = 0; i < candidates && out.size() < limit; i++) {
             int[] kids;
             int start;
@@ -672,8 +716,11 @@ public final class Matcher {
               kids = nodeKids.raw();
               start = 0;
             }
+            if (want != null && !childrenAgree(want, kids, start)) {
+              continue;
+            }
             int before = out.size();
-            matchChildren(view, view.order, 0, kids, start, headBound, out, distinct);
+            matchChildren(view, view.order, 0, kids, start, headBound, out, distinct, want);
             int added = out.size() - before;
             if (!distinct && (added > 1 || (added > 0 && before > 0))) {
               if (seen == null) {
@@ -703,15 +750,20 @@ public final class Matcher {
      * binds or agrees in place; a node child that is ground is looked up where that alone gives
      * egg's answer (a child class that has pruned) and otherwise matched in the child's class,
      * where a long run is looked up too ({@link #matchIn}); each of its substitutions continues
-     * to the next child in the order.
+     * to the next child in the order. A child for which {@code want} holds a class was looked up
+     * before the scan and compared on this candidate, so it is stepped over.
      */
     void matchChildren(View<L> view, int[] order, int k, int[] kids, int start, Subst subst,
-        List<Subst> out, boolean distinct) {
+        List<Subst> out, boolean distinct, int @Nullable [] want) {
       if (k == order.length) {
         out.add(subst);
         return;
       }
       int i = order[k];
+      if (want != null && want[i] != NOT_HOISTED) {
+        matchChildren(view, order, k + 1, kids, start, subst, out, distinct, want);
+        return;
+      }
       int child = kids[start + i];
       switch (view.children[i]) {
         case Pattern.Var<L>(var name) -> {
@@ -719,9 +771,9 @@ public final class Matcher {
           int root = rebuilt ? child : graph.find(child);
           if (bound == Subst.UNBOUND) {
             matchChildren(view, order, k + 1, kids, start, subst.bindNew(name, root), out,
-                distinct);
+                distinct, want);
           } else if (graph.find(bound) == root) {
-            matchChildren(view, order, k + 1, kids, start, subst, out, distinct);
+            matchChildren(view, order, k + 1, kids, start, subst, out, distinct, want);
           }
         }
         case Pattern.Node<L> nested -> {
@@ -733,7 +785,7 @@ public final class Matcher {
               && !nested.children().isEmpty()
               && isGround(nested, subst)) {
             if (lookUp(nested, subst) == childRoot) {
-              matchChildren(view, order, k + 1, kids, start, subst, out, distinct);
+              matchChildren(view, order, k + 1, kids, start, subst, out, distinct, want);
             }
             return;
           }
@@ -742,7 +794,8 @@ public final class Matcher {
           List<Subst> partial = free.isEmpty() ? new ArrayList<>() : free.remove(free.size() - 1);
           matchInRoot(nested, childRoot, subst, Integer.MAX_VALUE, partial, distinct, true);
           for (int j = 0; j < partial.size(); j++) {
-            matchChildren(view, order, k + 1, kids, start, partial.get(j), out, distinct);
+            matchChildren(view, order, k + 1, kids, start, partial.get(j), out, distinct,
+                want);
           }
           partial.clear();
           free.add(partial);

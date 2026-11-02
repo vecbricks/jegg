@@ -111,7 +111,11 @@ class GroundLookupTest {
       op("and", List.of(X, op("or", List.of(Y, X)))),
       op("or", List.of(op("not", List.of(X)), op("or", List.of(X, T)))),
       op("and", List.of(T, op("not", List.of(X)))),
-      op("not", List.of(op("and", List.of(X, X)))));
+      op("not", List.of(op("and", List.of(X, X)))),
+      // A nested node entered with a ground nested child of its own: (not ?x) is looked up once
+      // before the inner or's run is scanned; (and ?x ?x) is absent from most graphs.
+      op("or", List.of(op("not", List.of(X)), op("or", List.of(op("not", List.of(X)), Y)))),
+      op("or", List.of(op("not", List.of(X)), op("or", List.of(op("and", List.of(X, X)), Y)))));
 
   @Test
   void theMatcherAgreesWithAWalkOfEveryNodeListForListOnRandomRebuiltGraphs() {
@@ -263,6 +267,73 @@ class GroundLookupTest {
         Pattern.var("x"));
     assertEquals(13, Matcher.search(g, any).size());
     assertEquals(new Reference<>(g).search(any), Matcher.search(g, any));
+  }
+
+  @Test
+  void aGroundChildAtEntryIsLookedUpOnceBeforeTheRunIsScanned() {
+    // A class of sums longer than LOOKUP_FROM: (a + k) for k up to 11, (a + b), (3 + b) and
+    // ((a * a) + 7), under (a * sums). A pattern over the product binds ?x to a first, then
+    // enters the sums' run with a ground nested child: (* ?x ?x) is looked up once and compared
+    // on each of the 15 candidates, so is the leaf 3, and (* ?x 5), which the graph lacks, ends
+    // the scan before it starts. Each against the reference walk.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int sums = g.add(new Toy.Add(IntList.of(a, b)));
+    for (int k = 0; k < 12; k++) {
+      g.merge(sums, g.add(new Toy.Add(IntList.of(a, g.add(new Toy.Num(k))))));
+    }
+    int three = g.add(new Toy.Num(3));
+    int seven = g.add(new Toy.Num(7));
+    g.merge(sums, g.add(new Toy.Add(IntList.of(three, b))));
+    int square = g.add(new Toy.Mul(IntList.of(a, a)));
+    g.merge(sums, g.add(new Toy.Add(IntList.of(square, seven))));
+    int prod = g.add(new Toy.Mul(IntList.of(a, sums)));
+    g.rebuild();
+    g.checkInvariants();
+    assertTrue(g.classOf(sums).nodes().size() > Matcher.LOOKUP_FROM);
+    Pattern<Toy> squared = Pattern.of(new Toy.Mul(IntList.EMPTY), Pattern.var("x"),
+        Pattern.of(new Toy.Add(IntList.EMPTY),
+            Pattern.of(new Toy.Mul(IntList.EMPTY), Pattern.var("x"), Pattern.var("x")),
+            Pattern.var("y")));
+    List<Matcher.Match> one = List.of(new Matcher.Match(g.find(prod),
+        Subst.EMPTY.bind("x", a).bind("y", g.find(seven))));
+    assertEquals(one, Matcher.search(g, squared));
+    assertEquals(new Reference<>(g).search(squared), Matcher.search(g, squared));
+    Pattern<Toy> absent = Pattern.of(new Toy.Mul(IntList.EMPTY), Pattern.var("x"),
+        Pattern.of(new Toy.Add(IntList.EMPTY),
+            Pattern.of(new Toy.Mul(IntList.EMPTY), Pattern.var("x"), Pattern.of(new Toy.Num(5))),
+            Pattern.var("y")));
+    assertTrue(Matcher.search(g, absent).isEmpty());
+    assertTrue(new Reference<>(g).search(absent).isEmpty());
+    Pattern<Toy> leaf = Pattern.of(new Toy.Mul(IntList.EMPTY), Pattern.var("x"),
+        Pattern.of(new Toy.Add(IntList.EMPTY), Pattern.of(new Toy.Num(3)), Pattern.var("y")));
+    List<Matcher.Match> viaLeaf = List.of(new Matcher.Match(g.find(prod),
+        Subst.EMPTY.bind("x", a).bind("y", g.find(b))));
+    assertEquals(viaLeaf, Matcher.search(g, leaf));
+    assertEquals(new Reference<>(g).search(leaf), Matcher.search(g, leaf));
+    // The leaf 3 itself pruned from its class, which keeps (1 + 2): the lookup through the
+    // hashcons alone misses it, as the walk and egg's Bind do, where the lookup through the pruned
+    // memory would still find it and match (3 + b). The reference agrees.
+    int numOne = g.lookup(new Toy.Num(1)).orElseThrow();
+    int numTwo = g.lookup(new Toy.Num(2)).orElseThrow();
+    g.merge(three, g.add(new Toy.Add(IntList.of(numOne, numTwo))));
+    g.rebuild();
+    assertEquals(three, g.find(three));
+    g.retainNodes(three, n -> n instanceof Toy.Add);
+    g.rebuild();
+    g.checkInvariants();
+    assertTrue(Matcher.search(g, leaf).isEmpty());
+    assertTrue(new Reference<>(g).search(leaf).isEmpty());
+    // (3 + b) pruned from the sums too: still nothing for the leaf pattern, while the ground
+    // (a * a), a non-leaf, is looked up and its sum still found. The reference agrees on both.
+    g.retainNodes(sums, n -> !(n instanceof Toy.Add add && add.children().get(0) == three));
+    g.rebuild();
+    g.checkInvariants();
+    assertTrue(Matcher.search(g, leaf).isEmpty());
+    assertTrue(new Reference<>(g).search(leaf).isEmpty());
+    assertEquals(one, Matcher.search(g, squared));
+    assertEquals(new Reference<>(g).search(squared), Matcher.search(g, squared));
   }
 
   @Test
