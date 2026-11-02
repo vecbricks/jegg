@@ -41,6 +41,7 @@ public final class CoverageSummary {
     if (!Files.exists(csv)) {
       return;
     }
+    boolean json = args.length > 1 && args[1].equals("--json");
     List<Row> rows = new ArrayList<>();
     List<String> lines = Files.readAllLines(csv);
     String[] header = lines.get(0).split(",");
@@ -58,13 +59,42 @@ public final class CoverageSummary {
     int linesCovered = rows.stream().mapToInt(Row::linesCovered).sum();
     int branchesMissed = rows.stream().mapToInt(Row::branchesMissed).sum();
     int branchesCovered = rows.stream().mapToInt(Row::branchesCovered).sum();
+    List<Row> leastCovered = rows.stream().filter(r -> r.linesMissed() > 0)
+        .sorted((a, b) -> Double.compare(a.linePercent(), b.linePercent())).limit(5).toList();
+    if (json) {
+      System.out.println(toJson(linesMissed, linesCovered, branchesMissed, branchesCovered,
+          leastCovered));
+      return;
+    }
     System.out.printf("Coverage of src/main: lines %.1f%% (%d of %d), branches %.1f%% (%d of %d);"
             + " least covered by lines:%n", percent(linesMissed, linesCovered), linesCovered,
         linesMissed + linesCovered, percent(branchesMissed, branchesCovered), branchesCovered,
         branchesMissed + branchesCovered);
-    rows.stream().filter(r -> r.linesMissed() > 0)
-        .sorted((a, b) -> Double.compare(a.linePercent(), b.linePercent())).limit(5)
-        .forEach(r -> System.out.printf("  %-24s lines %5.1f%% (%d missed)%n", r.name(),
-            r.linePercent(), r.linesMissed()));
+    leastCovered.forEach(r -> System.out.printf("  %-24s lines %5.1f%% (%d missed)%n", r.name(),
+        r.linePercent(), r.linesMissed()));
+  }
+
+  /**
+   * The same totals and least-covered rows as the text form, as one object: a Java class name
+   * has no characters JSON needs escaped, so {@code --json} writes none.
+   */
+  static String toJson(int linesMissed, int linesCovered, int branchesMissed,
+      int branchesCovered, List<Row> leastCovered) {
+    StringBuilder b = new StringBuilder("{\"lines\":{\"missed\":").append(linesMissed)
+        .append(",\"covered\":").append(linesCovered).append(",\"percent\":")
+        .append(percent(linesMissed, linesCovered)).append("},\"branches\":{\"missed\":")
+        .append(branchesMissed).append(",\"covered\":").append(branchesCovered)
+        .append(",\"percent\":").append(percent(branchesMissed, branchesCovered))
+        .append("},\"leastCoveredByLines\":[");
+    for (int i = 0; i < leastCovered.size(); i++) {
+      if (i > 0) {
+        b.append(',');
+      }
+      Row r = leastCovered.get(i);
+      b.append("{\"name\":\"").append(r.name()).append("\",\"linesMissed\":")
+          .append(r.linesMissed()).append(",\"linePercent\":").append(r.linePercent())
+          .append('}');
+    }
+    return b.append("]}").toString();
   }
 }

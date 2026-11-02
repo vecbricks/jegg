@@ -118,6 +118,8 @@ Spark dependency and nothing in it is specific to Varka.
 - [`docs/first-language.md`](docs/first-language.md): a language with a
   payload, a bridge from your own tree, a rule that binds a payload, and an
   extraction over several roots.
+- `dev/explore.sh prop|math <rules-file> '<term>'`: tries a rule set and a term without
+  writing Java, with `--json` for structured output; `dev/explore.sh --help` for the syntax.
 - [Javadoc](https://vecbricks.github.io/jegg/) of the public surface:
   `EGraph`, `Language`, `TreeBridge`, `Analysis`, `Pattern`, `MultiPattern`,
   `Searcher`, `Subst`, `Rewrite`, `Condition`, `Applier`, `Applied`, `Runner`,
