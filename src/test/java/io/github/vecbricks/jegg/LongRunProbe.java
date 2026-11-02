@@ -14,13 +14,19 @@ final class LongRunProbe {
     List<String> terms = new TermGenerator(language, 2).terms(200);
     Matcher.Probe.reset();
     int errors = 0;
+    String first = "";
     for (String t : terms) {
-      if (FuzzRun.run(new FuzzRun.Case(ruleset, t, List.of())).startsWith("ERROR")) {
+      String r = FuzzRun.run(new FuzzRun.Case(ruleset, t, List.of()));
+      if (r.startsWith("ERROR")) {
         errors++;
+        if (first.isEmpty()) {
+          first = r + " for " + t;
+        }
       }
     }
     System.out.print(Matcher.Probe.report(language));
-    System.out.printf("PROBE %s: %d terms, %d errors%n", language, terms.size(), errors);
+    System.out.printf("PROBE %s: %d terms, %d errors; first: %s%n", language, terms.size(),
+        errors, first);
   }
 
   @Test

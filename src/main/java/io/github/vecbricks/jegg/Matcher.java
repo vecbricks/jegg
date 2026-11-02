@@ -84,6 +84,8 @@ public final class Matcher {
     static long[] tableVisits = new long[6];
     static long[] boundRuns = new long[6];
     static long[] boundVisits = new long[6];
+    static long[] groundRuns = new long[6];
+    static long[] groundVisits = new long[6];
     static long[] lookupRuns = new long[6];
     static long[] lookupVisits = new long[6];
     static long indexRuns;
@@ -101,7 +103,7 @@ public final class Matcher {
 
     static void reset() {
       for (long[] a : List.of(tableRuns, tableVisits, boundRuns, boundVisits, lookupRuns,
-          lookupVisits)) {
+          lookupVisits, groundRuns, groundVisits)) {
         java.util.Arrays.fill(a, 0);
       }
       indexRuns = indexVisits = allRuns = allVisits = 0;
@@ -109,7 +111,8 @@ public final class Matcher {
     }
 
     static <L extends Language<L>> void record(boolean table, boolean index, int candidates,
-        boolean looked, Pattern.Head<L> head, Pattern<L>[] children, Subst subst) {
+        boolean looked, Pattern.Head<L> head, Pattern<L>[] children, Subst subst,
+        boolean groundNested) {
       int b = bucket(candidates);
       if (looked) {
         lookupRuns[b]++;
@@ -138,6 +141,9 @@ public final class Matcher {
       if (bound) {
         boundRuns[b]++;
         boundVisits[b] += candidates;
+      } else if (groundNested) {
+        groundRuns[b]++;
+        groundVisits[b] += candidates;
       }
       if (candidates > 16) {
         long[] h = LONG_BY_HEAD.computeIfAbsent(head.toString(), k -> new long[2]);
@@ -161,6 +167,7 @@ public final class Matcher {
       long longV = tableVisits[3] + tableVisits[4] + tableVisits[5];
       long longR = tableRuns[3] + tableRuns[4] + tableRuns[5];
       long longBoundV = boundVisits[3] + boundVisits[4] + boundVisits[5];
+      long longGroundV = groundVisits[3] + groundVisits[4] + groundVisits[5];
       long lookupLongV = lookupVisits[3] + lookupVisits[4] + lookupVisits[5];
       long total = tv + indexVisits + allVisits;
       sb.append(String.format("PROBE %s: visits total %d = table %d + index %d + all-nodes %d;"
@@ -174,9 +181,12 @@ public final class Matcher {
             boundVisits[i]));
       }
       sb.append(String.format("PROBE %s: runs >16: %d runs, %d visits = %.1f%% of all visits;"
-          + " of those with a bound var child %d visits = %.1f%% of the long-run visits%n", name,
-          longR, longV, total == 0 ? 0.0 : 100.0 * longV / total, longBoundV,
-          longV == 0 ? 0.0 : 100.0 * longBoundV / longV));
+          + " of those with a bound var child %d visits = %.1f%% of the long-run visits, with"
+          + " no bound var but a ground nested child %d visits = %.1f%%, neither %d = %.1f%%%n",
+          name, longR, longV, total == 0 ? 0.0 : 100.0 * longV / total, longBoundV,
+          longV == 0 ? 0.0 : 100.0 * longBoundV / longV, longGroundV,
+          longV == 0 ? 0.0 : 100.0 * longGroundV / longV, longV - longBoundV - longGroundV,
+          longV == 0 ? 0.0 : 100.0 * (longV - longBoundV - longGroundV) / longV));
       LONG_BY_HEAD.entrySet().stream()
           .sorted((a, c) -> Long.compare(c.getValue()[1], a.getValue()[1])).limit(5)
           .forEach(e -> sb.append(String.format("PROBE %s: long-run head %-12s runs %10d"
@@ -754,8 +764,15 @@ public final class Matcher {
           // class that has pruned, matchChildren has looked it up before coming here).
           boolean looked = nested && candidates > LOOKUP_FROM && arity > 0
               && isGround(pattern, subst);
+          boolean groundNested = false;
+          for (Pattern<L> child : view.children) {
+            if (child instanceof Pattern.Node && isGround(child, subst)) {
+              groundNested = true;
+              break;
+            }
+          }
           Probe.record(table != null, positions != null, candidates, looked, head,
-              view.children, subst);
+              view.children, subst, groundNested);
           if (looked) {
             if (lookUp(pattern, subst) == root) {
               out.add(subst);
