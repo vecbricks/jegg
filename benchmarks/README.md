@@ -62,6 +62,15 @@ The rounds are in the run's artifact, `timing-<run number>`. A hosted runner has
 no pinning, so a plan's gate under the measured range resolves as "within noise" and is said so
 when scored; an A/A run (`main` against `main`) measures the floor (#120).
 
+The first runs set three bounds on reading a summary (#126). The runner's CPU differs between
+jobs (an Intel Xeon 6975P-C and an AMD EPYC 7763 so far, the latter about 40% slower on prop and
+math), so a number compares only with the other side of its own run, never with another run's
+or with the laptop figures in #74's PRs. At 100 to 700 ms (the projection, lambda) the range
+reached 44% and 18% of the median on the A/A run, so a gate under about 10% on those two
+workloads is not one the workflow decides; prop and math at 1,000 terms resolve about 3%. And
+the projection's head side read slower on the first three runs, the A/A included, while
+`dev/timing.sh` runs base then head in every round; a position bias is possible and is watched.
+
 These timings are not committed under `benchmarks/`: a results file here names one machine's
 provenance, and a workflow run names its own. A PR quotes the run's URL and the table.
 
