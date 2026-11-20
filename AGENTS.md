@@ -43,10 +43,12 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
    divergence this way.
    Beyond the pinned runs, `dev/fuzz.sh math|prop <count> <seed>` runs random terms through egg
    and jegg and compares the stop, the iterations and the sizes at the start of each iteration
-   (#44; needs cargo, not part of the build); `dev/fuzz.sh --known <language>` first checks that
-   egg's side of the harness reproduces every pinned count; `--scenarios <language>` checks that
-   egg still prints the lines the scheduler scenarios are pinned to. A divergence is shrunk and written to
-   `dev/fuzz/found/`; pin it as a case with egg's counts and open an issue.
+   (#44; needs cargo, not part of the build; without cargo at hand, dispatch the `Fuzz`
+   workflow, `.github/workflows/fuzz.yml`, and link its run); `dev/fuzz.sh --known <language>`
+   first checks that egg's side of the harness reproduces every pinned count; `--scenarios
+   <language>` checks that egg still prints the lines the scheduler scenarios are pinned to. A
+   divergence is shrunk and written to `dev/fuzz/found/`; pin it as a case with egg's counts and
+   open an issue.
 3. **Extraction against enumeration and an exact oracle.** `ExtractAllEnumerationTest` and
    `ExtractionGymTest` (branch and bound over extraction-gym's graphs). A change to the descent
    must never worsen the greedy start, never beat the oracle, and should meet it.
