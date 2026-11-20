@@ -89,6 +89,25 @@ class BenchmarksUsageTest {
   }
 
   @Test
+  void theBenchProfileForwardsEveryPropertyTheUsageNames() throws IOException {
+    String pom = Files.readString(Path.of("pom.xml"));
+    int profile = pom.indexOf("<id>bench</id>");
+    assertTrue(profile >= 0, "pom.xml has no bench profile");
+    String bench = pom.substring(profile, pom.indexOf("</profile>", profile));
+    java.util.regex.Matcher named = Pattern.compile("-D(bench\\.[a-z]+)").matcher(Benchmarks.USAGE);
+    int found = 0;
+    while (named.find()) {
+      String property = named.group(1);
+      assertTrue(bench.contains("<argument>-D" + property + "=${" + property + "}</argument>"),
+          "the bench profile does not forward -D" + property);
+      assertTrue(bench.contains("<" + property + ">"), "the bench profile has no default for "
+          + property);
+      found++;
+    }
+    assertTrue(found >= 4, "the usage names " + found + " bench.* properties");
+  }
+
+  @Test
   void theJsonSummaryHasOneEntryPerWriteWithNoEscaping() {
     List<Benchmarks.Report.Summary> summaries = List.of(
         new Benchmarks.Report.Summary("RebuildBenchmark",
