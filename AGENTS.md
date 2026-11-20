@@ -55,9 +55,11 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
 
 - **Commit or stage before any destructive step** - deleting, overwriting, regenerating a file,
   resetting a branch. A results file that took half an hour to produce is work.
-- **Benchmarks run only when the owner says the machine is idle**, pinned, from a clean commit;
-  never on a load check of your own. Ask first whether a regeneration is needed at all: a
-  committed results file that names a commit in the branch's history already satisfies
+- **Timings run in GitHub Actions** (`.github/workflows/timing.yml`, `dev/timing.sh`: head against
+  base, interleaved, the runner's own range measured; `benchmarks/README.md`). The owner's machine
+  is not used for a benchmark or a timing unless the owner offers it for that run, pinned, from a
+  clean commit; never on a load check of your own. Ask first whether a regeneration is needed at
+  all: a committed results file that names a commit in the branch's history already satisfies
   `CONTRIBUTING.md`. `benchmarks/README.md` has the command and the rules.
 - **A stacked PR**: retarget the child before deleting the base branch, or GitHub closes it.
 - **Determinism is a promise** (`PLAN.md` 3.1): ids by insertion order, rules in declared order,
