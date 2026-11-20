@@ -15,6 +15,9 @@ do (`CONTRIBUTING.md`, "Migration").
   #48).
 - `dev/explore.sh prop|math <rules-file> '<term>'`: runs a rule set and a term without writing
   Java (#39, #48).
+- `Timing`, `dev/timing.sh` and the `Timing` workflow: an A/B timing of two refs over the four
+  workloads of #74 on one GitHub-hosted runner, with each side's own range as the noise it is
+  read against (#120).
 
 ## [0.1.1] - 2026-10-22
 

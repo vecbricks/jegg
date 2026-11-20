@@ -1,0 +1,68 @@
+# A/B timing of a head ref against a base ref on one hosted runner (dev/timing.sh): the four
+# workloads of #74, interleaved in fresh JVMs, each side's own range across rounds measured so a
+# difference is read against it. Dispatched by hand; the owner's machine is not used for
+# timings (AGENTS.md). The summary lands in the job summary and the rounds in an artifact.
+name: Timing
+
+on:
+  workflow_dispatch:
+    inputs:
+      head:
+        description: the branch or commit to time
+        required: true
+      base:
+        description: the branch or commit to time it against
+        default: main
+      rounds:
+        description: rounds, each one run of every workload per side
+        default: "5"
+      terms:
+        description: random terms per round for prop and math
+        default: "1000"
+
+permissions:
+  contents: read
+
+jobs:
+  timing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # The driver and the workloads: the ref this run was dispatched from, so an older head is
+      # timed by today's driver. The two sides contribute only their library classes.
+      - uses: actions/checkout@v7
+        with:
+          path: tools
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.head }}
+          path: head
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.base }}
+          path: base
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 25
+          cache: maven
+          cache-dependency-path: tools/pom.xml
+      - name: Time base against head
+        run: tools/dev/timing.sh base head "${{ inputs.rounds }}" "${{ inputs.terms }}" timing
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## Timing: `${{ inputs.head }}` against `${{ inputs.base }}`'
+            echo
+            echo '```'
+            cat timing/provenance.txt
+            echo '```'
+            echo
+            cat timing/summary.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: timing-${{ github.run_number }}
+          path: timing/

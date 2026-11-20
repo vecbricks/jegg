@@ -41,3 +41,27 @@ files.
 | `ProjectionBenchmark` | a projection of 64 nodes over the toy date language, 20 rules: saturation and extraction, warm and cold, bytes allocated, with and without compact object headers | prediction 4 |
 | `DeterminismRun` | `DeterminismProbe` in ten fresh JVMs, the renderings compared byte for byte | prediction 3 |
 | `RepeatProfile` | not a benchmark: one JFR profile of the deferred `lambda_function_repeat` run, its samples grouped by phase, for the matcher's share | prediction 5 |
+
+## Timings: A/B in GitHub Actions
+
+A change whose plan predicts a time is scored by the `Timing` workflow
+(`.github/workflows/timing.yml`), not on the owner's machine: dispatched by hand with a `head`
+and a `base` ref, it checks out both, and `dev/timing.sh` runs them interleaved on one hosted
+runner over the four workloads of #74 (prop and math at 1,000 random terms of seed 2, the
+projection at a 10,000-node limit, `lambda_function_repeat`), five rounds in fresh JVMs with a
+fixed 2 GB heap. The driver (`Timing`, under `src/jmh/java`) and the workloads are the test
+tree of the ref the run was dispatched from; the two sides contribute only their library
+classes, so both do the same work by the same code, a head older than the driver can be timed,
+and each line records the work done so that can be checked.
+
+The job summary holds the provenance (both commits, the JDK, the runner's CPU, the load) and a
+table: per workload, each side's median and range across rounds, the change of the medians, and
+a verdict. A verdict is `faster` or `slower` only when the medians differ by more than the larger
+of the two sides' own ranges; otherwise it is `within noise`, which is not a result either way.
+The rounds are in the run's artifact, `timing-<run number>`. A hosted runner has neighbours and
+no pinning, so a plan's gate under the measured range resolves as "within noise" and is said so
+when scored; an A/A run (`main` against `main`) measures the floor (#120).
+
+These timings are not committed under `benchmarks/`: a results file here names one machine's
+provenance, and a workflow run names its own. A PR quotes the run's URL and the table.
+
