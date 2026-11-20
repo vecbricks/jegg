@@ -68,8 +68,9 @@ math), so a number compares only with the other side of its own run, never with 
 or with the laptop figures in #74's PRs. At 100 to 700 ms (the projection, lambda) the range
 reached 44% and 18% of the median on the A/A run, so a gate under about 10% on those two
 workloads is not one the workflow decides; prop and math at 1,000 terms resolve about 3%. And
-the projection's head side read slower on the first three runs, the A/A included, while
-`dev/timing.sh` runs base then head in every round; a position bias is possible and is watched.
+the side run second in a round read slower on the projection in the first four runs, the two
+A/A runs included, so `dev/timing.sh` alternates the order of the sides from round to round
+and the effect cancels in the medians (#129).
 
 These timings are not committed under `benchmarks/`: a results file here names one machine's
 provenance, and a workflow run names its own. A PR quotes the run's URL and the table.
