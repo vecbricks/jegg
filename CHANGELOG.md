@@ -8,6 +8,8 @@ do (`CONTRIBUTING.md`, "Migration").
 
 ## [Unreleased]
 
+## [0.1.2] - unreleased
+
 ### Added
 
 - `RunReport.toJson()`; `-Dbench.json=true` for the measurement harness's summary and
@@ -18,6 +20,20 @@ do (`CONTRIBUTING.md`, "Migration").
 - `Timing`, `dev/timing.sh` and the `Timing` workflow: an A/B timing of two refs over the four
   workloads of #74 on one GitHub-hosted runner, with each side's own range as the noise it is
   read against (#120).
+- The `Fuzz` workflow: the differential fuzz against egg (`dev/fuzz.sh`) on demand on a
+  GitHub-hosted runner that builds egg's harness itself, for a machine without cargo (#121).
+
+### Changed
+
+- A nested pattern node whose variables are all bound when its parent is entered is looked up
+  in the e-graph once before the parent's run instead of once per candidate; prop at 1,000
+  random terms runs 34% faster in the `Timing` workflow, math, the projection and lambda within
+  noise (#115).
+
+### Fixed
+
+- The `bench` profile forwards `-Dbench.pin` and `-Dbench.force` to the harness, as its usage
+  text says; a test checks every property the usage names is wired (#114).
 
 ## [0.1.1] - 2026-10-22
 
@@ -73,6 +89,7 @@ do (`CONTRIBUTING.md`, "Migration").
   both found by fuzzing against egg (#73).
 - The Javadoc workflow builds again, so the API docs deploy (#88).
 
-[Unreleased]: https://github.com/vecbricks/jegg/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/vecbricks/jegg/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/vecbricks/jegg/releases/tag/v0.1.2
 [0.1.1]: https://github.com/vecbricks/jegg/releases/tag/v0.1.1
 [0.1.0]: https://github.com/vecbricks/jegg/releases/tag/v0.1.0
