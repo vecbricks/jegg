@@ -19,3 +19,5 @@ jobs:
         run: mvn -B --no-transfer-progress verify
       - name: Check the jar's module metadata
         run: dev/module-check.sh
+      - name: Check the host table
+        run: dev/host.sh --self-test
