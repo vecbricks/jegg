@@ -205,4 +205,8 @@ side's alone, so jegg visits 4 to 7.5x the parents egg does for the same congrue
 visit re-makes the form and re-keys the hashcons through a `HashMap` remove and put, which the
 profile charges with two thirds of the rebuild's samples and about 160 bytes. On prop jegg also
 makes 36% more effective unions than egg inside the iterations, which the buckets above cannot
-see. The fixes are #136 to #139.
+see. The fixes are #136 to #139. #136 (the absorbed side's parents alone, egg's
+`process_unions`) brought the visits to 1.0 to 1.8x egg's and the rebuild to 1.55 to 1.91x
+egg's time, with the prop run under egg's at 0.88x and math at 1.47x
+(`benchmarks/rebuild-counts.md`, "After #136"); the remaining 1.5x is the per-visit cost, #138
+and #139.

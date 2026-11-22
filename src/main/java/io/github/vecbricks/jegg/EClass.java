@@ -37,9 +37,9 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
    * A parent entry: an e-node that has the class as a child, and the class it was added to. The
    * entry made when the node was added is shared by the lists of all its children, and
    * {@code rebuild} re-keys it in place when a child's class is merged, so every list and the
-   * hashcons name the node by one form. When a merge makes two nodes one, the older entry stands
-   * for both from then on, and a repair drops the newer from each list it repairs. Two entries
-   * are equal when they name the same node and class; since a rebuild changes both in place, an
+   * hashcons name the node by one form. When a merge makes two nodes one, both entries stay in
+   * their lists, as egg's do, and name the one form and class from then on. Two entries are
+   * equal when they name the same node and class; since a rebuild changes both in place, an
    * entry is not a stable key for a hash table while the graph changes.
    *
    * @param <L> the language
@@ -47,28 +47,16 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
   static final class Parent<L> {
     private L node;
     private int classId;
-    // The order the entries were made in: of two entries a merge makes congruent, the older
-    // survives in every list, which is what keeps one entry shared by all of a node's lists.
-    private final int serial;
 
     /**
-     * A parent entry with serial 0, for a caller outside the e-graph.
+     * A parent entry.
      *
      * @param node the e-node, which has the class as a child
      * @param classId the id of the class the node was added to
      */
     public Parent(L node, int classId) {
-      this(node, classId, 0);
-    }
-
-    Parent(L node, int classId, int serial) {
       this.node = node;
       this.classId = classId;
-      this.serial = serial;
-    }
-
-    int serial() {
-      return serial;
     }
 
     /**
