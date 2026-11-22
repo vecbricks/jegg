@@ -41,7 +41,7 @@ files.
 | `ProjectionBenchmark` | a projection of 64 nodes over the toy date language, 20 rules: saturation and extraction, warm and cold, bytes allocated, with and without compact object headers | prediction 4 |
 | `DeterminismRun` | `DeterminismProbe` in ten fresh JVMs, the renderings compared byte for byte | prediction 3 |
 | `RepeatProfile` | not a benchmark: one JFR profile of the deferred `lambda_function_repeat` run, its samples grouped by phase, for the matcher's share | prediction 5 |
-| `RebuildProbe` | not a benchmark: the rebuild's work counted on both sides against egg's (patched) and a JFR profile of jegg's rebuild; on the probe branch `rebuild-probe`, not here; `rebuild-counts.md` is its committed table, before and after #136 and for the parked #142 and #138 | #134 |
+| `RebuildProbe` | not a benchmark: the rebuild's and the apply's work counted on both sides against egg's (patched) and a JFR profile of jegg's rebuild and apply; on the probe branch `rebuild-probe`, not here; `rebuild-counts.md` is its committed table, before and after #136 and for the parked #142 and #138; `apply-counts.md` the apply's (#154) | #134 |
 
 ## Timings: A/B in GitHub Actions
 
