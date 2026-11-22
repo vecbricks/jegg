@@ -194,8 +194,10 @@ public record Rewrite<L extends Language<L>, D extends @Nullable Object>(
    */
   public Optional<Applied> apply(EGraph<L, D> graph, Matcher.Match match) {
     if (!condition.holds(graph, match.eclass(), match.subst())) {
+      graph.probe().conditionsRefused++;
       return Optional.empty();
     }
+    graph.probe().matchesApplied++;
     Applied done = rhs.applyTo(graph, match);
     // The common results are shared, so an application allocates nothing for them.
     if (done == Applied.NOTHING) {

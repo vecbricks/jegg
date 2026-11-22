@@ -85,9 +85,12 @@ public final class RebuildProbe {
       new Pair("of which jegg found through the pruned memory", "zero", "addPrunedHits"),
       new Pair("of which made a class (news; each makes a fact)", "add_news", "addNews"),
       new Pair("modify calls from an add", "modify_from_add", "modifyFromAdd"),
-      new Pair("unions called (rules and modify; jegg: merge calls, congruences apart)",
+      new Pair("union calls outside the rebuild (egg: one per application and per modify;"
+          + " jegg: the applier skips the call when the two are one class)",
           "union_calls", "mergeCallsOutsideRebuild"),
-      new Pair("of which effective", "union_effective", "ruleMerges"));
+      new Pair("of which effective", "union_effective", "ruleMerges"),
+      new Pair("conditions refused (jegg; egg applies through a conditional applier)", "zero",
+          "conditionsRefused"));
 
   private RebuildProbe() {
   }
@@ -219,10 +222,27 @@ public final class RebuildProbe {
       }
     }
     Collections.sort(ratios);
-    return String.format(Locale.ROOT, "Per term, jegg's adds over egg's, terms with 10 or more"
-        + " adds on egg's side (%d): median %.2fx, p90 %.2fx, max %.2fx.%n%n", ratios.size(),
-        EggCompare.percentile(ratios, 0.5), EggCompare.percentile(ratios, 0.9),
-        EggCompare.percentile(ratios, 1.0));
+    StringBuilder b = new StringBuilder(String.format(Locale.ROOT, "Per term, jegg's adds over"
+        + " egg's, terms with 10 or more adds on egg's side (%d): median %.2fx, p90 %.2fx,"
+        + " max %.2fx.", ratios.size(), EggCompare.percentile(ratios, 0.5),
+        EggCompare.percentile(ratios, 0.9), EggCompare.percentile(ratios, 1.0)));
+    // The five terms whose adds differ most, by index, so they can be replayed.
+    List<Row> far = new ArrayList<>();
+    for (Row r : rows) {
+      if (r.bucket() == FuzzRun.Verdict.SAME && r.egg().get("adds") >= 10) {
+        far.add(r);
+      }
+    }
+    far.sort((x, y) -> Double.compare(
+        Math.abs((double) y.jegg().get("adds") / y.egg().get("adds") - 1),
+        Math.abs((double) x.jegg().get("adds") / x.egg().get("adds") - 1)));
+    b.append(" Farthest terms (index: jegg adds / egg adds, matches applied jegg / egg):");
+    for (Row r : far.subList(0, Math.min(5, far.size()))) {
+      b.append(String.format(Locale.ROOT, " %d: %d/%d, %d/%d;", r.index(),
+          r.jegg().get("adds"), r.egg().get("adds"), r.jegg().get("matchesApplied"),
+          r.egg().get("matches_applied")));
+    }
+    return b.append("\n\n").toString();
   }
 
   /** The summary of one language: the buckets, the quintiles, the sums, the identities. */
