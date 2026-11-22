@@ -74,7 +74,11 @@ Buckets: {SAME=595, NODE_LIMIT=288, BOTH_FAILED=117}. The tables are over `SAME`
 
 ### By quintile of egg's time, smallest to largest
 
-| quintile | terms | egg absorbed | jegg visited | ratio | jegg smaller side | ratio | forms re-made | egg pops | jegg hash ops | ratio |
+Columns: the quintile; its terms; egg's absorbed-side parents pended; jegg's parents visited and
+the ratio; jegg's smaller-side sum (the counterfactual) and its ratio to egg's; jegg's forms
+re-made; egg's pops (a memo insert each); jegg's hashcons removes and puts and the ratio.
+
+| q | n | egg abs. | jegg vis. | ratio | jegg min | ratio | re-made | egg pops | jegg hash | ratio |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | 119 | 0 | 228 | - | 0 | - | 0 | 564 | 456 | 0.81x |
 | 2 | 119 | 9 | 435 | 48.33x | 9 | 1.00x | 9 | 800 | 870 | 1.09x |
@@ -90,12 +94,12 @@ Buckets: {SAME=595, NODE_LIMIT=288, BOTH_FAILED=117}. The tables are over `SAME`
 | counterfactual: jegg visiting the absorbed side only | 938510 | 1578660 | 1.68x |
 | counterfactual: jegg visiting the smaller side only | 938510 | 1498805 | 1.60x |
 | forms re-made (jegg) against egg's visits | 938510 | 1341580 | 1.43x |
-| hash operations (egg: a memo insert per pop; jegg: removes and puts) | 2848396 | 11507703 | 4.04x |
+| hash operations (egg: a memo insert per pop; jegg: removes + puts) | 2848396 | 11507703 | 4.04x |
 | of which egg pays for the nodes added since the last rebuild | 1909886 |  |  |
 | unions / merges | 1523697 | 2068839 | 1.36x |
 | of which congruences found by the rebuild | 235610 | 442310 | 1.88x |
 | facts re-made (analysis_pending pops / analysis.make calls) | 164612 | 208483 | 1.27x |
-| modify calls (egg: per union and per fact change; jegg: per root owed one, per pass) | 1523969 | 281356 | 0.18x |
+| modify calls (egg: per union and fact change; jegg: per root per pass) | 1523969 | 281356 | 0.18x |
 | node-list nodes walked (rebuild_classes / re-canonicalised classes) | 7818596 | 7213029 | 0.92x |
 | classes walked for that | 1732151 | 686670 | 0.40x |
 | nodes re-made in the lists (egg: trimmed duplicates) | 649486 | 1307201 | 2.01x |
@@ -112,7 +116,11 @@ Buckets: {SAME=825, NODE_LIMIT=175}. The tables are over `SAME`.
 
 ### By quintile of egg's time, smallest to largest
 
-| quintile | terms | egg absorbed | jegg visited | ratio | jegg smaller side | ratio | forms re-made | egg pops | jegg hash ops | ratio |
+Columns: the quintile; its terms; egg's absorbed-side parents pended; jegg's parents visited and
+the ratio; jegg's smaller-side sum (the counterfactual) and its ratio to egg's; jegg's forms
+re-made; egg's pops (a memo insert each); jegg's hashcons removes and puts and the ratio.
+
+| q | n | egg abs. | jegg vis. | ratio | jegg min | ratio | re-made | egg pops | jegg hash | ratio |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | 165 | 10 | 2515 | 251.50x | 10 | 1.00x | 14 | 1587 | 1404 | 0.88x |
 | 2 | 165 | 165 | 6743 | 40.87x | 155 | 0.94x | 211 | 3319 | 8174 | 2.46x |
@@ -128,12 +136,12 @@ Buckets: {SAME=825, NODE_LIMIT=175}. The tables are over `SAME`.
 | counterfactual: jegg visiting the absorbed side only | 197746 | 239848 | 1.21x |
 | counterfactual: jegg visiting the smaller side only | 197746 | 230739 | 1.17x |
 | forms re-made (jegg) against egg's visits | 197746 | 220666 | 1.12x |
-| hash operations (egg: a memo insert per pop; jegg: removes and puts) | 577506 | 2658829 | 4.60x |
+| hash operations (egg: a memo insert per pop; jegg: removes + puts) | 577506 | 2658829 | 4.60x |
 | of which egg pays for the nodes added since the last rebuild | 379760 |  |  |
 | unions / merges | 347662 | 396207 | 1.14x |
 | of which congruences found by the rebuild | 25188 | 29129 | 1.16x |
 | facts re-made (analysis_pending pops / analysis.make calls) | 56869 | 61031 | 1.07x |
-| modify calls (egg: per union and per fact change; jegg: per root owed one, per pass) | 347719 | 74959 | 0.22x |
+| modify calls (egg: per union and fact change; jegg: per root per pass) | 347719 | 74959 | 0.22x |
 | node-list nodes walked (rebuild_classes / re-canonicalised classes) | 2184298 | 1998962 | 0.92x |
 | classes walked for that | 306016 | 164948 | 0.54x |
 | nodes re-made in the lists (egg: trimmed duplicates) | 137007 | 210215 | 1.53x |
@@ -154,12 +162,12 @@ egg: 59 iterations, 32636 nodes; jegg: 58 iterations, 32636 nodes: the same work
 | counterfactual: jegg visiting the absorbed side only | 119466 | 110281 | 0.92x |
 | counterfactual: jegg visiting the smaller side only | 119466 | 105422 | 0.88x |
 | forms re-made (jegg) against egg's visits | 119466 | 102750 | 0.86x |
-| hash operations (egg: a memo insert per pop; jegg: removes and puts) | 236267 | 967631 | 4.10x |
+| hash operations (egg: a memo insert per pop; jegg: removes + puts) | 236267 | 967631 | 4.10x |
 | of which egg pays for the nodes added since the last rebuild | 116801 |  |  |
 | unions / merges | 109976 | 113629 | 1.03x |
 | of which congruences found by the rebuild | 27437 | 27719 | 1.01x |
 | facts re-made (analysis_pending pops / analysis.make calls) | 56277 | 53518 | 0.95x |
-| modify calls (egg: per union and per fact change; jegg: per root owed one, per pass) | 110026 | 10367 | 0.09x |
+| modify calls (egg: per union and fact change; jegg: per root per pass) | 110026 | 10367 | 0.09x |
 | node-list nodes walked (rebuild_classes / re-canonicalised classes) | 1042995 | 544720 | 0.52x |
 | classes walked for that | 338824 | 55708 | 0.16x |
 | nodes re-made in the lists (egg: trimmed duplicates) | 84165 | 97386 | 1.16x |
