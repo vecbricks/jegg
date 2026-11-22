@@ -8,6 +8,11 @@ do (`CONTRIBUTING.md`, "Migration").
 
 ## [Unreleased]
 
+### Added
+
+- `Runner.phases()`: after a run, the wall time of each iteration's search, apply and rebuild
+  phases, as egg's `Iteration` carries them; the clock of the comparison with egg (#72).
+
 ## [0.1.2] - 2026-11-20
 
 ### Added

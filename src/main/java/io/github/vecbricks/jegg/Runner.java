@@ -43,6 +43,19 @@ public final class Runner<L extends Language<L>, D extends @Nullable Object> {
   private final RunLimits limits;
   private final Scheduler<L, D> scheduler;
   private final List<Hook<L, D>> hooks = new ArrayList<>();
+  private final List<Phases> phases = new ArrayList<>();
+
+  /**
+   * The wall time of one iteration's three phases, in nanoseconds (egg's {@code Iteration}
+   * carries the same three): searching every rule, applying every match, and the rebuild.
+   * The hooks, the rebuild after them and the limit checks are outside the three.
+   *
+   * @param searchNanos the search phase
+   * @param applyNanos the apply phase
+   * @param rebuildNanos the rebuild
+   */
+  public record Phases(long searchNanos, long applyNanos, long rebuildNanos) {
+  }
 
   /**
    * Run before each iteration, on the rebuilt graph (egg's {@code with_hook}): a reason to stop
@@ -130,6 +143,7 @@ public final class Runner<L extends Language<L>, D extends @Nullable Object> {
    */
   public RunReport run() {
     List<RunReport.Iteration> iterations = new ArrayList<>();
+    phases.clear();
     graph.rebuild();
     scheduler.reset();
     StopReason stop = overLimit();
@@ -149,6 +163,7 @@ public final class Runner<L extends Language<L>, D extends @Nullable Object> {
       List<List<Matcher.Match>> matches = new ArrayList<>(rules.size());
       Map<String, Integer> counts = new LinkedHashMap<>();
       Set<String> banned = new LinkedHashSet<>();
+      long searchStart = System.nanoTime();
       for (int i = 0; i < rules.size(); i++) {
         List<Matcher.Match> found = scheduler.search(iteration, i, rules.get(i), graph);
         matches.add(found);
@@ -157,6 +172,7 @@ public final class Runner<L extends Language<L>, D extends @Nullable Object> {
           banned.add(rules.get(i).name());
         }
       }
+      long applyStart = System.nanoTime();
       int applied = 0;
       int unions = 0;
       int counted = 0;
@@ -180,7 +196,11 @@ public final class Runner<L extends Language<L>, D extends @Nullable Object> {
         // after are skipped, and the report names them.
         passed = overLimit();
       }
+      long rebuildStart = System.nanoTime();
       int repaired = graph.rebuild();
+      long end = System.nanoTime();
+      phases.add(new Phases(applyStart - searchStart, rebuildStart - applyStart,
+          end - rebuildStart));
       iterations.add(new RunReport.Iteration(iteration, graph.numClasses(), graph.numNodes(),
           counts, banned, skipped, applied, unions, counted, repaired));
       // A limit passed stops the run even if the rebuild's merges brought the size back under
@@ -205,6 +225,16 @@ public final class Runner<L extends Language<L>, D extends @Nullable Object> {
       }
     }
     return new RunReport(iterations, stop);
+  }
+
+  /**
+   * The time each iteration of the last {@link #run()} spent in its three phases, in the
+   * order of the report's iterations; empty before the first run. A new run replaces it.
+   *
+   * @return one entry per iteration run, unmodifiable
+   */
+  public List<Phases> phases() {
+    return List.copyOf(phases);
   }
 
   private @Nullable StopReason askHooks() {

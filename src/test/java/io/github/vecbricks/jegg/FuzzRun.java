@@ -10,7 +10,9 @@
 package io.github.vecbricks.jegg;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -245,6 +247,32 @@ final class FuzzRun {
    * @return the result line, or {@code ERROR <exception>} if jegg threw
    */
   static String run(Case c) {
+    return timed(c).result();
+  }
+
+  /**
+   * jegg's result line for a case and the clocks of its run (#72): the wall time of
+   * {@code Runner.run()}, the three phases summed over the iterations ({@link Runner#phases}),
+   * the iterations and nodes, and the rule with the most matches over the run; zeros and an
+   * empty rule for a run that threw.
+   *
+   * @param result the result line
+   * @param wallNanos the wall time of the run, hooks and all
+   * @param searchNanos the search phase
+   * @param applyNanos the apply phase
+   * @param rebuildNanos the rebuild
+   * @param iterations the iterations run
+   * @param nodes the nodes after the run
+   * @param topRule the rule with the most matches, or empty
+   */
+  record Timed(String result, long wallNanos, long searchNanos, long applyNanos,
+      long rebuildNanos, int iterations, int nodes, String topRule) {
+    static Timed failed(String result) {
+      return new Timed(result, 0, 0, 0, 0, 0, 0, "");
+    }
+  }
+
+  static Timed timed(Case c) {
     validate(c.ruleset());
     Parsed parsed = parse(c.ruleset());
     Case base = new Case(parsed.base(), c.term(), c.goals());
@@ -257,7 +285,7 @@ final class FuzzRun {
       }
       throw new IllegalArgumentException("unknown rule set " + c.ruleset());
     } catch (RuntimeException | StackOverflowError e) {
-      return "ERROR " + e.getClass().getSimpleName() + ": " + e.getMessage();
+      return Timed.failed("ERROR " + e.getClass().getSimpleName() + ": " + e.getMessage());
     }
   }
 
@@ -270,7 +298,7 @@ final class FuzzRun {
         PropRulesTest.CONTRAPOSITIVE, PropRulesTest.LEM_IMPLY);
   }
 
-  private static String prop(Case c, Parsed scheduling) {
+  private static Timed prop(Case c, Parsed scheduling) {
     List<Rewrite<PropRulesTest.Prop, Boolean>> all = allProp();
     List<Rewrite<PropRulesTest.Prop, Boolean>> rules = switch (c.ruleset()) {
       case "prop-contrapositive" -> PropRulesTest.CONTRAPOSITIVE_CASE.rules();
@@ -286,7 +314,7 @@ final class FuzzRun {
     return execute(g, root, rules, PropRulesTest.LIMITS, List.of(), scheduling);
   }
 
-  private static String math(Case c, Parsed scheduling) {
+  private static Timed math(Case c, Parsed scheduling) {
     RunLimits limits = c.ruleset().equals("math-75k") ? RunLimits.DEFAULT.withNodes(75_000)
         : RunLimits.DEFAULT;
     EGraph<MathTest.Math, Double> g = new EGraph<>(MathTest.CONSTANT_FOLD);
@@ -374,7 +402,7 @@ final class FuzzRun {
     return all.stream().filter(r -> names.contains(r.name())).toList();
   }
 
-  private static <L extends Language<L>, D> String execute(EGraph<L, D> g, int root,
+  private static <L extends Language<L>, D> Timed execute(EGraph<L, D> g, int root,
       List<Rewrite<L, D>> rules, RunLimits limits, List<Pattern<L>> goals, Parsed scheduling) {
     List<String> samples = new ArrayList<>();
     Scheduler<L, D> scheduler = scheduling.matchLimit() == 0 ? new BackoffScheduler<>()
@@ -390,14 +418,16 @@ final class FuzzRun {
               ? Optional.of("Proved all goals") : Optional.empty());
     }
     RunReport report;
+    long start = System.nanoTime();
     try {
       report = runner.run();
     } catch (RuntimeException | StackOverflowError e) {
       // The iteration starts reached, so that an error past where egg stopped can be told from
       // one before it.
-      return "ERROR " + e.getClass().getSimpleName() + ": " + e.getMessage() + " after "
-          + (samples.isEmpty() ? "-" : String.join(";", samples));
+      return Timed.failed("ERROR " + e.getClass().getSimpleName() + ": " + e.getMessage()
+          + " after " + (samples.isEmpty() ? "-" : String.join(";", samples)));
     }
+    long wall = System.nanoTime() - start;
     String stop = switch (report.stop()) {
       case StopReason.Saturated s -> "Saturated";
       case StopReason.IterationLimit s -> "IterationLimit";
@@ -407,8 +437,22 @@ final class FuzzRun {
     };
     // egg counts the iteration a hook stops as one more than the report here does.
     int iterations = report.size() + (report.stop() instanceof StopReason.Other ? 1 : 0);
-    return stop + " " + iterations + " "
+    long search = 0;
+    long apply = 0;
+    long rebuild = 0;
+    for (Runner.Phases ph : runner.phases()) {
+      search += ph.searchNanos();
+      apply += ph.applyNanos();
+      rebuild += ph.rebuildNanos();
+    }
+    Map<String, Long> byRule = new LinkedHashMap<>();
+    for (RunReport.Iteration it : report.iterations()) {
+      it.matches().forEach((rule, n) -> byRule.merge(rule, (long) n, Long::sum));
+    }
+    String top = byRule.entrySet().stream().max(Map.Entry.comparingByValue())
+        .map(Map.Entry::getKey).orElse("");
+    return new Timed(stop + " " + iterations + " "
         + (samples.isEmpty() ? "-" : String.join(";", samples)) + " final " + g.numNodes()
-        + "," + g.numClasses();
+        + "," + g.numClasses(), wall, search, apply, rebuild, report.size(), g.numNodes(), top);
   }
 }

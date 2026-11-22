@@ -50,6 +50,45 @@ final class EggProcess {
    * @throws IOException if the process cannot run, or fails
    */
   List<String> run(List<FuzzRun.Case> cases) throws IOException, InterruptedException {
+    return runTimed(cases).stream().map(Timed::result).toList();
+  }
+
+  /**
+   * egg's result line for a case and the times its runner's report gives, in nanoseconds
+   * (#72): the search, apply and rebuild phases summed over the iterations, and egg's total,
+   * which is the three plus the hooks.
+   *
+   * @param result the result line, without the times
+   * @param searchNanos the search phase
+   * @param applyNanos the apply phase
+   * @param rebuildNanos the rebuild
+   * @param totalNanos egg's own total
+   */
+  record Timed(String result, long searchNanos, long applyNanos, long rebuildNanos,
+      long totalNanos) {
+    /** The line as the harness writes it: the result, then {@code times s a r t}. */
+    static Timed parse(String line) {
+      int at = line.lastIndexOf(" times ");
+      if (at < 0) {
+        return new Timed(line, 0, 0, 0, 0);
+      }
+      String[] t = line.substring(at + " times ".length()).trim().split(" ");
+      if (t.length != 4) {
+        throw new IllegalArgumentException("not four times: " + line);
+      }
+      return new Timed(line.substring(0, at), Long.parseLong(t[0]), Long.parseLong(t[1]),
+          Long.parseLong(t[2]), Long.parseLong(t[3]));
+    }
+  }
+
+  /**
+   * Runs egg over the cases and keeps the times.
+   *
+   * @param cases the cases, in order
+   * @return egg's result and times for each, in order
+   * @throws IOException if the process cannot run, or fails
+   */
+  List<Timed> runTimed(List<FuzzRun.Case> cases) throws IOException, InterruptedException {
     Files.createDirectories(workDir);
     Path terms = workDir.resolve(language + "-" + (++batches) + ".terms").toAbsolutePath();
     Path out = workDir.resolve(language + "-" + batches + ".egg").toAbsolutePath();
@@ -66,14 +105,14 @@ final class EggProcess {
     if (p.waitFor() != 0 || !Files.exists(out)) {
       throw new IOException("egg's fuzz_" + language + " failed:\n" + log);
     }
-    List<String> results = new ArrayList<>();
+    List<Timed> results = new ArrayList<>();
     for (String line : Files.readAllLines(out, StandardCharsets.UTF_8)) {
       int space = line.indexOf(' ');
       int index = Integer.parseInt(line.substring(0, space));
       if (index != results.size()) {
         throw new IOException("egg's results skip a case at " + index);
       }
-      results.add(line.substring(space + 1));
+      results.add(Timed.parse(line.substring(space + 1)));
     }
     if (results.size() != cases.size()) {
       throw new IOException("egg answered " + results.size() + " of " + cases.size() + " cases");

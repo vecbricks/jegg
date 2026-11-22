@@ -75,3 +75,15 @@ and the effect cancels in the medians (#129).
 These timings are not committed under `benchmarks/`: a results file here names one machine's
 provenance, and a workflow run names its own. A PR quotes the run's URL and the table.
 
+## jegg against egg, by phase
+
+`dev/compare.sh` (#72), run by the Fuzz workflow's `compare` job (dispatch `fuzz.yml` with
+`compare=true`): the fuzz term sets of a seed through egg's harness and through jegg, the two
+sides alternating over the rounds, each term's phases the median over the rounds; and
+`lambda_function_repeat` through egg's own test and the harness's deferred run. Work is
+compared by `FuzzRun.compare`, and only the `SAME` bucket (identical runs) is summed into the
+ratios; the node-limit bucket is summed apart. egg's times are its runner's own report, jegg's
+are `Runner.phases()`; the comparison is of the three phases, with egg's hooks and jegg's wall
+time beyond the phases printed beside them. `egg-compare.md` here is the committed table of the
+run the comparison doc quotes, with its provenance.
+

@@ -5,7 +5,8 @@
 // why the run stopped, egg's count of iterations, the nodes and classes at the start of each
 // iteration (read by a hook, so jegg's runner reads the same point), after the run, and egg's
 // memo size then: egg checks its node limit against the memo, which keeps stale entries, so a
-// run can stop on a limit its nodes have not reached.
+// run can stop on a limit its nodes have not reached. After it, `times <search> <apply>
+// <rebuild> <total>` in nanoseconds from the runner's own report (#72).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -26,14 +27,22 @@ fn format_result<L: Language, N: Analysis<L>>(runner: &Runner<L, N, ()>, samples
         .iter()
         .map(|(n, e)| format!("{},{}", n, e))
         .collect();
+    // The runner's own clocks, summed over its iterations (Runner::report), in nanoseconds:
+    // egg's side of the comparison of #72. EggProcess strips them for the fuzz.
+    let report = runner.report();
+    let ns = |s: f64| (s * 1e9).round() as u64;
     format!(
-        "{} {} {} final {},{} memo {}",
+        "{} {} {} final {},{} memo {} times {} {} {} {}",
         stop,
         runner.iterations.len(),
         if seen.is_empty() { "-".to_string() } else { seen.join(";") },
         runner.egraph.total_number_of_nodes(),
         runner.egraph.number_of_classes(),
-        runner.egraph.total_size()
+        runner.egraph.total_size(),
+        ns(report.search_time),
+        ns(report.apply_time),
+        ns(report.rebuild_time),
+        ns(report.total_time)
     )
 }
 
