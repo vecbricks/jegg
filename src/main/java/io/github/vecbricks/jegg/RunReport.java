@@ -30,7 +30,7 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
    * rules whose matches were not applied because a limit was passed before their turn, how
    * many matches were applied (their condition held at apply time), how many unions merged two
    * classes that were different, how many applications egg would count as applied (the input
-   * of the stop rule, {@link Applied}), and how many classes the rebuild repaired.
+   * of the stop rule, {@link Applied}), and how many parent entries the rebuild repaired.
    *
    * @param number the iteration's position in the run, counted from 1
    * @param classes the number of e-classes after the rebuild
@@ -44,7 +44,8 @@ public record RunReport(List<Iteration> iterations, StopReason stop) {
    * @param counted what egg counts as applied: the unions, plus one per match of a rule whose
    *     right-hand side is a multi-pattern; the run saturates only after an iteration where it
    *     is zero
-   * @param repaired the number of classes the rebuild repaired
+   * @param repaired the number of parent entries the rebuild repaired (what
+   *     {@link EGraph#rebuild} returned)
    */
   public record Iteration(int number, int classes, int nodes, Map<String, Integer> matches,
       Set<String> banned, Set<String> skipped, int applied, int unions, int counted,

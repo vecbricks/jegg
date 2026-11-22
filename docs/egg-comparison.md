@@ -44,7 +44,7 @@ The shape of the port in four lines:
 | `union(a, b)` | `merge(a, b)` | returns the surviving root; only unions and queues, nothing is repaired |
 | `union_trusted`, `union_instantiations` | out by design | explanation justifications; a rewrite's apply does the instantiation (`Rewrite.apply`) |
 | `find` | `find(int)` | ported |
-| `rebuild` | `rebuild()` | ported (paper Fig. 4); returns the number of classes repaired |
+| `rebuild` | `rebuild()` | ported (paper Fig. 4, egg's `process_unions`: the absorbed side's parents are queued and re-keyed, a re-key that finds another class merges the two); returns the number of parent entries repaired |
 | `classes()` | `classes()` | a read-only snapshot in id order |
 | `classes_mut()` | out by design | a mutable class could break the invariants; `EClass`'s mutators are package-private |
 | `classes_for_op` | an internal index | the matcher uses it; `Pattern.Head.type()` names the operator class it searches |
@@ -205,4 +205,8 @@ side's alone, so jegg visits 4 to 7.5x the parents egg does for the same congrue
 visit re-makes the form and re-keys the hashcons through a `HashMap` remove and put, which the
 profile charges with two thirds of the rebuild's samples and about 160 bytes. On prop jegg also
 makes 36% more effective unions than egg inside the iterations, which the buckets above cannot
-see. The fixes are #136 to #139.
+see. The fixes are #136 to #139. #136 (the absorbed side's parents alone, egg's
+`process_unions`) brought the visits to 1.0 to 1.8x egg's and the rebuild to 1.55 to 1.91x
+egg's time, with the prop run under egg's at 0.88x and math at 1.47x
+(`benchmarks/rebuild-counts.md`, "After #136"); the remaining 1.5x is the per-visit cost, #138
+and #139.

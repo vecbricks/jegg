@@ -34,11 +34,13 @@ question without adding. (Paper, section 2.1 and figure 4, lines 1-11.)
 
 `EGraph.merge(a, b)` unions two classes in the **union-find** (`UnionFind`,
 `int` ids, the smaller id kept as the root) and does nothing else but note the
-class on a worklist. After a merge the graph is out of order in two ways: the
-hashcons still keys nodes by their old children, and two nodes that became equal
-by the merge (`f(a)` and `f(b)` once `a = b`, the **congruence**) sit in
-different classes. `EGraph.rebuild()` repairs both, class by class, until no
-merge is pending - the paper's contribution (section 3, figure 4 lines 27-53):
+absorbed class's parents on a worklist. After a merge the graph is out of order
+in two ways: the hashcons still keys nodes by their old children, and two nodes
+that became equal by the merge (`f(a)` and `f(b)` once `a = b`, the
+**congruence**) sit in different classes. `EGraph.rebuild()` repairs both, one
+queued parent at a time (re-keyed under its new children; a key already held by
+another class merges the two, which queues more), until the list is empty - the
+paper's contribution (section 3, figure 4 lines 27-53):
 rebuilding once after a batch of merges instead of after each is what makes
 equality saturation fast, and `benchmarks/RebuildBenchmark-jdk25-results.txt`
 measures the factor on this port.

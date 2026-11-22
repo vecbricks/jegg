@@ -27,9 +27,9 @@ final class Saturation {
   enum Mode { DEFERRED, EAGER }
 
   /**
-   * What a run did: how long, how many iterations and repaired classes, how it ended, and the
-   * wall time of the three phases summed over the iterations, in nanoseconds (#72): the
-   * search of every rule, the applications, and the rebuilds (in eager mode, every one).
+   * What a run did: how long, how many iterations and repaired parent entries, how it ended,
+   * and the wall time of the three phases summed over the iterations, in nanoseconds (#72):
+   * the search of every rule, the applications, and the rebuilds (in eager mode, every one).
    */
   record Outcome(Mode mode, int iterations, long repaired, int nodes, int classes,
       String stop, boolean timedOut, long searchNanos, long applyNanos, long rebuildNanos) {
