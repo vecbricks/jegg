@@ -76,6 +76,22 @@ and the effect cancels in the medians (#129).
 These timings are not committed under `benchmarks/`: a results file here names one machine's
 provenance, and a workflow run names its own. A PR quotes the run's URL and the table.
 
+**Named hosts (#152).** A timing compares only with a timing on the same host, and the pool
+hands out at least four CPUs, so the Timing workflow and the Fuzz workflow's `compare` job take
+a `host` input and check the runner's CPU first (`dev/host.sh`, whose table names the hosts:
+`epyc7763`, `epyc9v74`, `epyc9v45`, `xeon6975p`); a run that drew another CPU fails there,
+before anything is built, and `dev/dispatch.sh --host <key> <timing|fuzz> -f ...` dispatches
+again after a wait until one lands. `host=any` skips the check, for a run whose number will not
+be compared with another's. The rule, from Varka's and vfdlibm's skills: a number is
+reproducible within a run and not between runs; a before and an after are on one host or are
+not compared; a host's string is never relaxed, and a new host is the owner's decision and a
+new row. The floors: an A/A run (`head=main`, `base=main`) per host, what "within noise" means
+there, listed here as they are made.
+
+| host | A/A run | prop | math | projection | lambda |
+|---|---|---|---|---|---|
+| `epyc7763` | pending | | | | |
+
 ## jegg against egg, by phase
 
 `dev/compare.sh` (#72), run by the Fuzz workflow's `compare` job (dispatch `fuzz.yml` with
