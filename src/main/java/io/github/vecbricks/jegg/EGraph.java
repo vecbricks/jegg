@@ -151,6 +151,8 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     long modifyFromAdd;
     long matchesApplied;
     long conditionsRefused;
+    long addsInApply;
+    long addNewsInApply;
 
     /** The counts as {@code name=value} pairs, space separated, in a fixed order. */
     String line() {
@@ -165,7 +167,8 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
           + " nodesRemade=" + nodesRemade + " adds=" + adds + " addHits=" + addHits
           + " addPrunedHits=" + addPrunedHits + " addNews=" + addNews
           + " mergeCalls=" + mergeCalls + " modifyFromAdd=" + modifyFromAdd
-          + " matchesApplied=" + matchesApplied + " conditionsRefused=" + conditionsRefused;
+          + " matchesApplied=" + matchesApplied + " conditionsRefused=" + conditionsRefused
+          + " addsInApply=" + addsInApply + " addNewsInApply=" + addNewsInApply;
     }
   }
 

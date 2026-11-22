@@ -827,7 +827,14 @@ public final class Matcher {
         for (int i = 0; i < ids.length; i++) {
           ids[i] = instantiate(graph, children.get(i), subst);
         }
-        return graph.add(head.build(subst, IntList.wrap(ids)));
+        EGraph.Probe probe = graph.probe();
+        probe.addsInApply++;
+        long newsBefore = probe.addNews;
+        int added = graph.add(head.build(subst, IntList.wrap(ids)));
+        if (probe.addNews > newsBefore) {
+          probe.addNewsInApply++;
+        }
+        return added;
       }
     }
   }

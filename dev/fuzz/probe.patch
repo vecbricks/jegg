@@ -112,10 +112,10 @@ index 084fd3f..ebe20a4 100644
                      N::modify(self, class_id)
                  }
 diff --git a/src/lib.rs b/src/lib.rs
-index 38f9a6d..08d254d 100644
+index 38f9a6d..154e39f 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -51,6 +51,35 @@ pub(crate) mod no_std_prelude {
+@@ -51,6 +51,36 @@ pub(crate) mod no_std_prelude {
      };
  }
  
@@ -125,13 +125,14 @@ index 38f9a6d..08d254d 100644
 +pub mod probe {
 +    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 +
-+    pub const NAMES: [&str; 19] = [
++    pub const NAMES: [&str; 22] = [
 +        "pops", "pended_added", "pended_absorbed", "memo_collisions", "congruence_unions",
 +        "union_kept_parents", "unions", "analysis_pops", "modify_calls", "rebuild_classes",
 +        "rebuild_nodes", "rebuild_trimmed", "adds", "add_hits", "add_news", "modify_from_add",
-+        "union_calls", "union_effective", "matches_applied",
++        "union_calls", "union_effective", "matches_applied", "apply_adds", "apply_news",
++        "applications",
 +    ];
-+    pub static COUNTS: [AtomicUsize; 19] = [const { AtomicUsize::new(0) }; 19];
++    pub static COUNTS: [AtomicUsize; 22] = [const { AtomicUsize::new(0) }; 22];
 +
 +    pub fn bump(i: usize, n: usize) {
 +        COUNTS[i].fetch_add(n, Relaxed);
@@ -143,7 +144,7 @@ index 38f9a6d..08d254d 100644
 +        }
 +    }
 +
-+    pub fn snapshot() -> [usize; 19] {
++    pub fn snapshot() -> [usize; 22] {
 +        core::array::from_fn(|i| COUNTS[i].load(Relaxed))
 +    }
 +}
@@ -152,7 +153,7 @@ index 38f9a6d..08d254d 100644
  // don't need `extern crate alloc`.
  #[doc(hidden)]
 diff --git a/src/pattern.rs b/src/pattern.rs
-index 5707eb2..abb3021 100644
+index 5707eb2..304281c 100644
 --- a/src/pattern.rs
 +++ b/src/pattern.rs
 @@ -367,6 +367,7 @@ where
@@ -163,6 +164,33 @@ index 5707eb2..abb3021 100644
                      id = apply_pat(&mut id_buf, &self.ast, egraph, subst);
                      did_something = egraph.union(id, mat.eclass);
                  }
+@@ -421,7 +422,13 @@ pub(crate) fn apply_pat<L: Language, A: Analysis<L>>(
+             ENodeOrVar::ENode(e) => {
+                 let n = e.clone().map_children(|child| ids[usize::from(child)]);
+                 trace!("adding: {:?}", n);
+-                egraph.add(n)
++                crate::probe::bump(19, 1);
++                let news_before = crate::probe::snapshot()[14];
++                let added = egraph.add(n);
++                if crate::probe::snapshot()[14] > news_before {
++                    crate::probe::bump(20, 1);
++                }
++                added
+             }
+         };
+         ids[i] = id;
+diff --git a/src/rewrite.rs b/src/rewrite.rs
+index 1977f4a..6b62388 100644
+--- a/src/rewrite.rs
++++ b/src/rewrite.rs
+@@ -109,6 +109,7 @@ impl<'a, L: Language, N: Analysis<L>> RewriteBorrow<'a, L, N> {
+     ///
+     /// [`apply_matches`]: Applier::apply_matches()
+     pub fn apply(&self, egraph: &mut EGraph<L, N>, matches: &[SearchMatches<L>]) -> Vec<Id> {
++        crate::probe::bump(21, matches.iter().map(|m| m.substs.len()).sum());
+         self.applier.apply_matches(egraph, matches, self.name)
+     }
+ 
 diff --git a/src/run.rs b/src/run.rs
 index 50bcfce..a872f57 100644
 --- a/src/run.rs

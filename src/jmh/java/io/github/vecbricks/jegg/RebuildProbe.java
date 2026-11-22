@@ -45,7 +45,8 @@ public final class RebuildProbe {
   static final List<String> EGG_NAMES = List.of("pops", "pended_added", "pended_absorbed",
       "memo_collisions", "congruence_unions", "union_kept_parents", "unions", "analysis_pops",
       "modify_calls", "rebuild_classes", "rebuild_nodes", "rebuild_trimmed", "adds", "add_hits",
-      "add_news", "modify_from_add", "union_calls", "union_effective", "matches_applied");
+      "add_news", "modify_from_add", "union_calls", "union_effective", "matches_applied",
+      "apply_adds", "apply_news", "applications");
 
   /** What is set beside what: the label, egg's counter, jegg's. */
   record Pair(String what, String egg, String jegg) {
@@ -78,9 +79,15 @@ public final class RebuildProbe {
 
   /** The apply's pairs (#154): what an application does on both sides. */
   static final List<Pair> APPLY_PAIRS = List.of(
-      new Pair("matches applied (egg: substitutions instantiated; jegg: conditions held)",
+      new Pair("applications: substitutions handed to the appliers (jegg: conditions held and"
+          + " refused)", "applications", "applicationsOffered"),
+      new Pair("of which a pattern applier instantiated (egg) / conditions held (jegg)",
           "matches_applied", "matchesApplied"),
-      new Pair("adds", "adds", "adds"),
+      new Pair("adds by the right-hand sides (egg: apply_pat; jegg: Matcher.instantiate)",
+          "apply_adds", "addsInApply"),
+      new Pair("of which made a class", "apply_news", "addNewsInApply"),
+      new Pair("adds, every caller (the harness's term, the analysis's modify included)", "adds",
+          "adds"),
       new Pair("of which found a node (hits)", "add_hits", "addHits"),
       new Pair("of which jegg found through the pruned memory", "zero", "addPrunedHits"),
       new Pair("of which made a class (news; each makes a fact)", "add_news", "addNews"),
@@ -142,6 +149,8 @@ public final class RebuildProbe {
       m.put("ruleMerges", m.getOrDefault("merges", 0L) - m.getOrDefault("congruenceMerges", 0L));
       m.put("mergeCallsOutsideRebuild", m.getOrDefault("mergeCalls", 0L)
           - m.getOrDefault("congruenceMerges", 0L));
+      m.put("applicationsOffered", m.getOrDefault("matchesApplied", 0L)
+          + m.getOrDefault("conditionsRefused", 0L));
       return new Counts(m);
     }
 
@@ -358,7 +367,8 @@ public final class RebuildProbe {
   record Hot(long samples, long underRebuild, Map<String, Long> phases,
       Map<String, Long> selfUnderRebuild, Map<String, Long> ownUnderRebuild,
       long allocBytes, long allocUnderRebuild, Map<String, Long> allocByClass,
-      Map<String, Long> allocByOwnFrame, Map<String, Long> allocByPhase) {
+      Map<String, Long> allocByOwnFrame, Map<String, Long> allocByPhase,
+      Map<String, Long> allocByClassApply, Map<String, Long> allocByOwnFrameApply) {
   }
 
   private static final String PKG = "io.github.vecbricks.jegg.";
@@ -413,6 +423,8 @@ public final class RebuildProbe {
     Map<String, Long> byClass = new LinkedHashMap<>();
     Map<String, Long> byOwn = new LinkedHashMap<>();
     Map<String, Long> byPhase = new TreeMap<>();
+    Map<String, Long> byClassApply = new LinkedHashMap<>();
+    Map<String, Long> byOwnApply = new LinkedHashMap<>();
     for (RecordedEvent e : RecordingFile.readAllEvents(jfr)) {
       String type = e.getEventType().getName();
       RecordedStackTrace st = e.getStackTrace();
@@ -432,8 +444,13 @@ public final class RebuildProbe {
       } else if (type.equals("jdk.ObjectAllocationSample")) {
         long w = e.getLong("weight");
         alloc += w;
-        byPhase.merge(phase(frames), w, Long::sum);
-        if (phase(frames).equals("rebuild")) {
+        String ph = phase(frames);
+        byPhase.merge(ph, w, Long::sum);
+        if (ph.equals("apply")) {
+          byClassApply.merge(e.getClass("objectClass").getName(), w, Long::sum);
+          byOwnApply.merge(ownFrame(frames), w, Long::sum);
+        }
+        if (ph.equals("rebuild")) {
           allocUnder += w;
           byClass.merge(e.getClass("objectClass").getName(), w, Long::sum);
           byOwn.merge(ownFrame(frames), w, Long::sum);
@@ -441,7 +458,7 @@ public final class RebuildProbe {
       }
     }
     return new Hot(samples, under, phases, self, own, alloc, allocUnder, byClass, byOwn,
-        byPhase);
+        byPhase, byClassApply, byOwnApply);
   }
 
   private static String top(Map<String, Long> m, long total, int n, boolean bytes) {
@@ -485,7 +502,11 @@ public final class RebuildProbe {
         + " (%.0f%%), %d adds: %.0f bytes per add.%n%n", h.allocByPhase(), underApply / 1e6,
         h.allocBytes() == 0 ? 0 : 100.0 * underApply / h.allocBytes(), adds,
         adds == 0 ? 0 : (double) underApply / adds));
-    b.append("| class | bytes | of rebuild |\n|---|---|---|\n")
+    b.append("| class | bytes | of apply |\n|---|---|---|\n")
+        .append(top(h.allocByClassApply(), underApply, 10, true));
+    b.append("\n| first jegg frame | bytes | of apply |\n|---|---|---|\n")
+        .append(top(h.allocByOwnFrameApply(), underApply, 10, true)).append('\n');
+    b.append("Under the rebuild:\n\n| class | bytes | of rebuild |\n|---|---|---|\n")
         .append(top(h.allocByClass(), h.allocUnderRebuild(), 10, true));
     b.append("\n| first jegg frame | bytes | of rebuild |\n|---|---|---|\n")
         .append(top(h.allocByOwnFrame(), h.allocUnderRebuild(), 10, true)).append('\n');

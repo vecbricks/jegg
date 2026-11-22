@@ -21,14 +21,14 @@ class RebuildProbeTest {
 
   @Test
   void bothSidesCountsParse() {
-    RebuildProbe.Counts egg = RebuildProbe.Counts.egg("12 7 5 3 2 40 9 6 4 30 100 8 50 30 20 20 11 9 25");
+    RebuildProbe.Counts egg = RebuildProbe.Counts.egg("12 7 5 3 2 40 9 6 4 30 100 8 50 30 20 20 11 9 25 40 15 26");
     assertEquals(12, egg.get("pops"));
     assertEquals(5, egg.get("pended_absorbed"));
     assertEquals(8, egg.get("rebuild_trimmed"));
     assertEquals(0, egg.get("nothing"));
     RebuildProbe.Counts fromReport = RebuildProbe.Counts.eggReport(
         "Runner report\n  Rebuild: (0.20) 0.18\n  Probe: [12, 7, 5, 3, 2, 40, 9, 6, 4, 30, 100,"
-            + " 8, 50, 30, 20, 20, 11, 9, 25]\ntest ok\n");
+            + " 8, 50, 30, 20, 20, 11, 9, 25, 40, 15, 26]\ntest ok\n");
     assertEquals(egg.values(), fromReport.values());
     assertThrows(IllegalArgumentException.class, () -> RebuildProbe.Counts.egg("1 2 3"));
     assertThrows(IllegalArgumentException.class,
@@ -42,7 +42,7 @@ class RebuildProbeTest {
 
   @Test
   void theSummaryIsByQuintileOverSameAndNamesTheIdentities() {
-    RebuildProbe.Counts e = RebuildProbe.Counts.egg("10 4 6 1 1 20 3 2 1 5 15 0 8 5 3 3 4 2 6");
+    RebuildProbe.Counts e = RebuildProbe.Counts.egg("10 4 6 1 1 20 3 2 1 5 15 0 8 5 3 3 4 2 6 7 2 6");
     RebuildProbe.Counts j = RebuildProbe.Counts.jegg("merges=3 mergeAbsorbedParents=6"
         + " mergeMinParents=5 parentsVisited=12 formsRemade=4 hashconsRemoves=12"
         + " hashconsPuts=12 prunedVisits=0 congruenceMerges=1 analysisMakes=2 modifyCalls=1"
