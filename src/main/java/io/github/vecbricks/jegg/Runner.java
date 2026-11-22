@@ -189,6 +189,9 @@ public final class Runner<L extends Language<L>, D extends @Nullable Object> {
             unions += done.get().unions();
             counted += done.get().counted();
             applied++;
+            graph.probe().matchesApplied++;
+          } else {
+            graph.probe().conditionsRefused++;
           }
         }
         // The limits are checked after each rule's matches, as egg checks them, so one

@@ -141,6 +141,16 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     long staleClasses;
     long nodesChecked;
     long nodesRemade;
+    // The apply's work (#154): adds and how they ended, merge calls, the modify from an add,
+    // and the runner's matches applied and conditions refused.
+    long adds;
+    long addHits;
+    long addPrunedHits;
+    long addNews;
+    long mergeCalls;
+    long modifyFromAdd;
+    long matchesApplied;
+    long conditionsRefused;
 
     /** The counts as {@code name=value} pairs, space separated, in a fixed order. */
     String line() {
@@ -152,7 +162,10 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
           + " seenEntries=" + seenEntries + " congruenceMerges=" + congruenceMerges
           + " analysisMakes=" + analysisMakes + " modifyCalls=" + modifyCalls
           + " staleClasses=" + staleClasses + " nodesChecked=" + nodesChecked
-          + " nodesRemade=" + nodesRemade;
+          + " nodesRemade=" + nodesRemade + " adds=" + adds + " addHits=" + addHits
+          + " addPrunedHits=" + addPrunedHits + " addNews=" + addNews
+          + " mergeCalls=" + mergeCalls + " modifyFromAdd=" + modifyFromAdd
+          + " matchesApplied=" + matchesApplied + " conditionsRefused=" + conditionsRefused;
     }
   }
 
@@ -265,11 +278,17 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * @return the canonical id of the class now holding the node
    */
   public int add(L node) {
+    probe.adds++;
     L canonical = canonicalize(node);
     int existing = idOf(canonical);
     if (existing != MISSING) {
+      probe.addHits++;
+      if (hashcons.get(canonical) == null) {
+        probe.addPrunedHits++;
+      }
       return existing;
     }
+    probe.addNews++;
     int id = unionFind.makeSet();
     EClass<L, D> eclass = new EClass<>(id, null);
     classes.add(eclass);
@@ -286,6 +305,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     }
     hashcons.put(canonical, id);
     eclass.setData(analysis.make(this, canonical));
+    probe.modifyFromAdd++;
     analysis.modify(this, id);
     return unionFind.find(id);
   }
@@ -568,6 +588,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * @return the canonical id of the joined class, the smaller of the two roots
    */
   public int merge(int a, int b) {
+    probe.mergeCalls++;
     int ra = unionFind.find(a);
     int rb = unionFind.find(b);
     if (ra == rb) {

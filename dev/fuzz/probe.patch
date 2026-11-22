@@ -1,8 +1,33 @@
 diff --git a/src/egraph.rs b/src/egraph.rs
-index 084fd3f..a1be93a 100644
+index 084fd3f..ebe20a4 100644
 --- a/src/egraph.rs
 +++ b/src/egraph.rs
-@@ -1065,6 +1065,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+@@ -1013,7 +1013,9 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+     /// ```
+     pub fn add_uncanonical(&mut self, mut enode: L) -> Id {
+         let original = enode.clone();
++        crate::probe::bump(12, 1);
+         if let Some(existing_id) = self.lookup_internal(&mut enode) {
++            crate::probe::bump(13, 1);
+             let id = self.find(existing_id);
+             // when explanations are enabled, we need a new representative for this expr
+             if let Some(explain) = self.explain.as_mut() {
+@@ -1032,12 +1034,14 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+                 existing_id
+             }
+         } else {
++            crate::probe::bump(14, 1);
+             let id = self.make_new_eclass(enode, original.clone());
+             if let Some(explain) = self.explain.as_mut() {
+                 explain.add(original, id);
+             }
+ 
+             // now that we updated explanations, run the analysis for the new eclass
++            crate::probe::bump(15, 1);
+             N::modify(self, id);
+             self.clean = false;
+             id
+@@ -1065,6 +1069,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
  
          // TODO is this needed?
          self.pending.push(id);
@@ -10,7 +35,19 @@ index 084fd3f..a1be93a 100644
  
          self.classes.insert(id, class);
          assert!(self.memo.insert(enode, id).is_none());
-@@ -1188,6 +1189,9 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+@@ -1149,7 +1154,10 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+             let caller = core::panic::Location::caller();
+             self.union_trusted(id1, id2, caller.to_string())
+         } else {
+-            self.perform_union(id1, id2, None)
++            crate::probe::bump(16, 1);
++            let did = self.perform_union(id1, id2, None);
++            crate::probe::bump(17, did as usize);
++            did
+         }
+     }
+ 
+@@ -1188,6 +1196,9 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
          assert_eq!(id1, class1.id);
  
          self.pending.extend(class2.parents.iter().copied());
@@ -20,7 +57,7 @@ index 084fd3f..a1be93a 100644
          let did_merge = self.analysis.merge(&mut class1.data, class2.data);
          if did_merge.0 {
              self.analysis_pending.extend(class1.parents.iter().copied());
-@@ -1199,6 +1203,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+@@ -1199,6 +1210,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
          concat_vecs(&mut class1.nodes, class2.nodes);
          concat_vecs(&mut class1.parents, class2.parents);
  
@@ -28,7 +65,7 @@ index 084fd3f..a1be93a 100644
          N::modify(self, id1);
          true
      }
-@@ -1268,6 +1273,8 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+@@ -1268,6 +1280,8 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
  
          for class in self.classes.values_mut() {
              let old_len = class.len();
@@ -37,7 +74,7 @@ index 084fd3f..a1be93a 100644
              class
                  .nodes
                  .iter_mut()
-@@ -1276,6 +1283,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+@@ -1276,6 +1290,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
              class.nodes.dedup();
  
              trimmed += old_len - class.nodes.len();
@@ -45,7 +82,7 @@ index 084fd3f..a1be93a 100644
  
              let mut add = |n: &L| {
                  classes_by_op
-@@ -1348,16 +1356,20 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+@@ -1348,16 +1363,20 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
  
          while !self.pending.is_empty() || !self.analysis_pending.is_empty() {
              while let Some(class) = self.pending.pop() {
@@ -66,7 +103,7 @@ index 084fd3f..a1be93a 100644
                  let node = self.nodes[usize::from(class_id)].clone();
                  let class_id = self.find_mut(class_id);
                  let node_data = N::remake(self, &node, class_id);
-@@ -1365,6 +1377,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+@@ -1365,6 +1384,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
  
                  let did_merge = self.analysis.merge(&mut class.data, node_data);
                  if did_merge.0 {
@@ -75,10 +112,10 @@ index 084fd3f..a1be93a 100644
                      N::modify(self, class_id)
                  }
 diff --git a/src/lib.rs b/src/lib.rs
-index 38f9a6d..cd5c33d 100644
+index 38f9a6d..08d254d 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -51,6 +51,34 @@ pub(crate) mod no_std_prelude {
+@@ -51,6 +51,35 @@ pub(crate) mod no_std_prelude {
      };
  }
  
@@ -88,12 +125,13 @@ index 38f9a6d..cd5c33d 100644
 +pub mod probe {
 +    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 +
-+    pub const NAMES: [&str; 12] = [
++    pub const NAMES: [&str; 19] = [
 +        "pops", "pended_added", "pended_absorbed", "memo_collisions", "congruence_unions",
 +        "union_kept_parents", "unions", "analysis_pops", "modify_calls", "rebuild_classes",
-+        "rebuild_nodes", "rebuild_trimmed",
++        "rebuild_nodes", "rebuild_trimmed", "adds", "add_hits", "add_news", "modify_from_add",
++        "union_calls", "union_effective", "matches_applied",
 +    ];
-+    pub static COUNTS: [AtomicUsize; 12] = [const { AtomicUsize::new(0) }; 12];
++    pub static COUNTS: [AtomicUsize; 19] = [const { AtomicUsize::new(0) }; 19];
 +
 +    pub fn bump(i: usize, n: usize) {
 +        COUNTS[i].fetch_add(n, Relaxed);
@@ -105,7 +143,7 @@ index 38f9a6d..cd5c33d 100644
 +        }
 +    }
 +
-+    pub fn snapshot() -> [usize; 12] {
++    pub fn snapshot() -> [usize; 19] {
 +        core::array::from_fn(|i| COUNTS[i].load(Relaxed))
 +    }
 +}
@@ -113,6 +151,18 @@ index 38f9a6d..cd5c33d 100644
  // Hidden re-exports used by the `define_language!` macro so downstream crates
  // don't need `extern crate alloc`.
  #[doc(hidden)]
+diff --git a/src/pattern.rs b/src/pattern.rs
+index 5707eb2..abb3021 100644
+--- a/src/pattern.rs
++++ b/src/pattern.rs
+@@ -367,6 +367,7 @@ where
+                     did_something = did_something_temp;
+                     id = id_temp;
+                 } else {
++                    crate::probe::bump(18, 1);
+                     id = apply_pat(&mut id_buf, &self.ast, egraph, subst);
+                     did_something = egraph.union(id, mat.eclass);
+                 }
 diff --git a/src/run.rs b/src/run.rs
 index 50bcfce..a872f57 100644
 --- a/src/run.rs

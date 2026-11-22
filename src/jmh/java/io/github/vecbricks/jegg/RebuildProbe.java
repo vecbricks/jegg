@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,7 +44,8 @@ public final class RebuildProbe {
   /** egg's counter names, in the order of {@code egg::probe::NAMES} in the patch. */
   static final List<String> EGG_NAMES = List.of("pops", "pended_added", "pended_absorbed",
       "memo_collisions", "congruence_unions", "union_kept_parents", "unions", "analysis_pops",
-      "modify_calls", "rebuild_classes", "rebuild_nodes", "rebuild_trimmed");
+      "modify_calls", "rebuild_classes", "rebuild_nodes", "rebuild_trimmed", "adds", "add_hits",
+      "add_news", "modify_from_add", "union_calls", "union_effective", "matches_applied");
 
   /** What is set beside what: the label, egg's counter, jegg's. */
   record Pair(String what, String egg, String jegg) {
@@ -73,6 +75,19 @@ public final class RebuildProbe {
       new Pair("classes walked for that", "rebuild_classes", "staleClasses"),
       new Pair("nodes re-made in the lists (egg: trimmed duplicates)", "rebuild_trimmed",
           "nodesRemade"));
+
+  /** The apply's pairs (#154): what an application does on both sides. */
+  static final List<Pair> APPLY_PAIRS = List.of(
+      new Pair("matches applied (egg: substitutions instantiated; jegg: conditions held)",
+          "matches_applied", "matchesApplied"),
+      new Pair("adds", "adds", "adds"),
+      new Pair("of which found a node (hits)", "add_hits", "addHits"),
+      new Pair("of which jegg found through the pruned memory", "zero", "addPrunedHits"),
+      new Pair("of which made a class (news; each makes a fact)", "add_news", "addNews"),
+      new Pair("modify calls from an add", "modify_from_add", "modifyFromAdd"),
+      new Pair("unions called (rules and modify; jegg: merge calls, congruences apart)",
+          "union_calls", "mergeCallsOutsideRebuild"),
+      new Pair("of which effective", "union_effective", "ruleMerges"));
 
   private RebuildProbe() {
   }
@@ -121,6 +136,9 @@ public final class RebuildProbe {
       }
       m.put("hashconsOps", m.getOrDefault("hashconsRemoves", 0L)
           + m.getOrDefault("hashconsPuts", 0L));
+      m.put("ruleMerges", m.getOrDefault("merges", 0L) - m.getOrDefault("congruenceMerges", 0L));
+      m.put("mergeCallsOutsideRebuild", m.getOrDefault("mergeCalls", 0L)
+          - m.getOrDefault("congruenceMerges", 0L));
       return new Counts(m);
     }
 
@@ -159,8 +177,12 @@ public final class RebuildProbe {
 
   /** The pairs table over the summed counts of a set of runs. */
   static String pairsTable(Counts egg, Counts jegg) {
+    return pairsTable(PAIRS, egg, jegg);
+  }
+
+  static String pairsTable(List<Pair> pairs, Counts egg, Counts jegg) {
     StringBuilder b = new StringBuilder("| what | egg | jegg | jegg/egg |\n|---|---|---|---|\n");
-    for (Pair p : PAIRS) {
+    for (Pair p : pairs) {
       long e = egg.get(p.egg());
       long j = jegg.get(p.jegg());
       b.append("| ").append(p.what()).append(" | ").append(e).append(" | ")
@@ -168,6 +190,14 @@ public final class RebuildProbe {
           .append(p.jegg().equals("zero") ? "" : ratio(e, j)).append(" |\n");
     }
     return b.toString();
+  }
+
+  /** The apply's identities: each side's adds are its hits plus its news. */
+  static String applyIdentities(Counts egg, Counts jegg) {
+    long eggGap = egg.get("adds") - egg.get("add_hits") - egg.get("add_news");
+    long jeggGap = jegg.get("adds") - jegg.get("addHits") - jegg.get("addNews");
+    return "Apply identities: egg adds minus (hits + news) = " + eggGap
+        + " (expected 0); jegg adds minus (hits + news) = " + jeggGap + " (expected 0).";
   }
 
   /** The identities that tell a broken counter from a finding. */
@@ -178,6 +208,21 @@ public final class RebuildProbe {
     return "Identities: egg pops minus (added + absorbed) = " + eggGap
         + " (0 unless a run stopped between a union and its rebuild); jegg parents visited"
         + " minus (hashcons puts + pruned visits) = " + jeggGap + " (expected 0).\n";
+  }
+
+  /** Per SAME term, jegg's adds over egg's: median, p90 and max, over terms egg added 10+. */
+  static String addsPerTerm(List<Row> rows) {
+    List<Double> ratios = new ArrayList<>();
+    for (Row r : rows) {
+      if (r.bucket() == FuzzRun.Verdict.SAME && r.egg().get("adds") >= 10) {
+        ratios.add((double) r.jegg().get("adds") / r.egg().get("adds"));
+      }
+    }
+    Collections.sort(ratios);
+    return String.format(Locale.ROOT, "Per term, jegg's adds over egg's, terms with 10 or more"
+        + " adds on egg's side (%d): median %.2fx, p90 %.2fx, max %.2fx.%n%n", ratios.size(),
+        EggCompare.percentile(ratios, 0.5), EggCompare.percentile(ratios, 0.9),
+        EggCompare.percentile(ratios, 1.0));
   }
 
   /** The summary of one language: the buckets, the quintiles, the sums, the identities. */
@@ -225,11 +270,14 @@ public final class RebuildProbe {
       }
     }
     b.append("\n### All `SAME` terms, summed\n\n").append(pairsTable(e, j)).append('\n');
+    b.append("\n### The apply, all `SAME` terms, summed (#154)\n\n")
+        .append(pairsTable(APPLY_PAIRS, e, j)).append('\n');
     b.append(String.format(Locale.ROOT, "Per term, jegg's parents visited over egg's"
         + " absorbed-side parents, terms with 10 or more on egg's side (%d): median %.2fx,"
         + " p90 %.2fx, max %.2fx.%n%n", ratios.size(), EggCompare.percentile(ratios, 0.5),
         EggCompare.percentile(ratios, 0.9), EggCompare.percentile(ratios, 1.0)));
     b.append(identities(e, j)).append('\n');
+    b.append(addsPerTerm(rows)).append(applyIdentities(e, j)).append('\n');
     return b.toString();
   }
 
@@ -279,7 +327,9 @@ public final class RebuildProbe {
         .append(o.nodes()).append(" nodes: ")
         .append(EggCompare.sameLambdaWork(report, o) ? "the same work"
             : "**different work, the ratios are not a comparison**")
-        .append(".\n\n").append(pairsTable(e, j)).append('\n').append(identities(e, j))
+        .append(".\n\n").append(pairsTable(e, j)).append('\n')
+        .append(pairsTable(APPLY_PAIRS, e, j)).append('\n').append(identities(e, j))
+        .append('\n').append(applyIdentities(e, j))
         .append('\n');
     return b.toString();
   }
@@ -288,7 +338,7 @@ public final class RebuildProbe {
   record Hot(long samples, long underRebuild, Map<String, Long> phases,
       Map<String, Long> selfUnderRebuild, Map<String, Long> ownUnderRebuild,
       long allocBytes, long allocUnderRebuild, Map<String, Long> allocByClass,
-      Map<String, Long> allocByOwnFrame) {
+      Map<String, Long> allocByOwnFrame, Map<String, Long> allocByPhase) {
   }
 
   private static final String PKG = "io.github.vecbricks.jegg.";
@@ -342,6 +392,7 @@ public final class RebuildProbe {
     long allocUnder = 0;
     Map<String, Long> byClass = new LinkedHashMap<>();
     Map<String, Long> byOwn = new LinkedHashMap<>();
+    Map<String, Long> byPhase = new TreeMap<>();
     for (RecordedEvent e : RecordingFile.readAllEvents(jfr)) {
       String type = e.getEventType().getName();
       RecordedStackTrace st = e.getStackTrace();
@@ -361,6 +412,7 @@ public final class RebuildProbe {
       } else if (type.equals("jdk.ObjectAllocationSample")) {
         long w = e.getLong("weight");
         alloc += w;
+        byPhase.merge(phase(frames), w, Long::sum);
         if (phase(frames).equals("rebuild")) {
           allocUnder += w;
           byClass.merge(e.getClass("objectClass").getName(), w, Long::sum);
@@ -368,7 +420,8 @@ public final class RebuildProbe {
         }
       }
     }
-    return new Hot(samples, under, phases, self, own, alloc, allocUnder, byClass, byOwn);
+    return new Hot(samples, under, phases, self, own, alloc, allocUnder, byClass, byOwn,
+        byPhase);
   }
 
   private static String top(Map<String, Long> m, long total, int n, boolean bytes) {
@@ -384,6 +437,11 @@ public final class RebuildProbe {
 
   /** The profile's text: the sample counts, the phases, the self and own frames, the bytes. */
   static String describe(String what, Hot h, long parentsVisited, long runs) {
+    return describe(what, h, parentsVisited, 0, runs);
+  }
+
+  /** As above, with the adds of the runs, for the apply's bytes per add (#154). */
+  static String describe(String what, Hot h, long parentsVisited, long adds, long runs) {
     StringBuilder b = new StringBuilder("## Profile: ").append(what).append("\n\n");
     b.append(runs).append(" runs; ").append(h.samples()).append(" execution samples, ")
         .append(h.underRebuild()).append(" under `EGraph.rebuild`");
@@ -402,6 +460,11 @@ public final class RebuildProbe {
         h.allocBytes() == 0 ? 0 : 100.0 * h.allocUnderRebuild() / h.allocBytes(),
         parentsVisited, parentsVisited == 0 ? 0 : (double) h.allocUnderRebuild()
             / parentsVisited));
+    long underApply = h.allocByPhase().getOrDefault("apply", 0L);
+    b.append(String.format(Locale.ROOT, "Allocation by phase: %s; %.1f MB under the apply"
+        + " (%.0f%%), %d adds: %.0f bytes per add.%n%n", h.allocByPhase(), underApply / 1e6,
+        h.allocBytes() == 0 ? 0 : 100.0 * underApply / h.allocBytes(), adds,
+        adds == 0 ? 0 : (double) underApply / adds));
     b.append("| class | bytes | of rebuild |\n|---|---|---|\n")
         .append(top(h.allocByClass(), h.allocUnderRebuild(), 10, true));
     b.append("\n| first jegg frame | bytes | of rebuild |\n|---|---|---|\n")
@@ -413,28 +476,25 @@ public final class RebuildProbe {
   static String profile(String what, Path jfr, int seconds, Runnable warm, ProbeRun work)
       throws IOException, ParseException {
     warm.run();
-    long parents = 0;
+    Counts total = null;
     long runs = 0;
     try (Recording r = new Recording(Configuration.getConfiguration("profile"))) {
       r.start();
       long until = System.nanoTime() + seconds * 1_000_000_000L;
       do {
-        parents += work.run();
+        Counts c = work.run();
+        total = total == null ? c : total.plus(c);
         runs++;
       } while (System.nanoTime() < until);
       r.stop();
       r.dump(jfr);
     }
-    return describe(what, analyze(jfr), parents, runs);
+    return describe(what, analyze(jfr), total.get("parentsVisited"), total.get("adds"), runs);
   }
 
-  /** One pass of a profiled workload; returns the parents its rebuilds visited. */
+  /** One pass of a profiled workload; returns jegg's counts of it. */
   interface ProbeRun {
-    long run();
-  }
-
-  private static long visited(String counts) {
-    return Counts.jegg(counts).get("parentsVisited");
+    Counts run();
   }
 
   /**
@@ -466,7 +526,8 @@ public final class RebuildProbe {
     List<String> languages = Arrays.asList(o.getOrDefault("--languages", "prop,math")
         .split(","));
     boolean lambda = Boolean.parseBoolean(o.getOrDefault("--lambda", "true"));
-    StringBuilder summary = new StringBuilder("# The rebuild's work on both sides (#134)\n\n");
+    StringBuilder summary = new StringBuilder(
+        "# The rebuild's and the apply's work on both sides (#134, #154)\n\n");
     Map<String, List<FuzzRun.Case>> largest = new LinkedHashMap<>();
     for (String language : languages) {
       List<FuzzRun.Case> cases = new ArrayList<>();
@@ -481,11 +542,12 @@ public final class RebuildProbe {
       String text = profile(language + ", the largest SAME quintile (" + cases.size()
           + " terms)", out.resolve(language + ".jfr"), seconds,
           () -> cases.forEach(FuzzRun::timed), () -> {
-            long p = 0;
+            Counts t = null;
             for (FuzzRun.Case c : cases) {
-              p += visited(FuzzRun.timed(c).counts());
+              Counts one = Counts.jegg(FuzzRun.timed(c).counts());
+              t = t == null ? one : t.plus(one);
             }
-            return p;
+            return t;
           });
       Files.writeString(out.resolve("profile-" + language + ".md"), text,
           StandardCharsets.UTF_8);
@@ -496,7 +558,7 @@ public final class RebuildProbe {
       Saturation.Workload repeat = Saturation.suite("lambda_function_repeat").orElseThrow();
       String text = profile("lambda_function_repeat", out.resolve("lambda.jfr"), seconds,
           () -> repeat.run(Saturation.Mode.DEFERRED, Long.MAX_VALUE),
-          () -> visited(repeat.run(Saturation.Mode.DEFERRED, Long.MAX_VALUE).counts()));
+          () -> Counts.jegg(repeat.run(Saturation.Mode.DEFERRED, Long.MAX_VALUE).counts()));
       Files.writeString(out.resolve("profile-lambda.md"), text, StandardCharsets.UTF_8);
       summary.append(text);
       System.err.println("lambda: profiled");
