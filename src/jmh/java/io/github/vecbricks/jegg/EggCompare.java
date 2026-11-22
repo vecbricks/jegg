@@ -367,12 +367,13 @@ public final class EggCompare {
         o.rebuildNanos(), 0)).toList());
     EggReport e0 = eggs.get(0);
     Saturation.Outcome j0 = jeggs.get(0);
-    boolean sameWork = e0.iterations() == j0.iterations() && e0.nodes() == j0.nodes();
+    boolean sameWork = sameLambdaWork(e0, j0);
     StringBuilder b = new StringBuilder("## lambda_function_repeat, ").append(rounds)
         .append(" rounds\n\n");
     b.append("egg: ").append(e0.iterations()).append(" iterations, ").append(e0.nodes())
         .append(" nodes; jegg: ").append(j0.iterations()).append(" iterations, ")
-        .append(j0.nodes()).append(" nodes: ").append(sameWork ? "the same work"
+        .append(j0.nodes()).append(" nodes (jegg stopped by ").append(j0.stop())
+        .append("): ").append(sameWork ? "the same work (egg counts the iteration a hook stops)"
             : "**different work, the ratios below are not a comparison**").append(".\n\n");
     b.append("| phase | egg ms | jegg ms | jegg/egg |\n|---|---|---|---|\n");
     b.append("| search | ").append(ms(e.search())).append(" | ").append(ms(j.search()))
@@ -393,6 +394,18 @@ public final class EggCompare {
     }
     b.append(".\n");
     return b.toString();
+  }
+
+  /**
+   * Whether egg's report and the harness's outcome describe the same run: the same nodes, and
+   * the same iterations once egg's count of the iteration a hook stops, which is one more than
+   * the harness's (as {@code FuzzRun} notes), is allowed for.
+   */
+  static boolean sameLambdaWork(EggReport egg, Saturation.Outcome jegg) {
+    int eggIterations = egg.iterations();
+    boolean hookStop = jegg.stop().equals("Proved all goals");
+    return egg.nodes() == jegg.nodes() && (eggIterations == jegg.iterations()
+        || (hookStop && eggIterations == jegg.iterations() + 1));
   }
 
   private static String eggLambda(Path eggDir) throws IOException, InterruptedException {
