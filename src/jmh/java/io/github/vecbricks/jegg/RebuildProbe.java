@@ -66,7 +66,8 @@ public final class RebuildProbe {
           "congruenceMerges"),
       new Pair("facts re-made (analysis_pending pops / analysis.make calls)", "analysis_pops",
           "analysisMakes"),
-      new Pair("modify calls from the rebuild", "modify_calls", "modifyCalls"),
+      new Pair("modify calls (egg: one per union and per fact change; jegg: one per root owed"
+          + " one, per pass)", "modify_calls", "modifyCalls"),
       new Pair("node-list nodes walked (rebuild_classes / re-canonicalised classes)",
           "rebuild_nodes", "nodesChecked"),
       new Pair("classes walked for that", "rebuild_classes", "staleClasses"),

@@ -865,8 +865,11 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       if (same == null || same == parent) {
         continue;
       }
-      probe.congruenceMerges++;
+      long mergesBefore = probe.merges;
       int root = merge(same.classId(), unionFind.find(parent.classId()));
+      if (probe.merges > mergesBefore) {
+        probe.congruenceMerges++;
+      }
       merged = true;
       EClass.Parent<L> kept = parent.serial() < same.serial() ? parent : same;
       EClass.Parent<L> dropped = kept == parent ? same : parent;

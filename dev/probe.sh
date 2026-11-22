@@ -26,4 +26,4 @@ mkdir -p "$out"
 cat "$out/provenance.txt"
 java -Xms2g -Xmx2g -cp "target/test-classes:target/classes:$(cat target/compare-cp.txt)" \
   io.github.vecbricks.jegg.RebuildProbe --egg "$cache" --out "$out" --terms "$terms" \
-  --seed "$seed"
+  --seed "$seed" --profile-seconds 90
