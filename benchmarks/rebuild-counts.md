@@ -99,7 +99,7 @@ re-made; egg's pops (a memo insert each); jegg's hashcons removes and puts and t
 | unions / merges | 1523697 | 2068839 | 1.36x |
 | of which congruences found by the rebuild | 235610 | 442310 | 1.88x |
 | facts re-made (analysis_pending pops / analysis.make calls) | 164612 | 208483 | 1.27x |
-| modify calls (egg: per union and fact change; jegg: per root per pass) | 1523969 | 281356 | 0.18x |
+| modify calls (egg: per union and fact change; jegg: per root, pass) | 1523969 | 281356 | 0.18x |
 | node-list nodes walked (rebuild_classes / re-canonicalised classes) | 7818596 | 7213029 | 0.92x |
 | classes walked for that | 1732151 | 686670 | 0.40x |
 | nodes re-made in the lists (egg: trimmed duplicates) | 649486 | 1307201 | 2.01x |
@@ -141,7 +141,7 @@ re-made; egg's pops (a memo insert each); jegg's hashcons removes and puts and t
 | unions / merges | 347662 | 396207 | 1.14x |
 | of which congruences found by the rebuild | 25188 | 29129 | 1.16x |
 | facts re-made (analysis_pending pops / analysis.make calls) | 56869 | 61031 | 1.07x |
-| modify calls (egg: per union and fact change; jegg: per root per pass) | 347719 | 74959 | 0.22x |
+| modify calls (egg: per union and fact change; jegg: per root, pass) | 347719 | 74959 | 0.22x |
 | node-list nodes walked (rebuild_classes / re-canonicalised classes) | 2184298 | 1998962 | 0.92x |
 | classes walked for that | 306016 | 164948 | 0.54x |
 | nodes re-made in the lists (egg: trimmed duplicates) | 137007 | 210215 | 1.53x |
@@ -167,7 +167,7 @@ egg: 59 iterations, 32636 nodes; jegg: 58 iterations, 32636 nodes: the same work
 | unions / merges | 109976 | 113629 | 1.03x |
 | of which congruences found by the rebuild | 27437 | 27719 | 1.01x |
 | facts re-made (analysis_pending pops / analysis.make calls) | 56277 | 53518 | 0.95x |
-| modify calls (egg: per union and fact change; jegg: per root per pass) | 110026 | 10367 | 0.09x |
+| modify calls (egg: per union and fact change; jegg: per root, pass) | 110026 | 10367 | 0.09x |
 | node-list nodes walked (rebuild_classes / re-canonicalised classes) | 1042995 | 544720 | 0.52x |
 | classes walked for that | 338824 | 55708 | 0.16x |
 | nodes re-made in the lists (egg: trimmed duplicates) | 84165 | 97386 | 1.16x |
