@@ -108,6 +108,54 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   private final List<EClass.Parent<L>> analysisPending = new ArrayList<>();
   // Roots whose fact changed in a merge, owed a call of the analysis's modify hook.
   private final IntArray modifyPending = new IntArray();
+  // The rebuild's work, counted (#134's probe; not in main).
+  private final Probe probe = new Probe();
+
+  /**
+   * Counts of the rebuild's work since the graph was made, for #134's probe of the rebuild
+   * against egg's: what merge queues, what repair visits and does per visit, what the facts
+   * cost, and what the tail re-canonicalises. Two counterfactuals are summed in merge: the
+   * absorbed side's parents and the smaller side's, which are what a repair of the absorbed
+   * side alone, and egg's choice of side, would visit.
+   */
+  static final class Probe {
+    long merges;
+    long mergeAbsorbedParents;
+    long mergeKeptParents;
+    long mergeMinParents;
+    long rebuilds;
+    long repairs;
+    long parentsVisited;
+    long formsRemade;
+    long hashconsRemoves;
+    long hashconsPuts;
+    long prunedVisits;
+    long seenEntries;
+    long congruenceMerges;
+    long analysisMakes;
+    long modifyCalls;
+    long staleClasses;
+    long nodesChecked;
+    long nodesRemade;
+
+    /** The counts as {@code name=value} pairs, space separated, in a fixed order. */
+    String line() {
+      return "merges=" + merges + " mergeAbsorbedParents=" + mergeAbsorbedParents
+          + " mergeKeptParents=" + mergeKeptParents + " mergeMinParents=" + mergeMinParents
+          + " rebuilds=" + rebuilds + " repairs=" + repairs + " parentsVisited=" + parentsVisited
+          + " formsRemade=" + formsRemade + " hashconsRemoves=" + hashconsRemoves
+          + " hashconsPuts=" + hashconsPuts + " prunedVisits=" + prunedVisits
+          + " seenEntries=" + seenEntries + " congruenceMerges=" + congruenceMerges
+          + " analysisMakes=" + analysisMakes + " modifyCalls=" + modifyCalls
+          + " staleClasses=" + staleClasses + " nodesChecked=" + nodesChecked
+          + " nodesRemade=" + nodesRemade;
+    }
+  }
+
+  /** The rebuild's counts since the graph was made (#134's probe). */
+  Probe probe() {
+    return probe;
+  }
 
   /**
    * An empty graph whose class facts are kept by {@code analysis}.
@@ -533,6 +581,11 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     EClass<L, D> kept = classes.get(root);
     EClass<L, D> gone = classes.get(other);
     changes++;
+    probe.merges++;
+    probe.mergeAbsorbedParents += gone.mutableParents().size();
+    probe.mergeKeptParents += kept.mutableParents().size();
+    probe.mergeMinParents += Math.min(kept.mutableParents().size(),
+        gone.mutableParents().size());
     // Where the joined fact grew past what a side had, that side's parents are re-made, since
     // their facts were made from the smaller one (paper Figure 9).
     if (!Objects.equals(joined, kept.data())) {
@@ -617,6 +670,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     int repaired = 0;
     boolean touched = false;
     while (isDirty()) {
+      if (!touched) {
+        probe.rebuilds++;
+      }
       touched = true;
       while (!worklist.isEmpty()) {
         int[] todo = worklist.sortedDistinct(unionFind::find);
@@ -637,6 +693,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         for (EClass.Parent<L> entry : pending) {
           int id = unionFind.find(entry.classId());
           EClass<L, D> eclass = classes.get(id);
+          probe.analysisMakes++;
           D made = analysis.make(this, canonicalize(entry.node()));
           D joined = analysis.join(eclass.data(), made);
           if (!Objects.equals(joined, eclass.data())) {
@@ -649,6 +706,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         modifyPending.clear();
         for (int id : toModify) {
           if (classes.get(id) != null) {
+            probe.modifyCalls++;
             analysis.modify(this, id);
           }
         }
@@ -668,6 +726,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         int root = unionFind.find(id);
         if (!done.get(root)) {
           done.set(root);
+          probe.staleClasses++;
           canonicalizeNodes(classes.get(root));
         }
       }
@@ -693,9 +752,11 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     List<L> nodes = eclass.readNodes();
     boolean changed = eclass.hasMergedNodes();
     eclass.setMergedNodes(false);
+    probe.nodesChecked += nodes.size();
     for (int i = 0; i < nodes.size(); i++) {
       L node = nodes.get(i);
       if (!isCanonical(node)) {
+        probe.nodesRemade++;
         eclass.setNode(i, canonicalize(node));
         changed = true;
       }
@@ -740,6 +801,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * canonical node are merged, which puts their root on the worklist for the next pass.
    */
   private void repair(EClass<L, D> eclass) {
+    probe.repairs++;
     canonicalizeNodes(eclass);
     // The parent list is taken out of the class before the loop, as egg's is: a merge below may
     // append to the class's list (when it is the root the merge keeps) or merge the class away
@@ -755,7 +817,12 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       L canonical = canonicalize(parent.node());
       int root = unionFind.find(parent.classId());
       staleOwners.set(root);
+      probe.parentsVisited++;
+      if (canonical != parent.node()) {
+        probe.formsRemade++;
+      }
       if (isPruned(canonical, root)) {
+        probe.prunedVisits++;
         // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
         // that adding it again still finds the class, and never back into the hashcons. The key
         // the entry still has there goes: retainNodes removes the two forms it knows (the one the
@@ -764,11 +831,14 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         // it names this class; one that names another is a live node's.
         Integer keyed = hashcons.get(parent.node());
         if (keyed != null && unionFind.find(keyed) == root) {
+          probe.hashconsRemoves++;
           hashcons.remove(parent.node());
         }
         pruned.remove(parent.node());
         pruned.put(canonical, root);
       } else {
+        probe.hashconsRemoves++;
+        probe.hashconsPuts++;
         hashcons.remove(parent.node());
         hashcons.put(canonical, root);
         // A live node that takes a pruned node's form stands for it from now on.
@@ -795,6 +865,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       if (same == null || same == parent) {
         continue;
       }
+      probe.congruenceMerges++;
       int root = merge(same.classId(), unionFind.find(parent.classId()));
       merged = true;
       EClass.Parent<L> kept = parent.serial() < same.serial() ? parent : same;
@@ -804,10 +875,12 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         seen.put(canonical, kept);
       }
       if (!dropped.node().equals(kept.node())) {
+        probe.hashconsRemoves++;
         hashcons.remove(dropped.node());
         pruned.remove(dropped.node());
       }
     }
+    probe.seenEntries += seen.size();
     EClass<L, D> root = classOf(eclass.id());
     root.mutableParents().addAll(seen.values());
     if (merged && !Objects.equals(root.data(), factBefore)) {

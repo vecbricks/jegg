@@ -6,7 +6,9 @@
 // iteration (read by a hook, so jegg's runner reads the same point), after the run, and egg's
 // memo size then: egg checks its node limit against the memo, which keeps stale entries, so a
 // run can stop on a limit its nodes have not reached. After it, `times <search> <apply>
-// <rebuild> <total>` in nanoseconds from the runner's own report (#72).
+// <rebuild> <total>` in nanoseconds from the runner's own report (#72). With $FUZZ_COUNTS set
+// and dev/fuzz/probe.patch applied, the rebuild's counters (egg::probe, #134) are reset before
+// each case and written to that file as `<line number> <count>...` in egg::probe::NAMES order.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -50,10 +52,13 @@ fn format_result<L: Language, N: Analysis<L>>(runner: &Runner<L, N, ()>, samples
 fn fuzz_run() {
     let terms_path = std::env::var("FUZZ_TERMS").expect("FUZZ_TERMS names the cases file");
     let out_path = std::env::var("FUZZ_OUT").expect("FUZZ_OUT names the results file");
+    let counts_path = std::env::var("FUZZ_COUNTS").ok();
     let text = std::fs::read_to_string(terms_path).unwrap();
     let mut out = String::new();
+    let mut counts = String::new();
     for (k, line) in text.lines().enumerate() {
         let parts: Vec<String> = line.split('\t').map(|s| s.to_string()).collect();
+        egg::probe::reset();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run_one(&parts[0], &parts[1], &parts[2..])
         }));
@@ -61,6 +66,12 @@ fn fuzz_run() {
             Ok(s) => out.push_str(&format!("{} {}\n", k, s)),
             Err(_) => out.push_str(&format!("{} PANIC\n", k)),
         }
+        let snapshot: Vec<String> =
+            egg::probe::snapshot().iter().map(|n| n.to_string()).collect();
+        counts.push_str(&format!("{} {}\n", k, snapshot.join(" ")));
     }
     std::fs::write(out_path, out).unwrap();
+    if let Some(path) = counts_path {
+        std::fs::write(path, counts).unwrap();
+    }
 }

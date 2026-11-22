@@ -120,11 +120,11 @@ class EggCompareTest {
     EggCompare.Side t = EggCompare.Side.ZERO;
     EggCompare.EggReport egg = new EggCompare.EggReport(59, 32636, 5000, t);
     Saturation.Outcome proved = new Saturation.Outcome(Saturation.Mode.DEFERRED, 58, 0, 32636,
-        5000, "Proved all goals", false, 0, 0, 0);
+        5000, "Proved all goals", false, 0, 0, 0, "");
     assertTrue(EggCompare.sameLambdaWork(egg, proved));
     assertTrue(EggCompare.sameLambdaWork(new EggCompare.EggReport(58, 32636, 5000, t), proved));
     Saturation.Outcome limit = new Saturation.Outcome(Saturation.Mode.DEFERRED, 58, 0, 32636,
-        5000, "NodeLimit", false, 0, 0, 0);
+        5000, "NodeLimit", false, 0, 0, 0, "");
     assertTrue(!EggCompare.sameLambdaWork(egg, limit));
     assertTrue(!EggCompare.sameLambdaWork(new EggCompare.EggReport(59, 1, 5000, t), proved));
   }

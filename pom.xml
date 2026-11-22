@@ -134,11 +134,12 @@
                 <arg>-Werror</arg>
                 <arg>-proc:full</arg>
                 <!-- The tests compile inside the module, whose descriptor does not read the
-                     JDK module the benchmark harness uses to report the heap. -->
+                     JDK modules the benchmark harness uses to report the heap and the
+                     rebuild probe uses to record and read its profile (#134). -->
                 <arg>--add-modules</arg>
-                <arg>java.management</arg>
+                <arg>java.management,jdk.jfr</arg>
                 <arg>--add-reads</arg>
-                <arg>io.github.vecbricks.jegg=java.management,ALL-UNNAMED</arg>
+                <arg>io.github.vecbricks.jegg=java.management,jdk.jfr,ALL-UNNAMED</arg>
               </compilerArgs>
             </configuration>
           </execution>

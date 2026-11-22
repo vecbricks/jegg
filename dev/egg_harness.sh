@@ -15,6 +15,9 @@ command -v cargo >/dev/null \
 if [ ! -d "$cache/.git" ]; then git clone -q https://github.com/egraphs-good/egg.git "$cache"; fi
 git -C "$cache" fetch -q origin "$EGG_COMMIT" 2>/dev/null || git -C "$cache" fetch -q origin
 git -C "$cache" checkout -q "$EGG_COMMIT"
+# The probe's counters (#134): egg's source as checked out, then the patch where there is one.
+git -C "$cache" checkout -q -- src
+if [ -f dev/fuzz/probe.patch ]; then git -C "$cache" apply "$PWD/dev/fuzz/probe.patch"; fi
 # egg's own test file, without its crate-level cfg line, then the run and the driver.
 {
   sed '1{/^#!\[cfg/d}' "$cache/tests/$lang.rs"

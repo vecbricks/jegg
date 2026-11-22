@@ -3,7 +3,8 @@
 # compared. Dispatched by hand with a ref, a count and a seed; a PR that touches the matcher,
 # the graph or the runner links its run (AGENTS.md, oracle 2). A divergence is shrunk to
 # dev/fuzz/found/ and uploaded with the logs. With compare=true a second job runs
-# dev/compare.sh after it (#72): jegg's time against egg's on the same terms, by phase.
+# dev/compare.sh after it (#72): jegg's time against egg's on the same terms, by phase. With
+# probe=true a job runs dev/probe.sh (#134): the rebuild's counts on both sides and a profile.
 name: Fuzz
 
 on:
@@ -25,6 +26,10 @@ on:
       rounds:
         description: rounds of the comparison, each side once per round
         default: "5"
+      probe:
+        description: also count the rebuild's work on both sides and profile jegg's (#134)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,7 +50,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/jegg/egg
-          key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs') }}-${{ runner.os }}
+          key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs', 'dev/fuzz/*.patch') }}-${{ runner.os }}
       - name: The known-answer gate, prop and math
         run: dev/fuzz.sh --known prop && dev/fuzz.sh --known math
       - name: Fuzz prop
@@ -96,7 +101,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/jegg/egg
-          key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs') }}-${{ runner.os }}
+          key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs', 'dev/fuzz/*.patch') }}-${{ runner.os }}
       - name: Compare jegg with egg
         run: >-
           dev/compare.sh "${{ inputs.rounds }}" "${{ inputs.count }}" "${{ inputs.seed }}"
@@ -118,4 +123,42 @@ jobs:
         with:
           name: compare-${{ github.run_number }}
           path: compare/
+          if-no-files-found: ignore
+  probe:
+    needs: fuzz
+    if: inputs.probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 25
+          cache: maven
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/jegg/egg
+          key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs', 'dev/fuzz/*.patch') }}-${{ runner.os }}
+      - name: Count and profile the rebuild
+        run: dev/probe.sh "${{ inputs.count }}" "${{ inputs.seed }}" probe
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '# The rebuild against egg: `${{ inputs.ref }}`'
+            echo
+            echo '```'
+            cat probe/provenance.txt
+            echo '```'
+            echo
+            cat probe/summary.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: probe-${{ github.run_number }}
+          path: probe/
           if-no-files-found: ignore

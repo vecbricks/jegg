@@ -1,0 +1,119 @@
+diff --git a/src/egraph.rs b/src/egraph.rs
+index 084fd3f..e64f785 100644
+--- a/src/egraph.rs
++++ b/src/egraph.rs
+@@ -1065,6 +1065,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+ 
+         // TODO is this needed?
+         self.pending.push(id);
++        crate::probe::bump(1, 1);
+ 
+         self.classes.insert(id, class);
+         assert!(self.memo.insert(enode, id).is_none());
+@@ -1188,6 +1189,9 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+         assert_eq!(id1, class1.id);
+ 
+         self.pending.extend(class2.parents.iter().copied());
++        crate::probe::bump(2, class2.parents.len());
++        crate::probe::bump(5, class1.parents.len());
++        crate::probe::bump(6, 1);
+         let did_merge = self.analysis.merge(&mut class1.data, class2.data);
+         if did_merge.0 {
+             self.analysis_pending.extend(class1.parents.iter().copied());
+@@ -1268,6 +1272,8 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+ 
+         for class in self.classes.values_mut() {
+             let old_len = class.len();
++            crate::probe::bump(9, 1);
++            crate::probe::bump(10, old_len);
+             class
+                 .nodes
+                 .iter_mut()
+@@ -1276,6 +1282,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+             class.nodes.dedup();
+ 
+             trimmed += old_len - class.nodes.len();
++            crate::probe::bump(11, old_len - class.nodes.len());
+ 
+             let mut add = |n: &L| {
+                 classes_by_op
+@@ -1348,16 +1355,20 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+ 
+         while !self.pending.is_empty() || !self.analysis_pending.is_empty() {
+             while let Some(class) = self.pending.pop() {
++                crate::probe::bump(0, 1);
+                 let mut node = self.nodes[usize::from(class)].clone();
+                 node.update_children(|id| self.find_mut(id));
+                 if let Some(memo_class) = self.memo.insert(node, class) {
++                    crate::probe::bump(3, 1);
+                     let did_something =
+                         self.perform_union(memo_class, class, Some(Justification::Congruence));
++                    crate::probe::bump(4, did_something as usize);
+                     n_unions += did_something as usize;
+                 }
+             }
+ 
+             while let Some(class_id) = self.analysis_pending.pop() {
++                crate::probe::bump(7, 1);
+                 let node = self.nodes[usize::from(class_id)].clone();
+                 let class_id = self.find_mut(class_id);
+                 let node_data = N::remake(self, &node, class_id);
+@@ -1365,6 +1376,7 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
+ 
+                 let did_merge = self.analysis.merge(&mut class.data, node_data);
+                 if did_merge.0 {
++                    crate::probe::bump(8, 1);
+                     self.analysis_pending.extend(class.parents.iter().copied());
+                     N::modify(self, class_id)
+                 }
+diff --git a/src/lib.rs b/src/lib.rs
+index 38f9a6d..cd5c33d 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -51,6 +51,34 @@ pub(crate) mod no_std_prelude {
+     };
+ }
+ 
++/// Counters of the rebuild's work, for jegg's probe of its rebuild against egg's
++/// (vecbricks/jegg#134, dev/fuzz/probe.patch). Not egg's code: applied to the cached checkout
++/// by dev/egg_harness.sh. The names index the counts.
++pub mod probe {
++    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
++
++    pub const NAMES: [&str; 12] = [
++        "pops", "pended_added", "pended_absorbed", "memo_collisions", "congruence_unions",
++        "union_kept_parents", "unions", "analysis_pops", "modify_calls", "rebuild_classes",
++        "rebuild_nodes", "rebuild_trimmed",
++    ];
++    pub static COUNTS: [AtomicUsize; 12] = [const { AtomicUsize::new(0) }; 12];
++
++    pub fn bump(i: usize, n: usize) {
++        COUNTS[i].fetch_add(n, Relaxed);
++    }
++
++    pub fn reset() {
++        for c in COUNTS.iter() {
++            c.store(0, Relaxed);
++        }
++    }
++
++    pub fn snapshot() -> [usize; 12] {
++        core::array::from_fn(|i| COUNTS[i].load(Relaxed))
++    }
++}
++
+ // Hidden re-exports used by the `define_language!` macro so downstream crates
+ // don't need `extern crate alloc`.
+ #[doc(hidden)]
+diff --git a/src/run.rs b/src/run.rs
+index 50bcfce..a872f57 100644
+--- a/src/run.rs
++++ b/src/run.rs
+@@ -285,6 +285,7 @@ impl core::fmt::Display for Report {
+         writeln!(f, "    Search:  ({:.2}) {}", pct(self.search_time), self.search_time)?;
+         writeln!(f, "    Apply:   ({:.2}) {}", pct(self.apply_time), self.apply_time)?;
+         writeln!(f, "    Rebuild: ({:.2}) {}", pct(self.rebuild_time), self.rebuild_time)?;
++        writeln!(f, "  Probe: {:?}", crate::probe::snapshot())?;
+         Ok(())
+     }
+ }

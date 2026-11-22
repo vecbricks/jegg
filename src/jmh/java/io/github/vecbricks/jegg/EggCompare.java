@@ -408,7 +408,7 @@ public final class EggCompare {
         || (hookStop && eggIterations == jegg.iterations() + 1));
   }
 
-  private static String eggLambda(Path eggDir) throws IOException, InterruptedException {
+  static String eggLambda(Path eggDir) throws IOException, InterruptedException {
     ProcessBuilder pb = new ProcessBuilder("cargo", "test", "-q", "--release", "--test",
         "lambda", "--", "--exact", "lambda_function_repeat", "--nocapture")
         .directory(eggDir.toFile()).redirectErrorStream(true);

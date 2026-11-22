@@ -32,7 +32,8 @@ final class Saturation {
    * search of every rule, the applications, and the rebuilds (in eager mode, every one).
    */
   record Outcome(Mode mode, int iterations, long repaired, int nodes, int classes,
-      String stop, boolean timedOut, long searchNanos, long applyNanos, long rebuildNanos) {
+      String stop, boolean timedOut, long searchNanos, long applyNanos, long rebuildNanos,
+      String counts) {
   }
 
   private Saturation() {
@@ -102,7 +103,7 @@ final class Saturation {
       }
     }
     return new Outcome(mode, iteration, repaired, graph.numNodes(), graph.numClasses(), stop,
-        timedOut, search, apply, rebuild);
+        timedOut, search, apply, rebuild, graph.probe().line());
   }
 
   /** The runs of the ported suites, by name: the prop cases, the lambda cases, the math cases. */

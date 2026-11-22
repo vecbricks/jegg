@@ -264,11 +264,12 @@ final class FuzzRun {
    * @param iterations the iterations run
    * @param nodes the nodes after the run
    * @param topRule the rule with the most matches, or empty
+   * @param counts the rebuild's counts ({@code EGraph.Probe.line()}), or empty
    */
   record Timed(String result, long wallNanos, long searchNanos, long applyNanos,
-      long rebuildNanos, int iterations, int nodes, String topRule) {
+      long rebuildNanos, int iterations, int nodes, String topRule, String counts) {
     static Timed failed(String result) {
-      return new Timed(result, 0, 0, 0, 0, 0, 0, "");
+      return new Timed(result, 0, 0, 0, 0, 0, 0, "", "");
     }
   }
 
@@ -453,6 +454,7 @@ final class FuzzRun {
         .map(Map.Entry::getKey).orElse("");
     return new Timed(stop + " " + iterations + " "
         + (samples.isEmpty() ? "-" : String.join(";", samples)) + " final " + g.numNodes()
-        + "," + g.numClasses(), wall, search, apply, rebuild, report.size(), g.numNodes(), top);
+        + "," + g.numClasses(), wall, search, apply, rebuild, report.size(), g.numNodes(), top,
+        g.probe().line());
   }
 }

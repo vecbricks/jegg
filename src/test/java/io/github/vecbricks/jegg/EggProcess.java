@@ -63,21 +63,27 @@ final class EggProcess {
    * @param applyNanos the apply phase
    * @param rebuildNanos the rebuild
    * @param totalNanos egg's own total
+   * @param counts the rebuild's counters from {@code dev/fuzz/probe.patch} (#134), space
+   *     separated in {@code egg::probe::NAMES} order, or empty where the harness has none
    */
   record Timed(String result, long searchNanos, long applyNanos, long rebuildNanos,
-      long totalNanos) {
+      long totalNanos, String counts) {
     /** The line as the harness writes it: the result, then {@code times s a r t}. */
     static Timed parse(String line) {
       int at = line.lastIndexOf(" times ");
       if (at < 0) {
-        return new Timed(line, 0, 0, 0, 0);
+        return new Timed(line, 0, 0, 0, 0, "");
       }
       String[] t = line.substring(at + " times ".length()).trim().split(" ");
       if (t.length != 4) {
         throw new IllegalArgumentException("not four times: " + line);
       }
       return new Timed(line.substring(0, at), Long.parseLong(t[0]), Long.parseLong(t[1]),
-          Long.parseLong(t[2]), Long.parseLong(t[3]));
+          Long.parseLong(t[2]), Long.parseLong(t[3]), "");
+    }
+
+    Timed withCounts(String c) {
+      return new Timed(result, searchNanos, applyNanos, rebuildNanos, totalNanos, c);
     }
   }
 
@@ -92,14 +98,17 @@ final class EggProcess {
     Files.createDirectories(workDir);
     Path terms = workDir.resolve(language + "-" + (++batches) + ".terms").toAbsolutePath();
     Path out = workDir.resolve(language + "-" + batches + ".egg").toAbsolutePath();
+    Path counts = workDir.resolve(language + "-" + batches + ".counts").toAbsolutePath();
     Files.write(terms, cases.stream().map(FuzzRun.Case::line).toList(), StandardCharsets.UTF_8);
     Files.deleteIfExists(out);
+    Files.deleteIfExists(counts);
     ProcessBuilder pb = new ProcessBuilder("cargo", "test", "-q", "--release", "--test",
         "fuzz_" + language, "--", "--exact", "fuzz_run").directory(eggDir.toFile())
         .redirectErrorStream(true);
     Map<String, String> env = pb.environment();
     env.put("FUZZ_TERMS", terms.toString());
     env.put("FUZZ_OUT", out.toString());
+    env.put("FUZZ_COUNTS", counts.toString());
     Process p = pb.start();
     String log = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
     if (p.waitFor() != 0 || !Files.exists(out)) {
@@ -116,6 +125,16 @@ final class EggProcess {
     }
     if (results.size() != cases.size()) {
       throw new IOException("egg answered " + results.size() + " of " + cases.size() + " cases");
+    }
+    if (Files.exists(counts)) {
+      List<String> lines = Files.readAllLines(counts, StandardCharsets.UTF_8);
+      if (lines.size() != results.size()) {
+        throw new IOException("egg counted " + lines.size() + " of " + results.size() + " runs");
+      }
+      for (int i = 0; i < lines.size(); i++) {
+        String line = lines.get(i);
+        results.set(i, results.get(i).withCounts(line.substring(line.indexOf(' ') + 1)));
+      }
     }
     return results;
   }
