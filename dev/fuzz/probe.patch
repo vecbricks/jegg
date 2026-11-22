@@ -112,10 +112,10 @@ index 084fd3f..ebe20a4 100644
                      N::modify(self, class_id)
                  }
 diff --git a/src/lib.rs b/src/lib.rs
-index 38f9a6d..154e39f 100644
+index 38f9a6d..e086c2f 100644
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -51,6 +51,36 @@ pub(crate) mod no_std_prelude {
+@@ -51,6 +51,46 @@ pub(crate) mod no_std_prelude {
      };
  }
  
@@ -125,14 +125,24 @@ index 38f9a6d..154e39f 100644
 +pub mod probe {
 +    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 +
-+    pub const NAMES: [&str; 22] = [
++    pub const NAMES: [&str; 24] = [
 +        "pops", "pended_added", "pended_absorbed", "memo_collisions", "congruence_unions",
 +        "union_kept_parents", "unions", "analysis_pops", "modify_calls", "rebuild_classes",
 +        "rebuild_nodes", "rebuild_trimmed", "adds", "add_hits", "add_news", "modify_from_add",
 +        "union_calls", "union_effective", "matches_applied", "apply_adds", "apply_news",
-+        "applications",
++        "applications", "apply_news_merged", "apply_news_merged_leaf",
 +    ];
-+    pub static COUNTS: [AtomicUsize; 22] = [const { AtomicUsize::new(0) }; 22];
++    /// The classes the right-hand sides made since the last rebuild (#137).
++    static NEWS: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
++
++    pub fn push_new(id: usize) {
++        NEWS.lock().unwrap().push(id as u32);
++    }
++
++    pub fn take_news() -> Vec<u32> {
++        core::mem::take(&mut *NEWS.lock().unwrap())
++    }
++    pub static COUNTS: [AtomicUsize; 24] = [const { AtomicUsize::new(0) }; 24];
 +
 +    pub fn bump(i: usize, n: usize) {
 +        COUNTS[i].fetch_add(n, Relaxed);
@@ -144,7 +154,7 @@ index 38f9a6d..154e39f 100644
 +        }
 +    }
 +
-+    pub fn snapshot() -> [usize; 22] {
++    pub fn snapshot() -> [usize; 24] {
 +        core::array::from_fn(|i| COUNTS[i].load(Relaxed))
 +    }
 +}
@@ -153,7 +163,7 @@ index 38f9a6d..154e39f 100644
  // don't need `extern crate alloc`.
  #[doc(hidden)]
 diff --git a/src/pattern.rs b/src/pattern.rs
-index 5707eb2..304281c 100644
+index 5707eb2..c8ac097 100644
 --- a/src/pattern.rs
 +++ b/src/pattern.rs
 @@ -367,6 +367,7 @@ where
@@ -164,7 +174,7 @@ index 5707eb2..304281c 100644
                      id = apply_pat(&mut id_buf, &self.ast, egraph, subst);
                      did_something = egraph.union(id, mat.eclass);
                  }
-@@ -421,7 +422,13 @@ pub(crate) fn apply_pat<L: Language, A: Analysis<L>>(
+@@ -421,7 +422,14 @@ pub(crate) fn apply_pat<L: Language, A: Analysis<L>>(
              ENodeOrVar::ENode(e) => {
                  let n = e.clone().map_children(|child| ids[usize::from(child)]);
                  trace!("adding: {:?}", n);
@@ -174,6 +184,7 @@ index 5707eb2..304281c 100644
 +                let added = egraph.add(n);
 +                if crate::probe::snapshot()[14] > news_before {
 +                    crate::probe::bump(20, 1);
++                    crate::probe::push_new(usize::from(added));
 +                }
 +                added
              }
@@ -192,7 +203,7 @@ index 1977f4a..6b62388 100644
      }
  
 diff --git a/src/run.rs b/src/run.rs
-index 50bcfce..a872f57 100644
+index 50bcfce..2550b63 100644
 --- a/src/run.rs
 +++ b/src/run.rs
 @@ -285,6 +285,7 @@ impl core::fmt::Display for Report {
@@ -203,3 +214,20 @@ index 50bcfce..a872f57 100644
          Ok(())
      }
  }
+@@ -594,6 +595,16 @@ where
+ 
+         let rebuild_time = Instant::now();
+         let n_rebuilds = self.egraph.rebuild();
++        for id in crate::probe::take_news() {
++            let id = Id::from(id as usize);
++            let root = self.egraph.find(id);
++            if root != id {
++                crate::probe::bump(22, 1);
++                if self.egraph[root].nodes.iter().any(|n| n.is_leaf()) {
++                    crate::probe::bump(23, 1);
++                }
++            }
++        }
+         if self.egraph.are_explanations_enabled() {
+             debug_assert!(self.egraph.check_each_explain(rules));
+         }

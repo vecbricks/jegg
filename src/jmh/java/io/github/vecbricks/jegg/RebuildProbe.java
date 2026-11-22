@@ -46,7 +46,7 @@ public final class RebuildProbe {
       "memo_collisions", "congruence_unions", "union_kept_parents", "unions", "analysis_pops",
       "modify_calls", "rebuild_classes", "rebuild_nodes", "rebuild_trimmed", "adds", "add_hits",
       "add_news", "modify_from_add", "union_calls", "union_effective", "matches_applied",
-      "apply_adds", "apply_news", "applications");
+      "apply_adds", "apply_news", "applications", "apply_news_merged", "apply_news_merged_leaf");
 
   /** What is set beside what: the label, egg's counter, jegg's. */
   record Pair(String what, String egg, String jegg) {
@@ -86,6 +86,12 @@ public final class RebuildProbe {
       new Pair("adds by the right-hand sides (egg: apply_pat; jegg: Matcher.instantiate)",
           "apply_adds", "addsInApply"),
       new Pair("of which made a class", "apply_news", "addNewsInApply"),
+      new Pair("of which the iteration's rebuild merged away (#137)", "apply_news_merged",
+          "applyNewsMerged"),
+      new Pair("of which into a class holding a leaf (a constant or a symbol)",
+          "apply_news_merged_leaf", "applyNewsMergedLeaf"),
+      new Pair("of which into a class with a fact (jegg; a folded constant)", "zero",
+          "applyNewsMergedFact"),
       new Pair("adds, every caller (the harness's term, the analysis's modify included)", "adds",
           "adds"),
       new Pair("of which found a node (hits)", "add_hits", "addHits"),

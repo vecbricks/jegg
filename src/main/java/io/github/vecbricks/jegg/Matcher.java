@@ -833,6 +833,7 @@ public final class Matcher {
         int added = graph.add(head.build(subst, IntList.wrap(ids)));
         if (probe.addNews > newsBefore) {
           probe.addNewsInApply++;
+          probe.newClasses.add(added);
         }
         return added;
       }

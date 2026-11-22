@@ -153,6 +153,12 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     long conditionsRefused;
     long addsInApply;
     long addNewsInApply;
+    // The classes the right-hand sides made since the last rebuild, and what the rebuild did
+    // with them (#137): merged away; into a class holding a leaf; into a class with a fact.
+    final IntArray newClasses = new IntArray();
+    long applyNewsMerged;
+    long applyNewsMergedLeaf;
+    long applyNewsMergedFact;
 
     /** The counts as {@code name=value} pairs, space separated, in a fixed order. */
     String line() {
@@ -168,7 +174,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
           + " addPrunedHits=" + addPrunedHits + " addNews=" + addNews
           + " mergeCalls=" + mergeCalls + " modifyFromAdd=" + modifyFromAdd
           + " matchesApplied=" + matchesApplied + " conditionsRefused=" + conditionsRefused
-          + " addsInApply=" + addsInApply + " addNewsInApply=" + addNewsInApply;
+          + " addsInApply=" + addsInApply + " addNewsInApply=" + addNewsInApply
+          + " applyNewsMerged=" + applyNewsMerged + " applyNewsMergedLeaf=" + applyNewsMergedLeaf
+          + " applyNewsMergedFact=" + applyNewsMergedFact;
     }
   }
 
@@ -777,7 +785,31 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         pruned.keySet().removeIf(node -> !isCanonical(node));
       }
     }
+    settleProbe();
     return repaired;
+  }
+
+  /** What this rebuild did with the classes the right-hand sides made (#137's count). */
+  private void settleProbe() {
+    IntArray news = probe.newClasses;
+    for (int i = 0; i < news.size(); i++) {
+      int id = news.get(i);
+      int root = unionFind.find(id);
+      if (root != id) {
+        probe.applyNewsMerged++;
+        EClass<L, D> c = classes.get(root);
+        if (c.data() != null) {
+          probe.applyNewsMergedFact++;
+        }
+        for (L n : c.readNodes()) {
+          if (n.children().size() == 0) {
+            probe.applyNewsMergedLeaf++;
+            break;
+          }
+        }
+      }
+    }
+    news.clear();
   }
 
   /**
