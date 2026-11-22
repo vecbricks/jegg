@@ -1,5 +1,7 @@
 # jegg
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.vecbricks/jegg)](https://central.sonatype.com/artifact/io.github.vecbricks/jegg)
+
 E-graphs and equality saturation for Java 25, a port of
 [egg](https://github.com/egraphs-good/egg) (Willsey et al., POPL 2021), with
 extraction over several roots that keeps a shared subterm in one form.
