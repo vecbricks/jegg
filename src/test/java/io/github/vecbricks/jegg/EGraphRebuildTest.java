@@ -411,6 +411,11 @@ class EGraphRebuildTest {
     assertEquals(six, g.find(live));
     assertEquals(5, g.numNodes(), "a0, b, 6, a and the sum, live again");
     assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a, b))));
+    // A merge through the other child queues the lists the drop left one live entry in.
+    g.merge(b, a0);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a, b))));
     // The same with the prune before the merge: the memory holds a + b when a0 + b is added.
     EGraph<Toy, Void> h = EGraph.withoutAnalysis();
     int ha0 = h.add(new Toy.Var("a0"));
@@ -426,6 +431,10 @@ class EGraphRebuildTest {
     h.checkInvariants();
     assertEquals(hsix, h.find(hlive));
     assertEquals(5, h.numNodes());
+    h.merge(hb, ha0);
+    h.rebuild();
+    h.checkInvariants();
+    assertEquals(OptionalInt.of(hsix), h.lookup(new Toy.Add(IntList.of(ha, hb))));
   }
 
   @Test
@@ -447,6 +456,14 @@ class EGraphRebuildTest {
     assertEquals(six, g.find(live));
     assertEquals(5, g.numNodes(), "a0, b, 6, a and the sum, live again");
     assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a0, b))));
+    // The live entry was dropped in favour of the pruned one, which then stands for the live
+    // node: a merge through the other child re-keys it as a live node.
+    g.merge(b, a0);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a, b))));
+    assertEquals(List.of(new Toy.Num(6), new Toy.Add(IntList.of(a0, a0))),
+        g.classOf(six).nodes());
   }
 
   @Test
@@ -475,5 +492,10 @@ class EGraphRebuildTest {
     assertEquals(OptionalInt.of(one), g.lookup(new Toy.Add(IntList.of(a0, b))));
     assertEquals(one, g.add(new Toy.Add(IntList.of(a2, b))));
     assertEquals(6, g.numNodes(), "the pruned sum is remembered, not added");
+    g.merge(b, a0);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(OptionalInt.of(one), g.lookup(new Toy.Add(IntList.of(a1, b))));
+    assertEquals(6, g.numNodes());
   }
 }

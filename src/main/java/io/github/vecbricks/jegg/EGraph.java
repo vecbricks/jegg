@@ -638,8 +638,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       touched = true;
       // By index: a repair's merges append to the list while it is walked.
       for (int i = 0; i < pending.size(); i++) {
-        repair(pending.get(i));
-        repaired++;
+        if (repair(pending.get(i))) {
+          repaired++;
+        }
       }
       pending.clear();
       // The facts: a parent whose child's fact grew is re-made and joined into its class; a
@@ -755,14 +756,16 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * the form is another class's node already, the two classes are congruent and are merged,
    * which queues that merge's parents for a later turn of the same loop. An entry is shared by
    * the lists of all its children and may be queued twice; the second visit finds its form
-   * current and its key its own. Of two entries a congruence joins, the one whose re-key found
-   * the other's class is dropped: the other holds the key, so it is in canonical form, and has
-   * the same children, so it is in every list the dropped one is in. The dropped one is skipped
-   * if it is queued again and left out of the lists later merges build.
+   * current and its key its own. Of two entries a congruence joins (egg keeps both), the one
+   * whose re-key found the other's class is dropped: the other names the form, in the hashcons
+   * or in the pruned memory, so it is in canonical form once repaired, and has the same
+   * children, so it is in every list the dropped one is in. The dropped one is skipped if it is
+   * queued again and left out of the lists later merges build. Returns whether the entry was
+   * repaired, false for a dropped one.
    */
-  private void repair(EClass.Parent<L> entry) {
+  private boolean repair(EClass.Parent<L> entry) {
     if (entry.isDropped()) {
-      return;
+      return false;
     }
     L old = entry.node();
     L canonical = canonicalize(old);
@@ -815,6 +818,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       entry.rekey(canonical, joined);
       entry.drop();
     }
+    return true;
   }
 
   /**
@@ -845,8 +849,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * class, every hashcons entry's node is in the class it maps to, and no two classes hold an
    * equal canonical node. Also the parent entries: for every node some one entry is in every
    * list that names the node, in canonical form and mapped by the hashcons or the pruned memory
-   * to its class, so that a repair through any child re-keys the form all of them hold; and no
-   * entry left behind under an older form is a key. Also the matcher's indexes: a class's built
+   * to its class, so that a repair through any child re-keys the form all of them hold; no
+   * entry left behind under an older form is a key; and beside every dropped entry in a list
+   * there is a live one for the same node and class. Also the matcher's indexes: a class's built
    * index agrees with its node list. All hold after {@link #rebuild}; none need hold between a
    * merge and the rebuild. For tests and debugging; throws
    * {@link IllegalStateException} naming the first violation.
@@ -922,12 +927,25 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     Map<EClass.Parent<L>, Set<Integer>> listsOfEntry = new IdentityHashMap<>();
     Map<L, List<EClass.Parent<L>>> entriesOfNode = new HashMap<>();
     for (EClass<L, D> eclass : classes()) {
-      for (EClass.Parent<L> entry : eclass.parents()) {
+      // The raw list, dropped entries included: a dropped entry must have a live one for the
+      // same node and class beside it, which is what makes dropping it safe.
+      for (EClass.Parent<L> entry : eclass.mutableParents()) {
         L node = entry.node();
         L canonical = canonicalize(node);
         if (!node.equals(canonical) && (hashcons.containsKey(node) || pruned.containsKey(node))) {
           throw new IllegalStateException("class " + eclass.id() + " has a parent entry " + node
               + " that is not canonical yet is a key");
+        }
+        if (entry.isDropped()) {
+          int root = unionFind.find(entry.classId());
+          boolean standsIn = eclass.mutableParents().stream().anyMatch(live -> !live.isDropped()
+              && canonicalize(live.node()).equals(canonical)
+              && unionFind.find(live.classId()) == root);
+          if (!standsIn) {
+            throw new IllegalStateException("class " + eclass.id() + " lists a dropped entry "
+                + entry + " with no live entry for the node beside it");
+          }
+          continue;
         }
         listsOfNode.computeIfAbsent(canonical, n -> new HashSet<>()).add(eclass.id());
         Set<Integer> lists = listsOfEntry.computeIfAbsent(entry, e -> new HashSet<>());

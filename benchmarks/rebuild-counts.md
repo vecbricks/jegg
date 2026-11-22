@@ -1,7 +1,8 @@
 # The rebuild against egg: counts and a profile (#134)
 
 The run before #136 first, as it was committed; the section "After #136" has the same counts
-and the phases with the fix in, and the predictions' scores are on PR #141.
+and the phases with the fix in (the scores are on PR #141), and "After #142" the counts after
+the drop of the duplicate entries (PR #143).
 
 The run of `dev/probe.sh` by the Fuzz workflow's `probe` job,
 [run 45014765355](https://github.com/vecbricks/jegg/actions/runs/45014765355), artifact
@@ -103,8 +104,8 @@ What the fix did to the counts and did not:
   above the counterfactual the run above summed (1.68x, 1.21x, 0.92x) by 7 to 12%: the
   counterfactual was summed over lists the old repair deduplicated, and the fix set the dedup
   aside, so the two entries a congruence joins both stay in their lists, as egg's do, and every
-  later absorption queues both. The duplicates are also in the facts re-made (6 to 13% more). A
-  lazy drop of the newer entry would take both back (#142). prop's remaining excess is #137's:
+  later absorption queues both. The duplicates are also in the facts re-made (6 to 13% more).
+  The drop of #142 took part of both back ("After #142"). prop's remaining excess is #137's:
   1.36x egg's unions, each with its parents to queue.
 - **The hash operations are egg's or fewer**: 1.10x, 0.83x, 1.02x egg's memo inserts, of which
   egg pays one per node added and jegg does not.
@@ -152,13 +153,16 @@ The `SAME` bucket, summed; the ratios are jegg over egg, after #136 and after #1
 | lambda: hash operations | 236267 | 241400 | 230339 | 1.02x | 0.97x |
 | lambda: facts re-made | 56277 | 60544 | 59179 | 1.08x | 1.05x |
 
-Unions, congruences, the node-list walk and every term's iterations and sizes are #136's to the
-count. The drop took back 10% of the visits on prop, 3% on math and 5% on lambda, and 2 to 3%
-of the facts re-made: less than the 7 to 12% the duplicates were charged with, since an entry
-listed twice under one child (a node with the same child in two positions) is queued twice
-whatever is dropped, and the counterfactual of the run above counted such an entry once. The
-profile is as after #136: the rebuild 22%, 9% and 18% of the samples (prop, math, lambda), the
-re-make of the form and the end pass the largest frames, 300 to 500 bytes per visit.
+Unions, congruences and the node-list walk are #136's to the count, and so are every term's
+iterations, sizes and bucket (the two runs' `*-counts.jsonl` compared term by term). The drop
+took back 10% of the visits on prop, 3% on math and 5% on lambda, and 1 to 3.5% of the facts
+re-made: less than the 7 to 12% the duplicates were charged with. The rest is not accounted
+for; two candidates, not counted: an entry listed twice under one child (a node with the same
+child in two positions) is queued twice whatever is dropped, and two entries of one class that
+take one form drop nothing, since a re-key that finds the entry's own class is no congruence;
+the old repair's map removed both. The rebuild is 22%, 9% and 18% of the execution samples
+(prop, math, lambda) on this run's CPU, an EPYC 9V45, against 16%, 7% and 13% on #136's EPYC
+7763; the shares compare only within a run. 300 to 500 bytes per visit.
 
 ## How it is measured
 
