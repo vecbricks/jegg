@@ -195,6 +195,14 @@ on math, and `lambda_function_repeat` runs at 1.46x. The gap is not where the po
 looked for it. The search is 0.51x egg's on prop (the long runs in the `true` class, where egg's
 multi-pattern search for `lem_imply` pays and jegg's hoisted ground lookup does not, #115) and
 1.05 to 1.21x elsewhere; the apply is 1.4 to 2.1x; the rebuild is 3.5 to 4.7x at every size on
-every workload, and is #134's measurement. The whole-run figures of `dev/fuzz.sh` (3 to 4x) mix
-in the node-limit terms, where egg's memo-based limit stops it in an earlier iteration than
-jegg's, so those are different work and are summed apart.
+every workload. The whole-run figures of `dev/fuzz.sh` (3 to 4x) mix in the node-limit terms,
+where egg's memo-based limit stops it in an earlier iteration than jegg's, so those are
+different work and are summed apart.
+
+The rebuild's counts (#134; `benchmarks/rebuild-counts.md`) say why it is 4x: jegg's `repair`
+walks the combined parent list of both sides of every merge, where egg pends the absorbed
+side's alone, so jegg visits 4 to 7.5x the parents egg does for the same congruences; each
+visit re-makes the form and re-keys the hashcons through a `HashMap` remove and put, which the
+profile charges with two thirds of the rebuild's samples and about 160 bytes. On prop jegg also
+makes 36% more effective unions than egg inside the iterations, which the buckets above cannot
+see. The fixes are #136 to #139.
