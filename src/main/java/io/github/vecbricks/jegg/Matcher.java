@@ -156,30 +156,8 @@ public final class Matcher {
   private static <L extends Language<L>, D extends @Nullable Object>
       void search(EGraph<L, D> graph, Pattern<L> pattern, int limit, ArrayList<Match> matches,
           Scratch scratch) {
-    search(graph, pattern, limit, matches, scratch, true);
-  }
-
-  /**
-   * {@link #search(EGraph, Pattern)} with the walk asking the substitution at every variable,
-   * first occurrence or not: the path the marks replace (#149), kept as the oracle for them.
-   */
-  static <L extends Language<L>, D extends @Nullable Object>
-      List<Match> searchAsking(EGraph<L, D> graph, Pattern<L> pattern) {
-    ArrayList<Match> matches = new ArrayList<>();
-    Scratch scratch = graph.borrowScratch();
-    try {
-      search(graph, pattern, Integer.MAX_VALUE, matches, scratch, false);
-    } finally {
-      graph.returnScratch(scratch);
-    }
-    return matches;
-  }
-
-  private static <L extends Language<L>, D extends @Nullable Object>
-      void search(EGraph<L, D> graph, Pattern<L> pattern, int limit, ArrayList<Match> matches,
-          Scratch scratch, boolean marks) {
     List<Subst> found = scratch.found;
-    Walk<L, D> walk = new Walk<>(graph, scratch, marks ? pattern : null);
+    Walk<L, D> walk = new Walk<>(graph, scratch);
     boolean distinct = distinctByConstruction(graph, pattern);
     Class<?> type = pattern instanceof Pattern.Node<L> node
         ? node.head().type().orElse(null) : null;
@@ -265,7 +243,7 @@ public final class Matcher {
     Join(EGraph<L, D> graph, Scratch scratch, List<MultiPattern.Clause<L>> clauses, int limit,
         List<Match> out) {
       this.graph = graph;
-      this.walk = new Walk<>(graph, scratch, null);
+      this.walk = new Walk<>(graph, scratch);
       this.clauses = clauses;
       this.limit = limit;
       this.out = out;
@@ -373,7 +351,7 @@ public final class Matcher {
       List<Subst> matchIn(EGraph<L, D> graph,
       Pattern<L> pattern, int id, Subst subst) {
     List<Subst> out = new ArrayList<>();
-    new Walk<>(graph, new Scratch(), null).matchIn(pattern, id, subst, Integer.MAX_VALUE, out,
+    new Walk<>(graph, new Scratch()).matchIn(pattern, id, subst, Integer.MAX_VALUE, out,
         distinctByConstruction(graph, pattern));
     return out;
   }
@@ -456,48 +434,11 @@ public final class Matcher {
     // Not kept between searches: a view holds the graph's ordinal for its head, which a later
     // add can give a head that has none yet.
     private final Map<Pattern.Node<L>, View<L>> views = new IdentityHashMap<>();
-    // Whether each view's marks of the first occurrences of its variables ({@link View#first})
-    // hold for this walk: a search of one pattern from the empty substitution, with no pattern
-    // node object at two positions (#149). A multi-pattern's clauses and a client's matchIn
-    // start from substitutions that may bind a variable already, and ask at every occurrence.
-    private final boolean marks;
 
-    /**
-     * A walk of {@code graph}; {@code root} is the one pattern it will search from the empty
-     * substitution, whose variables' first occurrences are then marked, or null.
-     */
-    Walk(EGraph<L, D> graph, Scratch scratch, @Nullable Pattern<L> root) {
+    Walk(EGraph<L, D> graph, Scratch scratch) {
       this.graph = graph;
       this.rebuilt = !graph.isDirty();
       this.free = scratch.free;
-      this.marks = root != null && mark(root, new HashSet<>(), new HashSet<>());
-    }
-
-    /**
-     * Marks, in the walk's own order, whether each variable child of each node under
-     * {@code pattern} is the first occurrence of its name; false if a node object is met twice,
-     * since the marks are per position and a shared view has one set.
-     */
-    private boolean mark(Pattern<L> pattern, Set<String> bound, Set<Pattern.Node<L>> met) {
-      if (!(pattern instanceof Pattern.Node<L> node)) {
-        return true;
-      }
-      if (!met.add(node)) {
-        return false;
-      }
-      View<L> view = viewOf(node);
-      for (int k = 0; k < view.arity; k++) {
-        int i = view.order[k];
-        switch (view.children[i]) {
-          case Pattern.Var<L>(var name) -> view.first[i] = bound.add(name);
-          case Pattern.Node<L> nested -> {
-            if (!mark(nested, bound, met)) {
-              return false;
-            }
-          }
-        }
-      }
-      return true;
     }
 
     /**
@@ -522,9 +463,6 @@ public final class Matcher {
       final int arity;
       final @Nullable Object key;
       final int[] order;
-      // Per child, whether a variable there is the first occurrence of its name in the walk of
-      // the search's pattern; set by the walk's pre-pass, read only when its marks hold.
-      final boolean[] first;
       // The graph's ordinal of the key, -1 if no node has that head; -2 until asked.
       int ordinal = -2;
 
@@ -535,7 +473,6 @@ public final class Matcher {
         this.arity = children.length;
         this.key = head.key().orElse(null);
         this.order = new int[arity];
-        this.first = new boolean[arity];
         List<Integer> nested = new ArrayList<>();
         for (int i = 0; i < arity; i++) {
           order[i] = i;
@@ -679,8 +616,7 @@ public final class Matcher {
         List<Subst> out, boolean distinct, boolean nested) {
       switch (pattern) {
         case Pattern.Var<L>(var name) -> {
-          // A variable at the root of a marked walk is its first occurrence: bound, not asked.
-          int bound = marks ? Subst.UNBOUND : subst.idOrUnbound(name);
+          int bound = subst.idOrUnbound(name);
           if (bound == Subst.UNBOUND) {
             out.add(subst.bindNew(name, root));
           } else if (graph.find(bound) == root) {
@@ -831,9 +767,7 @@ public final class Matcher {
       int child = kids[start + i];
       switch (view.children[i]) {
         case Pattern.Var<L>(var name) -> {
-          // The first occurrence of a name in a marked walk is unbound: bound without asking
-          // the substitution, which is what the walk did most (#149).
-          int bound = marks && view.first[i] ? Subst.UNBOUND : subst.idOrUnbound(name);
+          int bound = subst.idOrUnbound(name);
           int root = rebuilt ? child : graph.find(child);
           if (bound == Subst.UNBOUND) {
             matchChildren(view, order, k + 1, kids, start, subst.bindNew(name, root), out,
