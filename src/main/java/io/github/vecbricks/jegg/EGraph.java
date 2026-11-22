@@ -31,10 +31,11 @@ import org.jspecify.annotations.Nullable;
  * data structures in plain Java.
  *
  * <p>{@link #add} canonicalises a node and looks it up in the hashcons; {@link #merge} unions two
- * classes and does nothing else but note the class on a worklist; {@link #rebuild} works the list
- * off, repairing the hashcons and merging the parents a merge made congruent, until the list is
- * empty. Keeping the repair out of {@code merge} is the paper's whole point (its section 3): a
- * batch of merges is repaired once, and a class merged many times is repaired once. Between a
+ * classes and does nothing else but note the absorbed class's parents on a worklist;
+ * {@link #rebuild} works the list off, re-keying each parent in the hashcons and merging the two
+ * classes a re-key finds congruent, until the list is empty. Keeping the repair out of
+ * {@code merge} is the paper's whole point (its section 3): a batch of merges is repaired once,
+ * and a parent whose children were merged many times is re-keyed once. Between a
  * merge and the next rebuild the graph is not congruent, and {@link #lookup} may miss a node
  * whose children were merged. The {@link Analysis}'s facts are kept in the same rebuild: a
  * class's fact is made when its first node is added, joined when classes merge, re-made for
@@ -83,10 +84,14 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   // runner reads it to tell an iteration that changed nothing, which sizes cannot: an add and
   // a merge in one iteration leave them as they were.
   private long changes;
-  // Roots of classes a merge touched since the last rebuild; repaired in id order.
-  private final IntArray worklist = new IntArray();
-  // The classes named by the parent entries this rebuild's repairs processed: the only classes
-  // whose node lists can hold a form a merge made stale, re-canonicalised when the rebuild ends.
+  // The parent entries of the classes merged away since the last rebuild, in the order the
+  // merges met them: each is re-keyed by repair, which may merge more classes and queue more.
+  // A node's form changes only when a child lost its root, so the kept side's parents keep
+  // their keys and are not queued (egg's pending).
+  private final List<EClass.Parent<L>> pending = new ArrayList<>();
+  // The roots of this rebuild's merges and the classes named by the entries it repaired: the
+  // only classes whose node lists can hold a duplicate or a form a merge made stale,
+  // re-canonicalised when the rebuild ends.
   private final BitSet staleOwners = new BitSet();
   // The classes holding a node of each node class (operator), a bit per class id: where a search
   // for a head that names its node class starts (Pattern.Head.type). Exact: set at add, moved
@@ -502,13 +507,13 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * @return true if the graph needs a {@link #rebuild} to be congruent again
    */
   public boolean isDirty() {
-    return !worklist.isEmpty() || !analysisPending.isEmpty() || !modifyPending.isEmpty();
+    return !pending.isEmpty() || !analysisPending.isEmpty() || !modifyPending.isEmpty();
   }
 
   /**
    * Makes {@code a} and {@code b} one class and returns its root (paper Figure 4, lines 12-22).
    * The surviving root is the smaller id. The other class's nodes and parents move to it and its
-   * facts are joined; the root goes on the worklist and nothing is repaired until
+   * facts are joined; the other class's parents go on the worklist and nothing is repaired until
    * {@link #rebuild}. Returns the root even when the two were one class already.
    *
    * @param a an e-class id this graph issued, root or not
@@ -547,6 +552,10 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     }
     kept.appendNodes(gone);
     kept.setMergedNodes(true);
+    // The absorbed side's parents are the nodes whose form the merge changed: queued, in their
+    // order, and appended to the root's list, where they stay (the list is never taken out).
+    // The kept side's parents keep their form and their keys.
+    pending.addAll(gone.mutableParents());
     kept.mutableParents().addAll(gone.mutableParents());
     kept.setData(joined);
     if (gone.hasPruned()) {
@@ -554,7 +563,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     }
     classes.set(other, null);
     liveClasses--;
-    worklist.add(root);
+    staleOwners.set(root);
     modifyPending.add(root);
     return root;
   }
@@ -588,12 +597,19 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     c.markPruned();
     anyPruned = true;
     for (L node : dropped) {
-      // Inside a rebuild a listed node may be stale while the hashcons holds its canonical form,
-      // so both are removed; the canonical form is remembered, and repair keeps it current.
-      L canonical = canonicalize(node);
       hashcons.remove(node);
-      hashcons.remove(canonical);
-      pruned.put(canonical, c.id());
+      // Between a merge and the rebuild a listed node may be stale while the hashcons holds its
+      // canonical form, so that key goes too, and the form is remembered for the repair to keep
+      // current - unless a kept node of the class has the form, or the key is another class's:
+      // a live node, congruent with the dropped one, that the rebuild merges in; its key stays.
+      L canonical = canonicalize(node);
+      if (nodes.stream().noneMatch(n -> canonicalize(n).equals(canonical))) {
+        Integer keyed = hashcons.get(canonical);
+        if (keyed != null && unionFind.find(keyed) == c.id()) {
+          hashcons.remove(canonical);
+        }
+        pruned.put(canonical, c.id());
+      }
       // The class leaves the index for a node class none of its nodes has any more, so searches
       // for that operator stop looking at it.
       Class<?> type = node.getClass();
@@ -607,27 +623,25 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
 
   /**
    * Restores the hashcons and congruence invariants after any number of merges (paper Figure 4,
-   * lines 27-53): takes the worklist, deduplicates it by root, repairs each class, and repeats
-   * while repairs merged more classes. Returns how many classes were repaired. The order is fixed:
-   * each pass repairs its roots in ascending id order.
+   * lines 27-53, as egg does them): takes the worklist of parent entries the merges queued and
+   * repairs each, re-keying it in the hashcons and merging its class with the class of a node
+   * it became equal to, which queues that merge's parents in turn, until the list is empty.
+   * Returns how many parent entries were repaired. The order is fixed: the entries in the order
+   * the merges queued them, a repair's merges after the entries already queued.
    *
-   * @return the number of class repairs done, 0 if the graph was already clean
+   * @return the number of parent entries repaired, 0 if the graph was already clean
    */
   public int rebuild() {
     int repaired = 0;
     boolean touched = false;
     while (isDirty()) {
       touched = true;
-      while (!worklist.isEmpty()) {
-        int[] todo = worklist.sortedDistinct(unionFind::find);
-        worklist.clear();
-        for (int id : todo) {
-          if (classes.get(id) != null) {
-            repair(classes.get(id));
-            repaired++;
-          }
-        }
+      // By index: a repair's merges append to the list while it is walked.
+      for (int i = 0; i < pending.size(); i++) {
+        repair(pending.get(i));
+        repaired++;
       }
+      pending.clear();
       // The facts: a parent whose child's fact grew is re-made and joined into its class; a
       // class whose fact grew enqueues its own parents and is offered to modify, which may add
       // nodes or merge (constant folding does both), feeding the union worklist again.
@@ -652,7 +666,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
             analysis.modify(this, id);
           }
         }
-        if (!worklist.isEmpty()) {
+        if (!pending.isEmpty()) {
           break;
         }
       }
@@ -661,8 +675,9 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       // The hashcons is repaired through the parent lists, but a node sits in its own class's
       // list too, with children that may have been merged since. A form goes stale only when a
       // child is merged away, and that child's entries were all repaired, so the classes those
-      // entries name are the only ones that can hold a stale form: they alone are
-      // re-canonicalised and deduplicated, egg's rebuild_classes narrowed to the work done.
+      // entries name, and the roots the merges left (whose lists were joined), are the only
+      // ones that can hold a stale form or a duplicate: they alone are re-canonicalised and
+      // deduplicated, egg's rebuild_classes narrowed to the work done.
       BitSet done = new BitSet();
       for (int id = staleOwners.nextSetBit(0); id >= 0; id = staleOwners.nextSetBit(id + 1)) {
         int root = unionFind.find(id);
@@ -735,83 +750,64 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   }
 
   /**
-   * One class's repair (paper Figure 4, lines 36-53): each parent is taken out of the hashcons
-   * and put back canonical under its class's root, and two parents that became the same
-   * canonical node are merged, which puts their root on the worklist for the next pass.
+   * One parent entry's repair (paper Figure 4, lines 36-53, one entry at a time as egg's
+   * process_unions): the node is keyed under its canonical form and its class's root, and if
+   * the form is another class's node already, the two classes are congruent and are merged,
+   * which queues that merge's parents for a later turn of the same loop. An entry is shared by
+   * the lists of all its children and may be queued twice; the second visit finds its form
+   * current and its key its own. Two entries one congruence joined both stay in their lists,
+   * as egg's do: both have the same children, so the same merges queue both, and the later
+   * one's put returns the first one's class.
    */
-  private void repair(EClass<L, D> eclass) {
-    canonicalizeNodes(eclass);
-    // The parent list is taken out of the class before the loop, as egg's is: a merge below may
-    // append to the class's list (when it is the root the merge keeps) or merge the class away
-    // into a smaller root (when the cascade reaches it), and in both cases the repaired entries
-    // go to whichever class is the root when the loop ends, after anything appended meanwhile.
-    List<EClass.Parent<L>> parents = new ArrayList<>(eclass.mutableParents());
-    eclass.mutableParents().clear();
-    // What the nodes held aside were made from: if a merge below changes this class's fact, they
-    // are re-made, since merge, which re-makes a class's parents when its fact grows, finds this
-    // list empty (paper Figure 9 does the re-make inside the repair for the same reason).
-    D factBefore = eclass.data();
-    for (EClass.Parent<L> parent : parents) {
-      L canonical = canonicalize(parent.node());
-      int root = unionFind.find(parent.classId());
-      staleOwners.set(root);
-      if (isPruned(canonical, root)) {
-        // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
-        // that adding it again still finds the class, and never back into the hashcons. The key
-        // the entry still has there goes: retainNodes removes the two forms it knows (the one the
-        // class listed and the canonical one), and an entry keyed under an older form, from
-        // before a child's class was merged away, kept its key past the prune. It goes only if
-        // it names this class; one that names another is a live node's.
-        Integer keyed = hashcons.get(parent.node());
-        if (keyed != null && unionFind.find(keyed) == root) {
-          hashcons.remove(parent.node());
-        }
-        pruned.remove(parent.node());
-        pruned.put(canonical, root);
-      } else {
-        hashcons.remove(parent.node());
-        hashcons.put(canonical, root);
-        // A live node that takes a pruned node's form stands for it from now on.
+  private void repair(EClass.Parent<L> entry) {
+    L old = entry.node();
+    L canonical = canonicalize(old);
+    int root = unionFind.find(entry.classId());
+    staleOwners.set(root);
+    // The class the form belongs to if it is some other class's node already, found as the
+    // entry is re-keyed: through the hashcons or the pruned memory, since a pruned node and a
+    // live one can be made congruent either way (docs/skills/prunings-leftovers-carry-weight.md).
+    Integer elsewhere;
+    if (isPruned(canonical, root)) {
+      // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
+      // that adding it again still finds the class, and never back into the hashcons. The key
+      // the entry still has there goes: retainNodes removes the two forms it knows (the one the
+      // class listed and the canonical one), and an entry keyed under an older form, from
+      // before a child's class was merged away, kept its key past the prune. It goes only if
+      // it names this class; one that names another is a live node's.
+      Integer keyed = hashcons.get(old);
+      if (keyed != null && unionFind.find(keyed) == root) {
+        hashcons.remove(old);
+      }
+      pruned.remove(old);
+      elsewhere = hashcons.get(canonical);
+      if (elsewhere != null) {
+        // A live node of another class has the form: it stands for the dropped one once the
+        // two classes are merged below, and the memory lets it go.
         pruned.remove(canonical);
+      } else {
+        elsewhere = pruned.put(canonical, root);
       }
-      // The entry is the one in the node's other children's lists too: all of them now name
-      // the form the hashcons holds.
-      parent.rekey(canonical, root);
-    }
-    // Two entries that are one canonical node now are congruent, and their classes are merged.
-    // Of the two, the older stays in the list and the newer leaves it: the older is in every
-    // list that names the node (an entry is only ever dropped in favour of an older one), so a
-    // repair through any child finds it, and when the newer was keyed above under a form of its
-    // own, that key goes with it, since any other entry under that form is congruent, hence in
-    // this list, hence dropped too. A merge here can change a later entry's form, so from the
-    // first merge on the form is made again; an entry whose form changed keeps the one it was
-    // keyed under, and the next pass, which the merge puts the root on the worklist for, re-keys
-    // it. Insertion order is kept, so the merges and the list come out in the order met.
-    LinkedHashMap<L, EClass.Parent<L>> seen = LinkedHashMap.newLinkedHashMap(parents.size());
-    boolean merged = false;
-    for (EClass.Parent<L> parent : parents) {
-      L canonical = merged ? canonicalize(parent.node()) : parent.node();
-      EClass.Parent<L> same = seen.putIfAbsent(canonical, parent);
-      if (same == null || same == parent) {
-        continue;
+    } else {
+      // canonicalize returns the node itself when no child moved: then the key is current.
+      if (canonical != old) {
+        hashcons.remove(old);
       }
-      int root = merge(same.classId(), unionFind.find(parent.classId()));
-      merged = true;
-      EClass.Parent<L> kept = parent.serial() < same.serial() ? parent : same;
-      EClass.Parent<L> dropped = kept == parent ? same : parent;
-      kept.rekey(kept.node(), root);
-      if (kept != same) {
-        seen.put(canonical, kept);
-      }
-      if (!dropped.node().equals(kept.node())) {
-        hashcons.remove(dropped.node());
-        pruned.remove(dropped.node());
+      elsewhere = hashcons.put(canonical, root);
+      // A live node that takes a pruned node's form stands for it from now on.
+      if (!pruned.isEmpty()) {
+        Integer remembered = pruned.remove(canonical);
+        if (elsewhere == null) {
+          elsewhere = remembered;
+        }
       }
     }
-    EClass<L, D> root = classOf(eclass.id());
-    root.mutableParents().addAll(seen.values());
-    if (merged && !Objects.equals(root.data(), factBefore)) {
-      analysisPending.addAll(seen.values());
+    // The entry is the one in the node's other children's lists too: all of them now name the
+    // form the hashcons holds.
+    entry.rekey(canonical, root);
+    if (elsewhere != null && unionFind.find(elsewhere) != root) {
+      int joined = merge(elsewhere, root);
+      entry.rekey(canonical, joined);
     }
   }
 

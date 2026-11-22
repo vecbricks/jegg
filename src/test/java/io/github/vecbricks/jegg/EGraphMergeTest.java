@@ -37,7 +37,7 @@ class EGraphMergeTest {
     assertTrue(g.isDirty());
     assertEquals(a, g.find(b));
     assertNotEquals(g.find(fa), g.find(fb));
-    assertTrue(g.rebuild() >= 2, "the class of a and then the class of f(a) are repaired");
+    assertEquals(2, g.rebuild(), "b's two entries for f(b) are repaired; f(a) is never visited");
     assertFalse(g.isDirty());
     assertEquals(0, g.rebuild());
     assertEquals(g.find(fa), g.find(fb));

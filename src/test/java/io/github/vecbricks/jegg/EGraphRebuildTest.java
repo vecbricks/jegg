@@ -76,29 +76,46 @@ class EGraphRebuildTest {
   }
 
   @Test
-  void repairingAClassWithThousandsOfParentsComparesEachAboutOnce() {
-    // x has n distinct parents. Merging x with y repairs them all; a repair that looked for
-    // congruent pairs by scanning what it had seen compared n^2/2 pairs, a hash finds them in n.
+  void onlyTheAbsorbedSidesParentsAreRepairedAndEachAboutOnce() {
+    // x has n distinct parents and y has m. Merging them keeps x, the smaller id, and queues y's
+    // parents alone: x's keep their children and so their keys. Each queued parent is re-keyed
+    // by one hash put; a repair that looked for congruent pairs by scanning what it had seen
+    // compared m^2/2 pairs.
     EGraph<Counted, Void> g = EGraph.withoutAnalysis();
     int x = g.add(new Counted.Leaf(0));
     int y = g.add(new Counted.Leaf(1));
     int n = 3000;
+    int m = 300;
     for (int i = 0; i < n; i++) {
       g.add(new Counted.Op(i, IntList.of(x)));
     }
+    for (int i = 0; i < m; i++) {
+      g.add(new Counted.Op(n + i, IntList.of(y)));
+    }
     g.merge(x, y);
     Counted.EQUALS.set(0);
-    assertEquals(1, g.rebuild());
+    assertEquals(m, g.rebuild(), "y's parents are repaired, x's are not visited");
     long calls = Counted.EQUALS.get();
-    assertTrue(calls < 50L * n, "a repair of " + n + " parents called equals " + calls + " times");
+    assertTrue(calls < 50L * m, "a repair of " + m + " parents called equals " + calls + " times");
     g.checkInvariants();
-    assertEquals(n + 1, g.numClasses());
+    assertEquals(n + m + 1, g.numClasses());
+    // The parents all on the kept side: nothing to repair.
+    EGraph<Counted, Void> h = EGraph.withoutAnalysis();
+    int hx = h.add(new Counted.Leaf(0));
+    int hy = h.add(new Counted.Leaf(1));
+    for (int i = 0; i < n; i++) {
+      h.add(new Counted.Op(i, IntList.of(hx)));
+    }
+    h.merge(hx, hy);
+    assertEquals(0, h.rebuild());
+    h.checkInvariants();
+    assertEquals(n + 1, h.numClasses());
   }
 
   @Test
   void anEntrySeenThroughTheOtherChildNamesTheFormTheHashconsHolds() {
-    // op = a + b. a is merged into a2 (the smaller id survives), so the repair of a2's class
-    // re-keys op. b's class was not repaired, but its entry is the same one, and reads the new
+    // op = a + b. a is merged into a2 (the smaller id survives), so a's entry for op is queued
+    // and re-keyed. b's list was not visited, but its entry is the same one, and reads the new
     // form too; a later repair through b then removes the key the hashcons really holds.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int a2 = g.add(new Toy.Var("a2"));
@@ -142,12 +159,12 @@ class EGraphRebuildTest {
   }
 
   @Test
-  void aDuplicateDroppedUnderAnotherFormTakesItsKeyWithIt() {
-    // The repair of b's class meets, in this order: b + s (in v0's class) and c + s (in b's class,
-    // c having been merged into b), which are congruent and so merge b's class into v0's; then
-    // b * v0 and b * b, keyed a moment earlier under those forms, which that merge has just made
-    // one node, v0 * v0. b * b is the duplicate and leaves the list; b is its only child, so no
-    // list will name it again, and its key must leave the hashcons with it.
+  void congruentEntriesKeyedUnderTwoFormsLeaveOneKey() {
+    // c's entry for c + s is queued when c is merged into b, and re-keyed under b + s finds the
+    // class of b + s, v0's: b's class merges into v0's, which queues b's parents, b * v0 and
+    // b * b, keyed a moment earlier under those forms. Both are re-keyed under v0 * v0; the
+    // second finds the first's class, the two product classes merge, and the hashcons holds
+    // the one key. b was b * b's only child, so a key left under that form would stay for good.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int v0 = g.add(new Toy.Var("v0"));
     int s = g.add(new Toy.Var("s"));
@@ -170,11 +187,11 @@ class EGraphRebuildTest {
   }
 
   @Test
-  void congruentEntriesKeepTheSameSurvivorInEveryList() {
+  void congruentEntriesBothStayAndAreReKeyedThroughEitherChild() {
     // p4 = x2 + y was added before p3 = x + y, so y's list reads [p4, p3] and, once x2 is merged
-    // into x, x's list reads [p3, p4]. The two are congruent then, and each repair keeps one of
-    // them: it must be the same one in both lists, or the two lists go on with one entry each,
-    // and a re-key through x leaves a key that no later repair through y will find.
+    // into x, x's list reads [p3, p4]. The two are congruent then and both stay in both lists,
+    // as egg's do; every later merge through x or through y queues both, each is re-keyed under
+    // the form of the moment, and the second finds the first's class. No key stays behind.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int a = g.add(new Toy.Var("a"));
     int b = g.add(new Toy.Var("b"));
@@ -230,10 +247,11 @@ class EGraphRebuildTest {
 
   @Test
   void aMergeInsideARepairThatGrowsTheRepairedClassesFactRemakesItsParents() {
-    // A repair takes the class's parent list out and puts it back after its loop. A congruence
-    // merge inside the loop that joins the class with one whose fact is bigger (here a class
-    // known true) must still re-make the facts of the nodes in that list, or they stay stale:
-    // the list is empty when the merge schedules them. Found by fuzzing prop against egg (#44).
+    // A congruence merge inside the rebuild that joins a class with one whose fact is bigger
+    // (here a class known true) must re-make the facts of the class's parents, or they stay
+    // stale. The repair once took the class's list out and had to re-make it itself; now the
+    // list stays in the class and merge's own re-make sees it. Found by fuzzing prop against
+    // egg (#44).
     EGraph<PropRulesTest.Prop, Boolean> g = new EGraph<>(PropRulesTest.CONSTANT_FOLD);
     int t = g.add(new PropRulesTest.Prop.Bool(true));
     int e = g.add(new PropRulesTest.Prop.Sym("e"));
@@ -280,5 +298,155 @@ class EGraphRebuildTest {
     g.checkAnalysisInvariant();
     assertEquals(5, g.numClasses());
     assertEquals(5, g.numNodes());
+  }
+
+  @Test
+  void theCongruentPartnerMayBeAnEntryTheRebuildNeverVisits() {
+    // x + z was added before y + z. Merging y into x queues y + z alone, and its re-key under
+    // x + z finds the class of x + z, whose entry sits in x's list unvisited: congruence through
+    // the hashcons, as egg's process_unions finds it. Both entries stay in z's list.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int x = g.add(new Toy.Var("x"));
+    int y = g.add(new Toy.Var("y"));
+    int z = g.add(new Toy.Var("z"));
+    int xz = g.add(new Toy.Add(IntList.of(x, z)));
+    int yz = g.add(new Toy.Add(IntList.of(y, z)));
+    assertEquals(x, g.merge(x, y));
+    assertEquals(1, g.rebuild(), "y + z alone is repaired");
+    g.checkInvariants();
+    assertEquals(xz, g.find(yz));
+    assertEquals(3, g.numClasses());
+    assertEquals(4, g.numNodes(), "x, y, z and one sum");
+    Toy sum = new Toy.Add(IntList.of(x, z));
+    assertEquals(List.of(new EClass.Parent<>(sum, xz), new EClass.Parent<>(sum, xz)),
+        g.classOf(z).parents(), "both entries, now one node and one class");
+  }
+
+  @Test
+  void anEntryQueuedTwiceIsReKeyedOnceAndFoundOnceMore() {
+    // op = a + b, with a and b both absorbed in one batch, into a0 and b0: the one entry is
+    // queued from a's list and from b's. The first visit re-keys it under a0 + b0; the second
+    // finds its form current and its key its own.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a0 = g.add(new Toy.Var("a0"));
+    int b0 = g.add(new Toy.Var("b0"));
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int op = g.add(new Toy.Add(IntList.of(a, b)));
+    g.merge(a, a0);
+    g.merge(b, b0);
+    assertEquals(2, g.rebuild());
+    g.checkInvariants();
+    assertEquals(List.of(new Toy.Add(IntList.of(a0, b0))), g.classOf(op).nodes());
+    assertEquals(OptionalInt.of(op), g.lookup(new Toy.Add(IntList.of(a, b))));
+    assertEquals(5, g.numNodes());
+  }
+
+  @Test
+  void anAddUnderAStaleKeyBetweenAMergeAndTheRebuildIsMergedIn() {
+    // n = a + b is keyed under a's id when a is merged into a0; adding a0 + b then misses it and
+    // makes a class of its own. The rebuild re-keys n under a0 + b, finds the new class there
+    // and merges the two; the joined class lists the node once.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a0 = g.add(new Toy.Var("a0"));
+    int a = g.add(new Toy.Var("a"));
+    int b = g.add(new Toy.Var("b"));
+    int n = g.add(new Toy.Add(IntList.of(a, b)));
+    g.merge(a, a0);
+    int again = g.add(new Toy.Add(IntList.of(a0, b)));
+    assertNotEquals(n, again);
+    assertEquals(1, g.rebuild());
+    g.checkInvariants();
+    assertEquals(n, g.find(again));
+    assertEquals(List.of(new Toy.Add(IntList.of(a0, b))), g.classOf(n).nodes());
+    assertEquals(4, g.numNodes());
+  }
+
+  @Test
+  void aPrunedNodeAndALiveNodeMadeCongruentMergeWhicheverWasFirst() {
+    // The pruned entry's turn finds the live class. First: six holds 6 and a + b; a is merged
+    // into a0, a0 + b is added (a class of its own, the key being a + b still), and then the
+    // class is pruned to 6: the prune must not take the live node's key for the pruned node's.
+    // The rebuild re-keys the pruned entry in the memory, finds a0 + b live, and merges the two.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a0 = g.add(new Toy.Var("a0"));
+    int b = g.add(new Toy.Var("b"));
+    int six = g.add(new Toy.Num(6));
+    int a = g.add(new Toy.Var("a"));
+    int op = g.add(new Toy.Add(IntList.of(a, b)));
+    g.merge(op, six);
+    g.merge(a, a0);
+    int live = g.add(new Toy.Add(IntList.of(a0, b)));
+    assertNotEquals(six, g.find(live));
+    assertEquals(1, g.retainNodes(six, node -> node instanceof Toy.Num));
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(six, g.find(live));
+    assertEquals(5, g.numNodes(), "a0, b, 6, a and the sum, live again");
+    assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a, b))));
+    // The same with the prune before the merge: the memory holds a + b when a0 + b is added.
+    EGraph<Toy, Void> h = EGraph.withoutAnalysis();
+    int ha0 = h.add(new Toy.Var("a0"));
+    int hb = h.add(new Toy.Var("b"));
+    int hsix = h.add(new Toy.Num(6));
+    int ha = h.add(new Toy.Var("a"));
+    h.merge(h.add(new Toy.Add(IntList.of(ha, hb))), hsix);
+    assertEquals(1, h.retainNodes(hsix, node -> node instanceof Toy.Num));
+    h.merge(ha, ha0);
+    int hlive = h.add(new Toy.Add(IntList.of(ha0, hb)));
+    assertNotEquals(hsix, h.find(hlive));
+    h.rebuild();
+    h.checkInvariants();
+    assertEquals(hsix, h.find(hlive));
+    assertEquals(5, h.numNodes());
+  }
+
+  @Test
+  void aLiveNodeReKeyedIntoAPrunedNodesFormIsMergedWithIt() {
+    // The live entry's turn finds the memory. six holds 6 and a0 + b, pruned to 6 (the memory
+    // keeps a0 + b); then a + b is added, a class of its own, and a is merged into a0. The
+    // rebuild re-keys a + b under a0 + b, and the memory says that form is six's.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a0 = g.add(new Toy.Var("a0"));
+    int b = g.add(new Toy.Var("b"));
+    int six = g.add(new Toy.Num(6));
+    g.merge(g.add(new Toy.Add(IntList.of(a0, b))), six);
+    assertEquals(1, g.retainNodes(six, node -> node instanceof Toy.Num));
+    int a = g.add(new Toy.Var("a"));
+    int live = g.add(new Toy.Add(IntList.of(a, b)));
+    g.merge(a, a0);
+    assertEquals(1, g.rebuild());
+    g.checkInvariants();
+    assertEquals(six, g.find(live));
+    assertEquals(5, g.numNodes(), "a0, b, 6, a and the sum, live again");
+    assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a0, b))));
+  }
+
+  @Test
+  void twoPrunedNodesMadeCongruentMergeTheirClasses() {
+    // one holds 1 and a1 + b, two holds 2 and a2 + b, each pruned to its constant; then a1 and
+    // a2 are merged into a0. Both pruned entries are queued; the second's turn in the memory
+    // finds the first's class under a0 + b, and the two classes merge.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int a0 = g.add(new Toy.Var("a0"));
+    int b = g.add(new Toy.Var("b"));
+    int one = g.add(new Toy.Num(1));
+    int a1 = g.add(new Toy.Var("a1"));
+    g.merge(g.add(new Toy.Add(IntList.of(a1, b))), one);
+    int two = g.add(new Toy.Num(2));
+    int a2 = g.add(new Toy.Var("a2"));
+    g.merge(g.add(new Toy.Add(IntList.of(a2, b))), two);
+    assertEquals(1, g.retainNodes(one, node -> node instanceof Toy.Num));
+    assertEquals(1, g.retainNodes(two, node -> node instanceof Toy.Num));
+    g.merge(a1, a0);
+    g.merge(a2, a0);
+    assertEquals(2, g.rebuild());
+    g.checkInvariants();
+    assertEquals(one, g.find(two));
+    assertEquals(6, g.numNodes(), "a0, b, 1, a1, 2 and a2");
+    assertEquals(OptionalInt.of(one), g.lookup(new Toy.Add(IntList.of(a1, b))));
+    assertEquals(OptionalInt.of(one), g.lookup(new Toy.Add(IntList.of(a0, b))));
+    assertEquals(one, g.add(new Toy.Add(IntList.of(a2, b))));
+    assertEquals(6, g.numNodes(), "the pruned sum is remembered, not added");
   }
 }

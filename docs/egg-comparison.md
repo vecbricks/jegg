@@ -44,7 +44,7 @@ The shape of the port in four lines:
 | `union(a, b)` | `merge(a, b)` | returns the surviving root; only unions and queues, nothing is repaired |
 | `union_trusted`, `union_instantiations` | out by design | explanation justifications; a rewrite's apply does the instantiation (`Rewrite.apply`) |
 | `find` | `find(int)` | ported |
-| `rebuild` | `rebuild()` | ported (paper Fig. 4); returns the number of classes repaired |
+| `rebuild` | `rebuild()` | ported (paper Fig. 4, egg's `process_unions`: the absorbed side's parents are queued and re-keyed, a re-key that finds another class merges the two); returns the number of parent entries repaired |
 | `classes()` | `classes()` | a read-only snapshot in id order |
 | `classes_mut()` | out by design | a mutable class could break the invariants; `EClass`'s mutators are package-private |
 | `classes_for_op` | an internal index | the matcher uses it; `Pattern.Head.type()` names the operator class it searches |
