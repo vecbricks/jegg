@@ -32,6 +32,14 @@ key past the prune, and the hashcons then held a node no class listed: `numNodes
 more than the graph holds. `repair`'s pruned branch now also drops the entry's own key, if it
 names the entry's class. `EGraphRebuildTest` has the hand-built case.
 
+A fifth, from #136, the other way round: **the canonical form's key may be a live node's.** A
+node added under the canonical form after a child's merge (the dropped node's key being the
+stale form still) sits in a class of its own, congruent and not yet merged; a prune that removed
+that key left the live node without one. `retainNodes` removes the canonical form's key only when
+it names the pruning class and no kept node has the form, and `repair` merges the pruned node's
+class with the live node's, through the hashcons when the pruned entry is repaired and through
+the pruned memory when the live one is.
+
 ## How to apply it
 
 - jegg keeps its hashcons exact (it holds exactly the graph's nodes, which `checkInvariants`

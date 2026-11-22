@@ -44,8 +44,9 @@ artifact `probe-9`, an AMD EPYC 7763; the fuzz job of the same run: prop 595 the
 a node-limit stop, 117 refused by both, math 825 and 175, 0 diverged, the buckets of the run
 above. The phases after are from the Fuzz workflow's `compare` job on the fix branch,
 [run 45018755381](https://github.com/vecbricks/jegg/actions/runs/45018755381), artifact
-`compare-8`, an AMD EPYC 9V74; the before ratios are `egg-compare.md`'s (another runner, so
-only the ratios to egg, each within its own run, are compared). The whole-run change is the
+`compare-10`, an AMD EPYC 9V74; the before ratios are `egg-compare.md`'s (another runner, so
+only the ratios to egg, each within its own run, are compared; its header's first run, on an
+EPYC 9V74 as here, read the rebuild at 3.86x, 4.61x and 3.91x). The whole-run change is the
 Timing workflow's, [run 45018279686](https://github.com/vecbricks/jegg/actions/runs/45018279686),
 fix against main on one runner: prop -15.5%, math -21.6%, both `faster`; lambda -9.9% and the
 projection +0.0%, within noise.
@@ -70,8 +71,12 @@ The `SAME` bucket, summed; before is the run above, after the fix's run:
 | lambda: node-list nodes walked | 1042995 | 544720 | 251112 | 0.52x | 0.24x |
 | lambda: facts re-made | 56277 | 53518 | 60544 | 0.95x | 1.08x |
 
-Unions, congruences and modify calls are unchanged to the count (prop 2068839 merges, 442310
-congruences, before and after): the fix changes what the rebuild visits, not what it concludes.
+Unions, congruences and modify calls are unchanged to the count on prop (2068839 merges, 442310
+congruences, before and after) and on lambda; on math, where constant folding prunes and merges
+inside the rebuild, 22 of the 1,000 terms differ by a few merges (over `SAME`, 396207 before and
+396218 after, in 5 terms), the congruences now coming in queue order and `modify` meeting the
+classes in another state; every term's iterations and sizes agree. The fix changes what the
+rebuild visits, not what it concludes.
 Per term over `SAME`, jegg's visits over egg's: prop median 1.12x, p90 1.94x (before 7.75x and
 30.03x); math 1.06x and 1.31x (before 8.84x and 19.95x). Both identities hold.
 
@@ -80,8 +85,8 @@ The phases over `SAME`, jegg/egg, the compare job's run before (`egg-compare.md`
 | workload | search before | after | apply before | after | rebuild before | after | run before | after |
 |---|---|---|---|---|---|---|---|---|
 | prop | 0.51x | 0.56x | 1.42x | 1.41x | 3.87x | 1.66x | 1.03x | 0.88x |
-| math | 1.30x | 1.29x | 1.70x | 1.75x | 4.73x | 1.55x | 1.68x | 1.47x |
-| lambda | 1.13x | 1.12x | 2.08x | 2.03x | 3.48x | 1.91x | 1.52x | 1.33x |
+| math | 1.21x | 1.29x | 1.85x | 1.75x | 4.73x | 1.55x | 1.68x | 1.47x |
+| lambda | 1.05x | 1.12x | 2.12x | 2.03x | 3.48x | 1.91x | 1.46x | 1.33x |
 
 After: prop rebuild 555.4 ms against egg's 334.4, math 109.8 against 71.0, lambda 98.1 against
 51.3 (the medians over five rounds of the per-term medians). The prop run reads under egg's.
@@ -90,21 +95,23 @@ What the fix did to the counts and did not:
 
 - **The visits are egg's, give or take the duplicates.** jegg now queues the absorbed side's
   parents as egg does, and visits 1.81x egg's on prop, 1.30x on math, 1.04x on lambda. That is
-  above the counterfactual the run above summed (1.68x, 1.21x, 0.92x) by 7 to 12%, because the
-  two entries a congruence joins now both stay in their lists, as egg's do, and every later
-  absorption queues both; the counterfactual was summed over lists the old repair deduplicated.
-  prop's remaining excess is #137's: 1.36x egg's unions, each with its parents to queue.
+  above the counterfactual the run above summed (1.68x, 1.21x, 0.92x) by 7 to 12%: the
+  counterfactual was summed over lists the old repair deduplicated, and the fix set the dedup
+  aside, so the two entries a congruence joins both stay in their lists, as egg's do, and every
+  later absorption queues both. The duplicates are also in the facts re-made (6 to 13% more). A
+  lazy drop of the newer entry would take both back (#142). prop's remaining excess is #137's:
+  1.36x egg's unions, each with its parents to queue.
 - **The hash operations are egg's or fewer**: 1.10x, 0.83x, 1.02x egg's memo inserts, of which
   egg pays one per node added and jegg does not.
 - **The end pass shrank.** The classes re-canonicalised at the end of a rebuild are the roots
   merged and the classes the repaired entries name, and with fewer entries repaired they are
-  0.17 to 0.25x egg's `rebuild_classes` count of classes and 0.24 to 0.42x its nodes, where the
+  0.03 to 0.25x egg's `rebuild_classes` count of classes and 0.24 to 0.42x its nodes, where the
   run above had 0.52 to 0.92x.
 - **The profile moved.** The rebuild's share of the execution samples fell from 29% to 16% on
   prop, 21% to 7% on math, 28% to 13% on lambda (the math profile is thin, 638 samples, and
   says shares only). The re-make of the form (`canonicalize`, `isCanonical`, `IntList.map`) is
-  31 to 37% of what remains and the `HashMap` frames 17 to 20%, #139's and #138's; the end pass
-  (`dedupNodes`, `canonicalizeNodes`) is 14 to 20% of the samples and 25 to 35% of the
+  31 to 37% of what remains and the `HashMap` frames 14 to 20%, #139's and #138's; the end pass
+  (`dedupNodes`, `canonicalizeNodes`) is 12 to 20% of the samples and 14 to 35% of the
   rebuild's bytes, a `HashSet` per class with merged nodes, noted on #139. The bytes under the
   rebuild fell from 12% to 7% of prop's and 6% to 2% of math's, but the bytes per visit rose
   (158 to 276, 178 to 335): the end pass's allocation is per class, not per visit, and the visits

@@ -107,7 +107,6 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
   private boolean anyPruned;
   // The matcher's lists between searches (Matcher.Scratch); null while a search holds them.
   private Matcher.@Nullable Scratch scratch = new Matcher.Scratch();
-  private int parentSerial;
   // Parent entries whose class's fact may have grown because a child's fact did (paper
   // section 4.1, egg's analysis_pending): each is re-made and joined into its class's fact.
   private final List<EClass.Parent<L>> analysisPending = new ArrayList<>();
@@ -233,7 +232,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     IntList children = canonical.children();
     // One entry, shared by every child's list, so that a repair through any child re-keys the
     // form all of them and the hashcons hold.
-    EClass.Parent<L> entry = new EClass.Parent<>(canonical, id, parentSerial++);
+    EClass.Parent<L> entry = new EClass.Parent<>(canonical, id);
     for (int i = 0; i < children.size(); i++) {
       classOf(children.get(i)).addParent(entry);
     }
@@ -771,10 +770,11 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     if (isPruned(canonical, root)) {
       // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
       // that adding it again still finds the class, and never back into the hashcons. The key
-      // the entry still has there goes: retainNodes removes the two forms it knows (the one the
-      // class listed and the canonical one), and an entry keyed under an older form, from
-      // before a child's class was merged away, kept its key past the prune. It goes only if
-      // it names this class; one that names another is a live node's.
+      // the entry still has there goes: retainNodes removes the forms it knows (the one the
+      // class listed and, when no live node has it, the canonical one), and an entry keyed
+      // under an older form, from before a child's class was merged away, kept its key past
+      // the prune. It goes only if it names this class; one that names another is a live
+      // node's.
       Integer keyed = hashcons.get(old);
       if (keyed != null && unionFind.find(keyed) == root) {
         hashcons.remove(old);
