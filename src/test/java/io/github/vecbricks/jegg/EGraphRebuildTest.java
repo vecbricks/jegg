@@ -11,6 +11,7 @@ package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -304,7 +305,8 @@ class EGraphRebuildTest {
   void theCongruentPartnerMayBeAnEntryTheRebuildNeverVisits() {
     // x + z was added before y + z. Merging y into x queues y + z alone, and its re-key under
     // x + z finds the class of x + z, whose entry sits in x's list unvisited: congruence through
-    // the hashcons, as egg's process_unions finds it. Both entries stay in z's list.
+    // the hashcons, as egg's process_unions finds it. The entry of y + z is dropped, and the
+    // lists read one entry for the sum.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int x = g.add(new Toy.Var("x"));
     int y = g.add(new Toy.Var("y"));
@@ -318,8 +320,33 @@ class EGraphRebuildTest {
     assertEquals(3, g.numClasses());
     assertEquals(4, g.numNodes(), "x, y, z and one sum");
     Toy sum = new Toy.Add(IntList.of(x, z));
-    assertEquals(List.of(new EClass.Parent<>(sum, xz), new EClass.Parent<>(sum, xz)),
-        g.classOf(z).parents(), "both entries, now one node and one class");
+    assertEquals(List.of(new EClass.Parent<>(sum, xz)), g.classOf(z).parents());
+    assertEquals(List.of(new EClass.Parent<>(sum, xz)), g.classOf(x).parents());
+    assertSame(g.classOf(z).parents().get(0), g.classOf(x).parents().get(0),
+        "the one entry left is the same object in both lists");
+  }
+
+  @Test
+  void aDroppedEntryIsNotQueuedAgainAndLeavesTheListsAMergeBuilds() {
+    // After x + z and y + z are one node (above), merging z into w queues z's list: the live
+    // entry alone is repaired, the dropped one is skipped and is not carried into w's list.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int w = g.add(new Toy.Var("w"));
+    int x = g.add(new Toy.Var("x"));
+    int y = g.add(new Toy.Var("y"));
+    int z = g.add(new Toy.Var("z"));
+    int xz = g.add(new Toy.Add(IntList.of(x, z)));
+    g.add(new Toy.Add(IntList.of(y, z)));
+    g.merge(x, y);
+    assertEquals(1, g.rebuild());
+    g.merge(z, w);
+    assertEquals(1, g.rebuild(), "the dropped entry is skipped, not repaired");
+    g.checkInvariants();
+    Toy sum = new Toy.Add(IntList.of(x, w));
+    assertEquals(List.of(new EClass.Parent<>(sum, xz)), g.classOf(w).parents());
+    assertEquals(1, g.classOf(w).mutableParents().size(), "w's list was built without it");
+    assertEquals(5, g.numNodes());
+    assertEquals(OptionalInt.of(xz), g.lookup(new Toy.Add(IntList.of(y, z))));
   }
 
   @Test
@@ -384,6 +411,11 @@ class EGraphRebuildTest {
     assertEquals(six, g.find(live));
     assertEquals(5, g.numNodes(), "a0, b, 6, a and the sum, live again");
     assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a, b))));
+    // A merge through the other child queues the lists the drop left one live entry in.
+    g.merge(b, a0);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a, b))));
     // The same with the prune before the merge: the memory holds a + b when a0 + b is added.
     EGraph<Toy, Void> h = EGraph.withoutAnalysis();
     int ha0 = h.add(new Toy.Var("a0"));
@@ -399,6 +431,10 @@ class EGraphRebuildTest {
     h.checkInvariants();
     assertEquals(hsix, h.find(hlive));
     assertEquals(5, h.numNodes());
+    h.merge(hb, ha0);
+    h.rebuild();
+    h.checkInvariants();
+    assertEquals(OptionalInt.of(hsix), h.lookup(new Toy.Add(IntList.of(ha, hb))));
   }
 
   @Test
@@ -420,6 +456,14 @@ class EGraphRebuildTest {
     assertEquals(six, g.find(live));
     assertEquals(5, g.numNodes(), "a0, b, 6, a and the sum, live again");
     assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a0, b))));
+    // The live entry was dropped in favour of the pruned one, which then stands for the live
+    // node: a merge through the other child re-keys it as a live node.
+    g.merge(b, a0);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(OptionalInt.of(six), g.lookup(new Toy.Add(IntList.of(a, b))));
+    assertEquals(List.of(new Toy.Num(6), new Toy.Add(IntList.of(a0, a0))),
+        g.classOf(six).nodes());
   }
 
   @Test
@@ -448,5 +492,10 @@ class EGraphRebuildTest {
     assertEquals(OptionalInt.of(one), g.lookup(new Toy.Add(IntList.of(a0, b))));
     assertEquals(one, g.add(new Toy.Add(IntList.of(a2, b))));
     assertEquals(6, g.numNodes(), "the pruned sum is remembered, not added");
+    g.merge(b, a0);
+    g.rebuild();
+    g.checkInvariants();
+    assertEquals(OptionalInt.of(one), g.lookup(new Toy.Add(IntList.of(a1, b))));
+    assertEquals(6, g.numNodes());
   }
 }
