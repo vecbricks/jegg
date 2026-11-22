@@ -12,3 +12,4 @@ touch; `docs/architecture.md` says which area a file belongs to.
 | [A results file names its commit](a-results-file-names-its-commit.md) | measuring anything, or regenerating a file under `benchmarks/` |
 | [The held move in extraction](the-held-move-in-extraction.md) | changing `Extractor.extractAll` or judging its results |
 | [The scheduler is asked before the size check](the-scheduler-is-asked-before-the-size-check.md) | touching `Runner.run`'s stop rule or a `Scheduler` |
+| [A profile's share is not a count](a-profiles-share-is-not-a-count.md) | picking a change from a profile, or scoring one against it |
