@@ -309,14 +309,17 @@ public final class RebuildProbe {
       if (type.equals(PKG + "EGraph") && name.equals("rebuild")) {
         return "rebuild";
       }
-      if (type.startsWith(PKG + "Matcher")) {
+      // The apply instantiates a right-hand side through Matcher.instantiate, so the apply's
+      // frames are asked for before the matcher's (#146).
+      if ((type.equals(PKG + "Rewrite") && name.equals("apply"))
+          || (type.equals(PKG + "Matcher") && name.equals("instantiate"))
+          || type.startsWith(PKG + "PatternApplier") || type.startsWith(PKG + "MultiApplier")) {
+        apply = true;
+      } else if (type.startsWith(PKG + "Matcher")) {
         search = true;
       }
-      if (type.equals(PKG + "Rewrite") && name.equals("apply")) {
-        apply = true;
-      }
     }
-    return search ? "search" : apply ? "apply" : "other";
+    return apply ? "apply" : search ? "search" : "other";
   }
 
   /** The first frame of the graph's own code, from the top. */
