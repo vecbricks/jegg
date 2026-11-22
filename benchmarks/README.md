@@ -86,11 +86,13 @@ be compared with another's. The rule, from Varka's and vfdlibm's skills: a numbe
 reproducible within a run and not between runs; a before and an after are on one host or are
 not compared; a host's string is never relaxed, and a new host is the owner's decision and a
 new row. The floors: an A/A run (`head=main`, `base=main`) per host, what "within noise" means
-there, listed here as they are made.
+there, listed here as they are made: the change of the medians and, in brackets, each side's
+range as a share of its median. A verdict on that host is read against this row: a change
+inside the host's own A/A movement is not one.
 
 | host | A/A run | prop | math | projection | lambda |
 |---|---|---|---|---|---|
-| `epyc7763` | pending | | | | |
+| `epyc7763` | [45035509819](https://github.com/vecbricks/jegg/actions/runs/45035509819), main 98cdea2 against itself | +0.7% (ranges 3%, 2%) | -0.1% (2%, 5%) | +10.0% (64%, 36%) | -3.0% (12%, 4%) |
 
 ## jegg against egg, by phase
 
