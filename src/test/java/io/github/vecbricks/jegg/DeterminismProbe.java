@@ -86,12 +86,22 @@ public final class DeterminismProbe {
 
     record Add(IntList children) implements Probe {
       @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 1;
+      }
+
+      @Override
       public Probe withChildren(IntList c) {
         return new Add(c);
       }
     }
 
     record Mul(IntList children) implements Probe {
+      @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 2;
+      }
+
       @Override
       public Probe withChildren(IntList c) {
         return new Mul(c);

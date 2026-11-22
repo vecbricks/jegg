@@ -70,6 +70,11 @@ class MathTest {
     /** {@code (d x e)}: the derivative of e with respect to x. */
     record Diff(IntList children) implements Math {
       @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 1;
+      }
+
+      @Override
       public Math withChildren(IntList c) {
         return new Diff(c);
       }
@@ -78,12 +83,22 @@ class MathTest {
     /** {@code (i e x)}: the integral of e over x. */
     record Integral(IntList children) implements Math {
       @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 2;
+      }
+
+      @Override
       public Math withChildren(IntList c) {
         return new Integral(c);
       }
     }
 
     record Add(IntList children) implements Math {
+      @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 3;
+      }
+
       @Override
       public Math withChildren(IntList c) {
         return new Add(c);
@@ -92,12 +107,22 @@ class MathTest {
 
     record Sub(IntList children) implements Math {
       @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 4;
+      }
+
+      @Override
       public Math withChildren(IntList c) {
         return new Sub(c);
       }
     }
 
     record Mul(IntList children) implements Math {
+      @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 5;
+      }
+
       @Override
       public Math withChildren(IntList c) {
         return new Mul(c);
@@ -106,12 +131,22 @@ class MathTest {
 
     record Div(IntList children) implements Math {
       @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 6;
+      }
+
+      @Override
       public Math withChildren(IntList c) {
         return new Div(c);
       }
     }
 
     record Pow(IntList children) implements Math {
+      @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 7;
+      }
+
       @Override
       public Math withChildren(IntList c) {
         return new Pow(c);
@@ -120,12 +155,22 @@ class MathTest {
 
     record Ln(IntList children) implements Math {
       @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 8;
+      }
+
+      @Override
       public Math withChildren(IntList c) {
         return new Ln(c);
       }
     }
 
     record Sqrt(IntList children) implements Math {
+      @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 9;
+      }
+
       @Override
       public Math withChildren(IntList c) {
         return new Sqrt(c);
@@ -134,12 +179,22 @@ class MathTest {
 
     record Sin(IntList children) implements Math {
       @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 10;
+      }
+
+      @Override
       public Math withChildren(IntList c) {
         return new Sin(c);
       }
     }
 
     record Cos(IntList children) implements Math {
+      @Override
+      public int hashCode() {
+        return 31 * children.hashCode() + 11;
+      }
+
       @Override
       public Math withChildren(IntList c) {
         return new Cos(c);
