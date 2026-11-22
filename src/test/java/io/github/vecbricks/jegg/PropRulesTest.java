@@ -56,22 +56,12 @@ class PropRulesTest {
 
     record And(IntList children) implements Prop {
       @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 1;
-      }
-
-      @Override
       public Prop withChildren(IntList c) {
         return new And(c);
       }
     }
 
     record Or(IntList children) implements Prop {
-      @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 2;
-      }
-
       @Override
       public Prop withChildren(IntList c) {
         return new Or(c);
@@ -80,22 +70,12 @@ class PropRulesTest {
 
     record Not(IntList children) implements Prop {
       @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 3;
-      }
-
-      @Override
       public Prop withChildren(IntList c) {
         return new Not(c);
       }
     }
 
     record Implies(IntList children) implements Prop {
-      @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 4;
-      }
-
       @Override
       public Prop withChildren(IntList c) {
         return new Implies(c);

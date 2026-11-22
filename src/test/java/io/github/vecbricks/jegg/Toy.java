@@ -45,22 +45,12 @@ sealed interface Toy extends Language<Toy> permits Toy.Num, Toy.Var, Toy.Add, To
 
   record Add(IntList children) implements Toy {
     @Override
-    public int hashCode() {
-      return 31 * children.hashCode() + 1;
-    }
-
-    @Override
     public Toy withChildren(IntList children) {
       return new Add(children);
     }
   }
 
   record Mul(IntList children) implements Toy {
-    @Override
-    public int hashCode() {
-      return 31 * children.hashCode() + 2;
-    }
-
     @Override
     public Toy withChildren(IntList children) {
       return new Mul(children);

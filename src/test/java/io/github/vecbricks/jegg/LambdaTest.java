@@ -73,22 +73,12 @@ class LambdaTest {
     /** {@code (var x)}: a use of the variable whose name is the child's class. */
     record Var(IntList children) implements Lambda {
       @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 1;
-      }
-
-      @Override
       public Lambda withChildren(IntList c) {
         return new Var(c);
       }
     }
 
     record Add(IntList children) implements Lambda {
-      @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 2;
-      }
-
       @Override
       public Lambda withChildren(IntList c) {
         return new Add(c);
@@ -97,22 +87,12 @@ class LambdaTest {
 
     record Eq(IntList children) implements Lambda {
       @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 3;
-      }
-
-      @Override
       public Lambda withChildren(IntList c) {
         return new Eq(c);
       }
     }
 
     record App(IntList children) implements Lambda {
-      @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 4;
-      }
-
       @Override
       public Lambda withChildren(IntList c) {
         return new App(c);
@@ -122,11 +102,6 @@ class LambdaTest {
     /** {@code (lam x body)}. */
     record Lam(IntList children) implements Lambda {
       @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 5;
-      }
-
-      @Override
       public Lambda withChildren(IntList c) {
         return new Lam(c);
       }
@@ -134,11 +109,6 @@ class LambdaTest {
 
     /** {@code (let x value body)}. */
     record Let(IntList children) implements Lambda {
-      @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 6;
-      }
-
       @Override
       public Lambda withChildren(IntList c) {
         return new Let(c);
@@ -148,22 +118,12 @@ class LambdaTest {
     /** {@code (fix x body)}. */
     record Fix(IntList children) implements Lambda {
       @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 7;
-      }
-
-      @Override
       public Lambda withChildren(IntList c) {
         return new Fix(c);
       }
     }
 
     record If(IntList children) implements Lambda {
-      @Override
-      public int hashCode() {
-        return 31 * children.hashCode() + 8;
-      }
-
       @Override
       public Lambda withChildren(IntList c) {
         return new If(c);
