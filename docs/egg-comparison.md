@@ -185,3 +185,16 @@ jegg's own tests add what egg lacks: `EGraphRebuildTest` (deferred against eager
 random graphs), `DeterminismTest` (the same run in fresh JVMs, byte for byte), the extraction
 oracles (`ExtractorTest`, `ExtractAllEnumerationTest`, `ExtractionGymTest` against
 extraction-gym's graphs) and the matcher tests (`PatternMatchTest`).
+
+### What the timing shows
+
+jegg against egg on the same runs, by phase (#72; `benchmarks/egg-compare.md` has the table and
+its provenance; `dev/compare.sh` reruns it in the Fuzz workflow): on the 1,000 random terms of
+seed 2 where the two do identical work, jegg's three phases sum to 1.03x egg's on prop and 1.68x
+on math, and `lambda_function_repeat` runs at 1.46x. The gap is not where the port's history
+looked for it. The search is 0.51x egg's on prop (the long runs in the `true` class, where egg's
+multi-pattern search for `lem_imply` pays and jegg's hoisted ground lookup does not, #115) and
+1.05 to 1.21x elsewhere; the apply is 1.4 to 2.1x; the rebuild is 3.5 to 4.7x at every size on
+every workload, and is #134's measurement. The whole-run figures of `dev/fuzz.sh` (3 to 4x) mix
+in the node-limit terms, where egg's memo-based limit stops it in an earlier iteration than
+jegg's, so those are different work and are summed apart.
