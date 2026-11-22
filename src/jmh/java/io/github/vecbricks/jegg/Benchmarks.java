@@ -165,7 +165,8 @@ public final class Benchmarks {
             .timeUnit(TimeUnit.MILLISECONDS)
             .warmupIterations(quick ? 0 : 2).measurementIterations(quick ? 1 : 3)
             .forks(quick ? 1 : 5).build());
-    // The count of classes repaired in each mode, from one run each: what the time tracks.
+    // The count of parent entries repaired in each mode, from one run each: what the time
+    // tracks.
     StringBuilder b = new StringBuilder(String.format("%-26s %9s %12s %10s %12s %s%n",
         "suite", "mode", "iterations", "repaired", "nodes", "stop"));
     for (var e : Saturation.suites().entrySet()) {
@@ -186,8 +187,8 @@ public final class Benchmarks {
             large ? String.format(" (%.1f s, one run)", seconds) : ""));
       }
     }
-    report.section("Classes repaired per run, one run each; the three large runs timed, their"
-        + " eager run capped at ten minutes", b.toString());
+    report.section("Parent entries repaired per run, one run each; the three large runs timed,"
+        + " their eager run capped at ten minutes", b.toString());
     report.write();
   }
 

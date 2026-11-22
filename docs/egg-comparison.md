@@ -44,7 +44,7 @@ The shape of the port in four lines:
 | `union(a, b)` | `merge(a, b)` | returns the surviving root; only unions and queues, nothing is repaired |
 | `union_trusted`, `union_instantiations` | out by design | explanation justifications; a rewrite's apply does the instantiation (`Rewrite.apply`) |
 | `find` | `find(int)` | ported |
-| `rebuild` | `rebuild()` | ported (paper Fig. 4); returns the number of classes repaired |
+| `rebuild` | `rebuild()` | ported (paper Fig. 4, egg's `process_unions`: the absorbed side's parents are queued and re-keyed, a re-key that finds another class merges the two); returns the number of parent entries repaired |
 | `classes()` | `classes()` | a read-only snapshot in id order |
 | `classes_mut()` | out by design | a mutable class could break the invariants; `EClass`'s mutators are package-private |
 | `classes_for_op` | an internal index | the matcher uses it; `Pattern.Head.type()` names the operator class it searches |
@@ -195,6 +195,14 @@ on math, and `lambda_function_repeat` runs at 1.46x. The gap is not where the po
 looked for it. The search is 0.51x egg's on prop (the long runs in the `true` class, where egg's
 multi-pattern search for `lem_imply` pays and jegg's hoisted ground lookup does not, #115) and
 1.05 to 1.21x elsewhere; the apply is 1.4 to 2.1x; the rebuild is 3.5 to 4.7x at every size on
-every workload, and is #134's measurement. The whole-run figures of `dev/fuzz.sh` (3 to 4x) mix
-in the node-limit terms, where egg's memo-based limit stops it in an earlier iteration than
-jegg's, so those are different work and are summed apart.
+every workload. The whole-run figures of `dev/fuzz.sh` (3 to 4x) mix in the node-limit terms,
+where egg's memo-based limit stops it in an earlier iteration than jegg's, so those are
+different work and are summed apart.
+
+The rebuild's counts (#134; `benchmarks/rebuild-counts.md`) say why it is 4x: jegg's `repair`
+walks the combined parent list of both sides of every merge, where egg pends the absorbed
+side's alone, so jegg visits 4 to 7.5x the parents egg does for the same congruences; each
+visit re-makes the form and re-keys the hashcons through a `HashMap` remove and put, which the
+profile charges with two thirds of the rebuild's samples and about 160 bytes. On prop jegg also
+makes 36% more effective unions than egg inside the iterations, which the buckets above cannot
+see. The fixes are #136 to #139.
