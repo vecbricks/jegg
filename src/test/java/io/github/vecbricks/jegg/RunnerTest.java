@@ -85,6 +85,31 @@ class RunnerTest {
   }
 
   @Test
+  void thePhasesAreTimedPerIterationAndReplacedByTheNextRun() {
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    sumOfFive(g);
+    Runner<Toy, Void> runner = new Runner<>(g, expansive(), new RunLimits(3, 1_000_000,
+        1_000_000), Scheduler.simple());
+    assertTrue(runner.phases().isEmpty());
+    long before = System.nanoTime();
+    RunReport report = runner.run();
+    long wall = System.nanoTime() - before;
+    List<Runner.Phases> phases = runner.phases();
+    assertEquals(report.size(), phases.size());
+    long sum = 0;
+    for (Runner.Phases ph : phases) {
+      assertTrue(ph.searchNanos() >= 0 && ph.applyNanos() >= 0 && ph.rebuildNanos() >= 0);
+      sum += ph.searchNanos() + ph.applyNanos() + ph.rebuildNanos();
+    }
+    assertTrue(sum <= wall, sum + " > " + wall);
+    assertThrows(UnsupportedOperationException.class, () -> phases.clear());
+    // A second run: the list is that run's alone, not both runs' together.
+    RunReport again = runner.run();
+    assertEquals(again.size(), runner.phases().size());
+    assertTrue(runner.phases().size() < 2 * phases.size());
+  }
+
+  @Test
   void anIterationLimitStopsTheRun() {
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     sumOfFive(g);

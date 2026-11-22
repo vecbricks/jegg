@@ -2,7 +2,8 @@
 # per cache, then prop and math random terms run through egg and jegg and their counts are
 # compared. Dispatched by hand with a ref, a count and a seed; a PR that touches the matcher,
 # the graph or the runner links its run (AGENTS.md, oracle 2). A divergence is shrunk to
-# dev/fuzz/found/ and uploaded with the logs.
+# dev/fuzz/found/ and uploaded with the logs. With compare=true a second job runs
+# dev/compare.sh after it (#72): jegg's time against egg's on the same terms, by phase.
 name: Fuzz
 
 on:
@@ -17,6 +18,13 @@ on:
       seed:
         description: the seed of the terms
         default: "2"
+      compare:
+        description: also time jegg against egg on the terms, by phase (#72)
+        type: boolean
+        default: false
+      rounds:
+        description: rounds of the comparison, each side once per round
+        default: "5"
 
 permissions:
   contents: read
@@ -71,3 +79,43 @@ jobs:
       - name: Fail if a language diverged
         if: steps.prop.outcome == 'failure' || steps.math.outcome == 'failure'
         run: exit 1
+  compare:
+    needs: fuzz
+    if: inputs.compare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: 25
+          cache: maven
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/jegg/egg
+          key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs') }}-${{ runner.os }}
+      - name: Compare jegg with egg
+        run: >-
+          dev/compare.sh "${{ inputs.rounds }}" "${{ inputs.count }}" "${{ inputs.seed }}"
+          compare
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '# jegg against egg: `${{ inputs.ref }}`'
+            echo
+            echo '```'
+            cat compare/provenance.txt
+            echo '```'
+            echo
+            cat compare/summary.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: compare-${{ github.run_number }}
+          path: compare/
+          if-no-files-found: ignore

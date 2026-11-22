@@ -10,25 +10,18 @@
 #   dev/fuzz.sh --scenarios math      the scheduler scenarios (FuzzRun.schedulerScenarios): egg
 #                                     must still print the lines they are pinned to
 # A divergence is shrunk and written to dev/fuzz/found/. Needs cargo (https://rustup.rs) and mvn;
-# egg's first release build takes a few minutes. Not a benchmark: nothing here is timed.
+# egg's first release build takes a few minutes (dev/egg_harness.sh). Not a benchmark: the times
+# on egg's lines are for dev/compare.sh (#72); nothing here reads them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-EGG_COMMIT=73975c9
 cache="${JEGG_EGG_CACHE:-$HOME/.cache/jegg/egg}"
 mode=fuzz
 if [ "${1:-}" = "--known" ]; then mode=known; shift; fi
 if [ "${1:-}" = "--scenarios" ]; then mode=scenarios; shift; fi
 lang="${1:-}"; count="${2:-1000}"; seed="${3:-1}"
 case "$lang" in prop|math) ;; *) sed -n '2,15p' "$0"; exit 2 ;; esac
-command -v cargo >/dev/null || { echo "cargo is not on the PATH; install Rust from https://rustup.rs" >&2; exit 2; }
 command -v mvn >/dev/null || { echo "mvn is not on the PATH" >&2; exit 2; }
-if [ ! -d "$cache/.git" ]; then git clone -q https://github.com/egraphs-good/egg.git "$cache"; fi
-git -C "$cache" fetch -q origin "$EGG_COMMIT" 2>/dev/null || git -C "$cache" fetch -q origin
-git -C "$cache" checkout -q "$EGG_COMMIT"
-# egg's own test file, without its crate-level cfg line, then the run and the driver.
-{ sed '1{/^#!\[cfg/d}' "$cache/tests/$lang.rs"; cat "dev/fuzz/${lang}_run.rs" dev/fuzz/common.rs; } \
-  > "$cache/tests/fuzz_$lang.rs"
-(cd "$cache" && cargo test -q --release --test "fuzz_$lang" --no-run)
+dev/egg_harness.sh "$lang" >/dev/null   # egg 73975c9 in the cache, tests/fuzz_$lang.rs built
 mkdir -p dev/fuzz/found target/fuzz
 # The summary line is the test's output, which maven hides for a test that passes; show it, the
 # failures with their messages, and keep maven's exit status and its whole log.

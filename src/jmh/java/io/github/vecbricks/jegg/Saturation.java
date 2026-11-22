@@ -26,9 +26,13 @@ final class Saturation {
 
   enum Mode { DEFERRED, EAGER }
 
-  /** What a run did: how long, how many iterations and repaired classes, how it ended. */
+  /**
+   * What a run did: how long, how many iterations and repaired classes, how it ended, and the
+   * wall time of the three phases summed over the iterations, in nanoseconds (#72): the
+   * search of every rule, the applications, and the rebuilds (in eager mode, every one).
+   */
   record Outcome(Mode mode, int iterations, long repaired, int nodes, int classes,
-      String stop, boolean timedOut) {
+      String stop, boolean timedOut, long searchNanos, long applyNanos, long rebuildNanos) {
   }
 
   private Saturation() {
@@ -37,6 +41,9 @@ final class Saturation {
   static <L extends Language<L>, D> Outcome run(Mode mode, EGraph<L, D> graph,
       List<Rewrite<L, D>> rules, RunLimits limits, Scheduler<L, D> scheduler,
       Predicate<EGraph<L, D>> proved, long deadlineNanos) {
+    long search = 0;
+    long apply = 0;
+    long rebuild = 0;
     long repaired = graph.rebuild();
     scheduler.reset();
     int iteration = 0;
@@ -54,10 +61,13 @@ final class Saturation {
       int nodesBefore = graph.numNodes();
       int classesBefore = graph.numClasses();
       iteration++;
+      long searchStart = System.nanoTime();
       List<List<Matcher.Match>> matches = new ArrayList<>(rules.size());
       for (int i = 0; i < rules.size(); i++) {
         matches.add(scheduler.search(iteration, i, rules.get(i), graph));
       }
+      long applyStart = System.nanoTime();
+      search += applyStart - searchStart;
       int counted = 0;
       for (int i = 0; i < rules.size() && !timedOut; i++) {
         for (Matcher.Match m : matches.get(i)) {
@@ -65,7 +75,9 @@ final class Saturation {
           if (done.isPresent()) {
             counted += done.get().counted();
             if (done.get().unions() > 0 && mode == Mode.EAGER) {
+              long eagerStart = System.nanoTime();
               repaired += graph.rebuild();
+              rebuild += System.nanoTime() - eagerStart;
             }
           }
           if (System.nanoTime() > deadlineNanos) {
@@ -74,7 +86,10 @@ final class Saturation {
           }
         }
       }
+      long rebuildStart = System.nanoTime();
+      apply += rebuildStart - applyStart;
       repaired += graph.rebuild();
+      rebuild += System.nanoTime() - rebuildStart;
       if (timedOut) {
         stop = "TimedOut";
       } else if (graph.numNodes() > limits.nodes()) {
@@ -87,7 +102,7 @@ final class Saturation {
       }
     }
     return new Outcome(mode, iteration, repaired, graph.numNodes(), graph.numClasses(), stop,
-        timedOut);
+        timedOut, search, apply, rebuild);
   }
 
   /** The runs of the ported suites, by name: the prop cases, the lambda cases, the math cases. */
