@@ -127,6 +127,39 @@ What the fix did to the counts and did not:
 
 The run's `summary.md` with its quintile tables and profiles is in the artifact.
 
+## After #142
+
+#142 drops the entry whose re-key found another class, so a congruence leaves one entry per
+node in the lists. The probe with it merged into `rebuild-probe` (82eed0c),
+[run 45026085654](https://github.com/vecbricks/jegg/actions/runs/45026085654), artifact
+`probe-12`, an AMD EPYC 9V45; its fuzz job and the branch's own
+([45026043144](https://github.com/vecbricks/jegg/actions/runs/45026043144)) have the buckets
+above and 0 diverged. The Timing workflow, #142 against main,
+[run 45026045884](https://github.com/vecbricks/jegg/actions/runs/45026045884), `timing-7`:
+prop -1.0%, math -0.7%, lambda -6.2%, the projection +23.6%, all within noise.
+
+The `SAME` bucket, summed; the ratios are jegg over egg, after #136 and after #142:
+
+| what | egg | #136 | #142 | #136 | #142 |
+|---|---|---|---|---|---|
+| prop: parents visited | 938510 | 1701371 | 1529856 | 1.81x | 1.63x |
+| prop: hash operations | 2848396 | 3126163 | 2923193 | 1.10x | 1.03x |
+| prop: facts re-made | 164612 | 232105 | 224028 | 1.41x | 1.36x |
+| math: parents visited | 197746 | 257427 | 249076 | 1.30x | 1.26x |
+| math: hash operations | 577506 | 482099 | 472284 | 0.83x | 0.82x |
+| math: facts re-made | 56869 | 64448 | 63765 | 1.13x | 1.12x |
+| lambda: parents visited | 119466 | 123743 | 117374 | 1.04x | 0.98x |
+| lambda: hash operations | 236267 | 241400 | 230339 | 1.02x | 0.97x |
+| lambda: facts re-made | 56277 | 60544 | 59179 | 1.08x | 1.05x |
+
+Unions, congruences, the node-list walk and every term's iterations and sizes are #136's to the
+count. The drop took back 10% of the visits on prop, 3% on math and 5% on lambda, and 2 to 3%
+of the facts re-made: less than the 7 to 12% the duplicates were charged with, since an entry
+listed twice under one child (a node with the same child in two positions) is queued twice
+whatever is dropped, and the counterfactual of the run above counted such an entry once. The
+profile is as after #136: the rebuild 22%, 9% and 18% of the samples (prop, math, lambda), the
+re-make of the form and the end pass the largest frames, 300 to 500 bytes per visit.
+
 ## How it is measured
 
 egg's side is a patch to the cached checkout (`dev/fuzz/probe.patch` on the probe branch,
