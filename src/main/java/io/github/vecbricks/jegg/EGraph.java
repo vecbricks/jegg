@@ -44,7 +44,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p><b>Order is fixed.</b> Ids are assigned by insertion order and a class's nodes and parents
  * are kept in insertion order, so everything the graph exposes is a function of the sequence of
- * calls that built it; the hashcons is a {@link HashMap}, but nothing iterates over it.
+ * calls that built it; the hashcons is a table of its own ({@code Hashcons}, open addressing,
+ * ids unboxed), and nothing iterates over it.
  *
  * <p><b>Threads.</b> An e-graph is confined to one thread at a time: nothing in it is
  * synchronized, so another thread may use it only after a handover that makes its writes visible
@@ -64,15 +65,14 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
 
   private final Analysis<L, D> analysis;
   private final UnionFind unionFind = new UnionFind();
-  private final Map<L, Integer> hashcons = new HashMap<>();
+  private final Hashcons<L> hashcons = new Hashcons<>();
   // Nodes retainNodes dropped from their class, with the class: egg leaves such entries in its
   // memo, so adding a dropped node again finds its class and changes nothing, which is what
   // lets a run whose rules keep re-making folded forms saturate. Kept apart from the hashcons
   // so that it still holds exactly the graph's nodes.
-  private final Map<L, Integer> pruned = new HashMap<>();
-  // What a lookup answers for a node the graph does not hold; ids are never negative.
+  private final Hashcons<L> pruned = new Hashcons<>();
   /** What {@link #lookupOrMissing} answers for a node the graph does not hold: no class has it. */
-  static final int MISSING = -1;
+  static final int MISSING = Hashcons.MISSING;
   // Indexed by id; an entry is null once its id is no longer a root.
   private final List<EClass<L, D>> classes = new ArrayList<>();
   // Each distinct head key, numbered as it is first met: a node's head ordinal, kept by its
@@ -231,11 +231,11 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
 
   /** The class of a canonical node, from the hashcons or the pruned memory, or MISSING. */
   private int idOf(L canonical) {
-    Integer id = hashcons.get(canonical);
-    if (id == null && !pruned.isEmpty()) {
+    int id = hashcons.get(canonical);
+    if (id == MISSING && !pruned.isEmpty()) {
       id = pruned.get(canonical);
     }
-    return id == null ? MISSING : unionFind.find(id);
+    return id == MISSING ? MISSING : unionFind.find(id);
   }
 
   /**
@@ -252,8 +252,8 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * the matcher's lookup of a ground leaf, which egg's compiler scans for rather than looks up.
    */
   int lookupLive(L canonical) {
-    Integer id = hashcons.get(canonical);
-    return id == null ? MISSING : unionFind.find(id);
+    int id = hashcons.get(canonical);
+    return id == MISSING ? MISSING : unionFind.find(id);
   }
 
   /**
@@ -656,8 +656,8 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       // a live node, congruent with the dropped one, that the rebuild merges in; its key stays.
       L canonical = canonicalize(node);
       if (nodes.stream().noneMatch(n -> canonicalize(n).equals(canonical))) {
-        Integer keyed = hashcons.get(canonical);
-        if (keyed != null && unionFind.find(keyed) == c.id()) {
+        int keyed = hashcons.get(canonical);
+        if (keyed != MISSING && unionFind.find(keyed) == c.id()) {
           hashcons.remove(canonical);
         }
         pruned.put(canonical, c.id());
@@ -750,7 +750,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       // pruned memory can hold a form retainNodes recorded between a merge and this rebuild,
       // which no entry carries: swept, over the pruned entries alone.
       if (!pruned.isEmpty()) {
-        pruned.keySet().removeIf(node -> !isCanonical(node));
+        pruned.removeIf(node -> !isCanonical(node));
       }
     }
     return repaired;
@@ -832,7 +832,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     // The class the form belongs to if it is some other class's node already, found as the
     // entry is re-keyed: through the hashcons or the pruned memory, since a pruned node and a
     // live one can be made congruent either way (docs/skills/prunings-leftovers-carry-weight.md).
-    Integer elsewhere;
+    int elsewhere;
     if (isPruned(canonical, root)) {
       probe.prunedVisits++;
       // A node dropped from its class by retainNodes: re-keyed where it is remembered, so
@@ -842,14 +842,14 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       // under an older form, from before a child's class was merged away, kept its key past
       // the prune. It goes only if it names this class; one that names another is a live
       // node's.
-      Integer keyed = hashcons.get(old);
-      if (keyed != null && unionFind.find(keyed) == root) {
+      int keyed = hashcons.get(old);
+      if (keyed != MISSING && unionFind.find(keyed) == root) {
         hashcons.remove(old);
         probe.hashconsRemoves++;
       }
       pruned.remove(old);
       elsewhere = hashcons.get(canonical);
-      if (elsewhere != null) {
+      if (elsewhere != MISSING) {
         // A live node of another class has the form: it stands for the dropped one once the
         // two classes are merged below, and the memory lets it go.
         pruned.remove(canonical);
@@ -866,8 +866,8 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
       probe.hashconsPuts++;
       // A live node that takes a pruned node's form stands for it from now on.
       if (!pruned.isEmpty()) {
-        Integer remembered = pruned.remove(canonical);
-        if (elsewhere == null) {
+        int remembered = pruned.remove(canonical);
+        if (elsewhere == MISSING) {
           elsewhere = remembered;
         }
       }
@@ -875,7 +875,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     // The entry is the one in the node's other children's lists too: all of them now name the
     // form the hashcons holds.
     entry.rekey(canonical, root);
-    if (elsewhere != null && unionFind.find(elsewhere) != root) {
+    if (elsewhere != MISSING && unionFind.find(elsewhere) != root) {
       long mergesBefore = probe.merges;
       int joined = merge(elsewhere, root);
       if (probe.merges > mergesBefore) {
@@ -934,10 +934,10 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
           throw new IllegalStateException("class " + eclass.id() + " holds a non-canonical node "
               + node);
         }
-        Integer mapped = hashcons.get(node);
-        if (mapped == null || unionFind.find(mapped) != eclass.id()) {
+        int mapped = hashcons.get(node);
+        if (mapped == MISSING || unionFind.find(mapped) != eclass.id()) {
           throw new IllegalStateException("node " + node + " of class " + eclass.id()
-              + " maps to " + (mapped == null ? "nothing" : unionFind.find(mapped)));
+              + " maps to " + (mapped == MISSING ? "nothing" : unionFind.find(mapped)));
         }
       }
     }
