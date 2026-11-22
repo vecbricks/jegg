@@ -219,7 +219,7 @@ class HashconsTest {
     }
     assertTrue(m.size() > 1000, "enough nodes to mean something: " + m.size());
     // Under 0.5 at this load with a hash that spread the operators; the records' hashCode is
-    // over the children alone, so the operators over one pair of children share a hash (#144),
+    // over the children alone, so the operators over one pair of children share a hash (#145),
     // and the table reads about 1.06. The bound guards the mix, not the keys.
     double displacement = m.meanDisplacement();
     assertTrue(displacement < 1.5, m.size() + " nodes in " + m.capacity()
