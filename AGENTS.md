@@ -57,8 +57,10 @@ a new issue, not a paragraph in the PR. Commit messages and the PR's last sectio
 
 - **Commit or stage before any destructive step** - deleting, overwriting, regenerating a file,
   resetting a branch. A results file that took half an hour to produce is work.
-- **Timings run in GitHub Actions** (`.github/workflows/timing.yml`, `dev/timing.sh`: head against
-  base, interleaved, the runner's own range measured; `benchmarks/README.md`). The owner's machine
+- **Timings run in GitHub Actions, on a named host** (`.github/workflows/timing.yml`,
+  `dev/timing.sh`: head against base, interleaved, the runner's own range measured;
+  `dev/dispatch.sh --host` lands the run on one CPU of `dev/host.sh`'s table, since a number
+  compares only with one from the same host; `benchmarks/README.md`). The owner's machine
   is not used for a benchmark or a timing unless the owner offers it for that run, pinned, from a
   clean commit; never on a load check of your own. Ask first whether a regeneration is needed at
   all: a committed results file that names a commit in the branch's history already satisfies

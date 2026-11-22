@@ -25,6 +25,12 @@ on:
       rounds:
         description: rounds of the comparison, each side once per round
         default: "5"
+      host:
+        description: >-
+          the named host (dev/host.sh) the compare job must land on; any skips the check
+        type: choice
+        options: [any, epyc7763, epyc9v74, epyc9v45, xeon6975p]
+        default: any
 
 permissions:
   contents: read
@@ -88,6 +94,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
+      # A timing compares only with a timing on the same host (#152): a run that drew another
+      # CPU fails here, before anything is built, and dev/dispatch.sh tries again.
+      - name: Check the runner's CPU
+        run: |
+          echo "CPU: $(dev/host.sh --cpu)"
+          if [ "${{ inputs.host }}" != any ]; then
+            dev/host.sh --expect "${{ inputs.host }}"
+          fi
       - uses: actions/setup-java@v6
         with:
           distribution: zulu
@@ -105,7 +119,7 @@ jobs:
         if: always()
         run: |
           {
-            echo '# jegg against egg: `${{ inputs.ref }}`'
+            echo '# jegg against egg: `${{ inputs.ref }}` on `${{ inputs.host }}`'
             echo
             echo '```'
             cat compare/provenance.txt
