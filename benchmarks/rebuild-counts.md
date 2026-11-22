@@ -1,7 +1,9 @@
 # The rebuild against egg: counts and a profile (#134)
 
-The run before #136 first, as it was committed; the section "After #136" has the same counts
-and the phases with the fix in, and the predictions' scores are on PR #141.
+The run before #136 first, as it was committed; "After #136" has the same counts and the phases
+with the fix in (the scores are on PR #141); "After #142" the counts after the drop of the
+duplicate entries (PR #143, parked); "After #138" the counts and the profile with a hash table
+of jegg's own (PR #144, parked).
 
 The run of `dev/probe.sh` by the Fuzz workflow's `probe` job,
 [run 45014765355](https://github.com/vecbricks/jegg/actions/runs/45014765355), artifact
@@ -126,6 +128,85 @@ What the fix did to the counts and did not:
   test's analysis (`TreeMap` sets in its `join` and `make`), not the e-graph.
 
 The run's `summary.md` with its quintile tables and profiles is in the artifact.
+
+## After #142
+
+#142 drops the entry whose re-key found another class, so a congruence leaves one entry per
+node in the lists. The probe with it merged into `rebuild-probe` (82eed0c),
+[run 45026085654](https://github.com/vecbricks/jegg/actions/runs/45026085654), artifact
+`probe-12`, an AMD EPYC 9V45; its fuzz job and the branch's own
+([45026043144](https://github.com/vecbricks/jegg/actions/runs/45026043144)) have the buckets
+above and 0 diverged. The Timing workflow, #142 against main,
+[run 45026045884](https://github.com/vecbricks/jegg/actions/runs/45026045884), `timing-7`:
+prop -1.0%, math -0.7%, lambda -6.2%, the projection +23.6%, all within noise.
+
+The `SAME` bucket, summed; the ratios are jegg over egg, after #136 and after #142:
+
+| what | egg | #136 | #142 | #136 | #142 |
+|---|---|---|---|---|---|
+| prop: parents visited | 938510 | 1701371 | 1529856 | 1.81x | 1.63x |
+| prop: hash operations | 2848396 | 3126163 | 2923193 | 1.10x | 1.03x |
+| prop: facts re-made | 164612 | 232105 | 224028 | 1.41x | 1.36x |
+| math: parents visited | 197746 | 257427 | 249076 | 1.30x | 1.26x |
+| math: hash operations | 577506 | 482099 | 472284 | 0.83x | 0.82x |
+| math: facts re-made | 56869 | 64448 | 63765 | 1.13x | 1.12x |
+| lambda: parents visited | 119466 | 123743 | 117374 | 1.04x | 0.98x |
+| lambda: hash operations | 236267 | 241400 | 230339 | 1.02x | 0.97x |
+| lambda: facts re-made | 56277 | 60544 | 59179 | 1.08x | 1.05x |
+
+Unions, congruences and the node-list walk are #136's to the count, and so are every term's
+iterations, sizes and bucket (the two runs' `*-counts.jsonl` compared term by term). The drop
+took back 10% of the visits on prop, 3% on math and 5% on lambda, and 1 to 3.5% of the facts
+re-made: less than the 7 to 12% the duplicates were charged with. The rest is not accounted
+for; two candidates, not counted: an entry listed twice under one child (a node with the same
+child in two positions) is queued twice whatever is dropped, and two entries of one class that
+take one form drop nothing, since a re-key that finds the entry's own class is no congruence;
+the old repair's map removed both. The rebuild is 22%, 9% and 18% of the execution samples
+(prop, math, lambda) on this run's CPU, an EPYC 9V45, against 16%, 7% and 13% on #136's EPYC
+7763; the shares compare only within a run. 300 to 500 bytes per visit.
+
+## After #138
+
+#138 put the hashcons and the pruned memory on a table of jegg's own (`Hashcons`: open
+addressing, cached hashes, unboxed ids). The probe with it merged into `rebuild-probe`
+(88dad38), [run 45028875122](https://github.com/vecbricks/jegg/actions/runs/45028875122),
+artifact `probe-14`, an AMD EPYC 9V45; the fuzz on the branch
+([45028811456](https://github.com/vecbricks/jegg/actions/runs/45028811456)) has the buckets
+above and 0 diverged, and every counter of every term is #136's (the two runs' `*-counts.jsonl`
+compared term by term). The Timing workflow, #138 against
+main, [run 45028813991](https://github.com/vecbricks/jegg/actions/runs/45028813991), `timing-8`,
+an EPYC 9V74: prop -0.6%, math +0.5%, lambda +4.3%, the projection +11.4%, all within noise.
+
+The share of the execution samples in the hashcons, by `dev/jfr_callers.py` over the probe's
+profiles (a map, hash or equals frame on top and one of `EGraph`'s hashcons readers in the
+stack), before (`probe-9`) and after (`probe-14`):
+
+| | prop before | after | math before | after | lambda before | after |
+|---|---|---|---|---|---|---|
+| in the hashcons | 21.9% | 22.2% | 17.7% | 20.1% | 8.2% | 8.3% |
+| of which under `idOf` itself | 7.8% | 6.0% | 8.5% | 7.7% | 3.2% | 4.2% |
+| of which under the records' `equals` and `hashCode` | 8.6% | 11.3% | 6.9% | 9.4% | 2.0% | 1.6% |
+| the map's own frame, self | `HashMap.getNode` 9.6% | `Hashcons.get` 6.1% | 9.6% | 8.0% | 4.3% | 4.3% |
+
+The map's frame and the records' frames move against each other and their sum stays: about
+15.5% before and 14.9% after on prop, 15.0% and 15.5% on math, on two CPU types. (`getNode` was
+the top self frame of prop's run before and third on math's; `get` is fourth on both after.)
+Where the samples sit: nearly all in the apply phase, the adds of the rules' right-hand sides
+through `Matcher.instantiate`, which the probe's own "Phases by samples" line files under
+search (#146); on prop 1,453 of the 1,829 hashcons samples before and 1,407 of 1,845 after are
+the apply's, the rebuild's 332 and 402, the search's 44 and 35.
+
+Bytes per parent visited under the rebuild: 276, 335 and 445 before; 275, 305 and 506 after.
+`Integer` left the rebuild's allocation (4% of it before); `HashMap$Node` did not, since it is
+`dedupNodes`'s set (#139), not the hashcons's.
+
+What it says: the table is not where the lookups' time goes. A lookup's cost is the key's:
+its `hashCode` over the children, made at every call, and the `equals` chain of the record
+(`Objects.equals`, `IntList.equals`, `Arrays.equals`) once per hit and once per key sharing
+the hash, which every operator over one pair of children does (#145, measured there at a mean
+displacement of 1.06 against 0.58 with the operator in the hash). `HashMap.getNode` was already
+as cheap as the table's probe. The change buys memory (no entry object and no boxed id per
+node) and not time.
 
 ## How it is measured
 
@@ -274,6 +355,9 @@ rebuild); jegg parents visited minus (hashcons puts + pruned visits) = 0 (expect
 38 runs; 8254 execution samples, 2422 under `EGraph.rebuild`. Phases by samples: {apply=467,
 other=70, rebuild=2422, search=5295}.
 
+The phase line files the apply's adds (through `Matcher.instantiate`) under search (#146); re-filed,
+the samples read prop apply 44%, search 39%, rebuild 16%.
+
 Self frames under the rebuild:
 
 | frame | samples | of rebuild |
@@ -345,6 +429,9 @@ parents visited: 158 bytes per parent visited.
 62 runs; 8731 execution samples, 1801 under `EGraph.rebuild`. Phases by samples: {apply=442,
 other=163, rebuild=1801, search=6325}.
 
+The phase line files the apply's adds (through `Matcher.instantiate`) under search (#146); re-filed,
+the samples read math apply 41%, search 50%, rebuild 7%.
+
 Self frames under the rebuild:
 
 | frame | samples | of rebuild |
@@ -415,6 +502,9 @@ parents visited: 178 bytes per parent visited.
 
 136 runs; 8405 execution samples, 2340 under `EGraph.rebuild`. Phases by samples: {apply=368,
 other=177, rebuild=2340, search=5520}.
+
+The phase line files the apply's adds (through `Matcher.instantiate`) under search (#146); re-filed,
+the samples read lambda apply 18%, search 67%, rebuild 13%.
 
 Self frames under the rebuild:
 
