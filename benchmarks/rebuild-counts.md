@@ -72,11 +72,16 @@ The `SAME` bucket, summed; before is the run above, after the fix's run:
 | lambda: facts re-made | 56277 | 53518 | 60544 | 0.95x | 1.08x |
 
 Unions, congruences and modify calls are unchanged to the count on prop (2068839 merges, 442310
-congruences, before and after) and on lambda; on math, where constant folding prunes and merges
-inside the rebuild, 22 of the 1,000 terms differ by a few merges (over `SAME`, 396207 before and
-396218 after, in 5 terms), the congruences now coming in queue order and `modify` meeting the
-classes in another state; every term's iterations and sizes agree. The fix changes what the
-rebuild visits, not what it concludes.
+congruences, before and after) and on lambda. On math 22 of the 1,000 terms differ in merges
+(six in `SAME`, 396207 before and 396218 after; the largest difference, term 638 in the
+node-limit bucket, +230), and every term's iterations, sizes and bucket agree. Term 569 replayed
+match by match on both sides says why: `retainNodes` on main removed the canonical form's key
+of a node it dropped even when that key was another class's live node (the dropped `(d x 9)`
+with 9 merged into the class of 0, the key `(d x 0)` of a live class made a moment before), so
+an `add` of that form found the dropped node's class through the pruned memory; the fix keeps
+the live key, the `add` finds the live class, the rule builds its sum over it, and the rebuild
+merges the two by congruence, one union more. egg's memo keeps the live key too. The fix
+changes what the rebuild visits, not what it concludes.
 Per term over `SAME`, jegg's visits over egg's: prop median 1.12x, p90 1.94x (before 7.75x and
 30.03x); math 1.06x and 1.31x (before 8.84x and 19.95x). Both identities hold.
 
