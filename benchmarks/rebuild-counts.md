@@ -127,6 +127,49 @@ What the fix did to the counts and did not:
 
 The run's `summary.md` with its quintile tables and profiles is in the artifact.
 
+## After #138
+
+#138 put the hashcons and the pruned memory on a table of jegg's own (`Hashcons`: open
+addressing, cached hashes, unboxed ids). The probe with it merged into `rebuild-probe`
+(88dad38), [run 45028875122](https://github.com/vecbricks/jegg/actions/runs/45028875122),
+artifact `probe-14`, an AMD EPYC 9V45; the fuzz on the branch
+([45028811456](https://github.com/vecbricks/jegg/actions/runs/45028811456)) has the buckets
+above and 0 diverged, and every counter of every term is #136's (the two runs' `*-counts.jsonl`
+compared term by term). The Timing workflow, #138 against
+main, [run 45028813991](https://github.com/vecbricks/jegg/actions/runs/45028813991), `timing-8`,
+an EPYC 9V74: prop -0.6%, math +0.5%, lambda +4.3%, the projection +11.4%, all within noise.
+
+The share of the execution samples in the hashcons, by `dev/jfr_callers.py` over the probe's
+profiles (a map, hash or equals frame on top and one of `EGraph`'s hashcons readers in the
+stack), before (`probe-9`) and after (`probe-14`):
+
+| | prop before | after | math before | after | lambda before | after |
+|---|---|---|---|---|---|---|
+| in the hashcons | 21.9% | 22.2% | 17.7% | 20.1% | 8.2% | 8.3% |
+| of which under `idOf` itself | 7.8% | 6.0% | 8.5% | 7.7% | 3.2% | 4.2% |
+| of which under the records' `equals` and `hashCode` | 8.6% | 11.3% | 6.9% | 9.4% | 2.0% | 1.6% |
+| the map's own frame, self | `HashMap.getNode` 9.6% | `Hashcons.get` 6.1% | 9.6% | 8.0% | 4.3% | 4.3% |
+
+The map's frame and the records' frames move against each other and their sum stays: about
+15.5% before and 14.9% after on prop, 15.0% and 15.5% on math, on two CPU types. (`getNode` was
+the top self frame of prop's run before and third on math's; `get` is fourth on both after.)
+Where the samples sit: nearly all in the apply phase, the adds of the rules' right-hand sides
+through `Matcher.instantiate`, which the probe's own "Phases by samples" line files under
+search (#146); on prop 1,453 of the 1,829 hashcons samples before and 1,407 of 1,845 after are
+the apply's, the rebuild's 332 and 402, the search's 44 and 35.
+
+Bytes per parent visited under the rebuild: 276, 335 and 445 before; 275, 305 and 506 after.
+`Integer` left the rebuild's allocation (4% of it before); `HashMap$Node` did not, since it is
+`dedupNodes`'s set (#139), not the hashcons's.
+
+What it says: the table is not where the lookups' time goes. A lookup's cost is the key's:
+its `hashCode` over the children, made at every call, and the `equals` chain of the record
+(`Objects.equals`, `IntList.equals`, `Arrays.equals`) once per hit and once per key sharing
+the hash, which every operator over one pair of children does (#145, measured there at a mean
+displacement of 1.06 against 0.58 with the operator in the hash). `HashMap.getNode` was already
+as cheap as the table's probe. The change buys memory (no entry object and no boxed id per
+node) and not time.
+
 ## How it is measured
 
 egg's side is a patch to the cached checkout (`dev/fuzz/probe.patch` on the probe branch,
