@@ -37,19 +37,16 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
    * A parent entry: an e-node that has the class as a child, and the class it was added to. The
    * entry made when the node was added is shared by the lists of all its children, and
    * {@code rebuild} re-keys it in place when a child's class is merged, so every list and the
-   * hashcons name the node by one form. When a merge makes two nodes one, the entry whose re-key
-   * found the other's class is dropped: it is skipped from then on and left out of every list a
-   * later merge builds, while the other, which holds the key and sits in the same lists, stands
-   * for the node. Two entries are equal when they name the same node and class; since a rebuild
-   * changes both in place, an entry is not a stable key for a hash table while the graph changes.
+   * hashcons name the node by one form. When a merge makes two nodes one, both entries stay in
+   * their lists, as egg's do, and name the one form and class from then on. Two entries are
+   * equal when they name the same node and class; since a rebuild changes both in place, an
+   * entry is not a stable key for a hash table while the graph changes.
    *
    * @param <L> the language
    */
   static final class Parent<L> {
     private L node;
     private int classId;
-    // Set when a re-key found the node under another entry: this one is dead from then on.
-    private boolean dropped;
 
     /**
      * A parent entry.
@@ -83,14 +80,6 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
     void rekey(L node, int classId) {
       this.node = node;
       this.classId = classId;
-    }
-
-    boolean isDropped() {
-      return dropped;
-    }
-
-    void drop() {
-      dropped = true;
     }
 
     @Override
@@ -218,27 +207,12 @@ public final class EClass<L extends Language<L>, D extends @Nullable Object> {
   }
 
   /**
-   * The parent entries that stand for a node, in insertion order: a read-only view of the live
-   * list when none of its entries was dropped, else a copy without the dropped ones.
+   * The parent entries, in insertion order, a read-only view of the live list, as above.
    *
    * @return the e-nodes having this class as a child, each with the class it was added to
    */
   List<Parent<L>> parents() {
-    for (Parent<L> p : parents) {
-      if (p.isDropped()) {
-        return parents.stream().filter(e -> !e.isDropped()).toList();
-      }
-    }
     return Collections.unmodifiableList(parents);
-  }
-
-  /** Appends the entries of this class's list that were not dropped to {@code target}. */
-  void addLiveParentsTo(List<Parent<L>> target) {
-    for (Parent<L> p : parents) {
-      if (!p.isDropped()) {
-        target.add(p);
-      }
-    }
   }
 
   /**
