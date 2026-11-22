@@ -593,10 +593,10 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     // Where the joined fact grew past what a side had, that side's parents are re-made, since
     // their facts were made from the smaller one (paper Figure 9).
     if (!Objects.equals(joined, kept.data())) {
-      analysisPending.addAll(kept.mutableParents());
+      kept.addLiveParentsTo(analysisPending);
     }
     if (!Objects.equals(joined, gone.data())) {
-      analysisPending.addAll(gone.mutableParents());
+      gone.addLiveParentsTo(analysisPending);
     }
     for (L node : gone.readNodes()) {
       index(node, root);
@@ -606,9 +606,10 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
     kept.setMergedNodes(true);
     // The absorbed side's parents are the nodes whose form the merge changed: queued, in their
     // order, and appended to the root's list, where they stay (the list is never taken out).
-    // The kept side's parents keep their form and their keys.
-    pending.addAll(gone.mutableParents());
-    kept.mutableParents().addAll(gone.mutableParents());
+    // The kept side's parents keep their form and their keys. An entry a congruence dropped is
+    // left behind here: this is where a list is rid of its dead.
+    gone.addLiveParentsTo(pending);
+    gone.addLiveParentsTo(kept.mutableParents());
     kept.setData(joined);
     if (gone.hasPruned()) {
       kept.markPruned();
@@ -711,7 +712,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
           D joined = analysis.join(eclass.data(), made);
           if (!Objects.equals(joined, eclass.data())) {
             eclass.setData(joined);
-            analysisPending.addAll(eclass.mutableParents());
+            eclass.addLiveParentsTo(analysisPending);
             modifyPending.add(id);
           }
         }
@@ -815,11 +816,15 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
    * the form is another class's node already, the two classes are congruent and are merged,
    * which queues that merge's parents for a later turn of the same loop. An entry is shared by
    * the lists of all its children and may be queued twice; the second visit finds its form
-   * current and its key its own. Two entries one congruence joined both stay in their lists,
-   * as egg's do: both have the same children, so the same merges queue both, and the later
-   * one's put returns the first one's class.
+   * current and its key its own. Of two entries a congruence joins, the one whose re-key found
+   * the other's class is dropped: the other holds the key, so it is in canonical form, and has
+   * the same children, so it is in every list the dropped one is in. The dropped one is skipped
+   * if it is queued again and left out of the lists later merges build.
    */
   private void repair(EClass.Parent<L> entry) {
+    if (entry.isDropped()) {
+      return;
+    }
     probe.repairs++;
     probe.parentsVisited++;
     L old = entry.node();
@@ -882,6 +887,7 @@ public final class EGraph<L extends Language<L>, D extends @Nullable Object> {
         probe.congruenceMerges++;
       }
       entry.rekey(canonical, joined);
+      entry.drop();
     }
   }
 

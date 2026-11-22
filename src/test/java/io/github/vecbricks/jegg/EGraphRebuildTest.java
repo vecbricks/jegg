@@ -11,6 +11,7 @@ package io.github.vecbricks.jegg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -304,7 +305,8 @@ class EGraphRebuildTest {
   void theCongruentPartnerMayBeAnEntryTheRebuildNeverVisits() {
     // x + z was added before y + z. Merging y into x queues y + z alone, and its re-key under
     // x + z finds the class of x + z, whose entry sits in x's list unvisited: congruence through
-    // the hashcons, as egg's process_unions finds it. Both entries stay in z's list.
+    // the hashcons, as egg's process_unions finds it. The entry of y + z is dropped, and the
+    // lists read one entry for the sum.
     EGraph<Toy, Void> g = EGraph.withoutAnalysis();
     int x = g.add(new Toy.Var("x"));
     int y = g.add(new Toy.Var("y"));
@@ -318,8 +320,33 @@ class EGraphRebuildTest {
     assertEquals(3, g.numClasses());
     assertEquals(4, g.numNodes(), "x, y, z and one sum");
     Toy sum = new Toy.Add(IntList.of(x, z));
-    assertEquals(List.of(new EClass.Parent<>(sum, xz), new EClass.Parent<>(sum, xz)),
-        g.classOf(z).parents(), "both entries, now one node and one class");
+    assertEquals(List.of(new EClass.Parent<>(sum, xz)), g.classOf(z).parents());
+    assertEquals(List.of(new EClass.Parent<>(sum, xz)), g.classOf(x).parents());
+    assertSame(g.classOf(z).parents().get(0), g.classOf(x).parents().get(0),
+        "the one entry left is the same object in both lists");
+  }
+
+  @Test
+  void aDroppedEntryIsNotQueuedAgainAndLeavesTheListsAMergeBuilds() {
+    // After x + z and y + z are one node (above), merging z into w queues z's list: the live
+    // entry alone is repaired, the dropped one is skipped and is not carried into w's list.
+    EGraph<Toy, Void> g = EGraph.withoutAnalysis();
+    int w = g.add(new Toy.Var("w"));
+    int x = g.add(new Toy.Var("x"));
+    int y = g.add(new Toy.Var("y"));
+    int z = g.add(new Toy.Var("z"));
+    int xz = g.add(new Toy.Add(IntList.of(x, z)));
+    g.add(new Toy.Add(IntList.of(y, z)));
+    g.merge(x, y);
+    assertEquals(1, g.rebuild());
+    g.merge(z, w);
+    assertEquals(1, g.rebuild(), "the dropped entry is skipped, not repaired");
+    g.checkInvariants();
+    Toy sum = new Toy.Add(IntList.of(x, w));
+    assertEquals(List.of(new EClass.Parent<>(sum, xz)), g.classOf(w).parents());
+    assertEquals(1, g.classOf(w).mutableParents().size(), "w's list was built without it");
+    assertEquals(5, g.numNodes());
+    assertEquals(OptionalInt.of(xz), g.lookup(new Toy.Add(IntList.of(y, z))));
   }
 
   @Test
