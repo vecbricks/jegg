@@ -75,7 +75,7 @@ jobs:
             echo
             cat timing/summary.md
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: timing-${{ github.run_number }}

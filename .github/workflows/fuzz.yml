@@ -48,7 +48,7 @@ jobs:
           distribution: zulu
           java-version: 25
           cache: maven
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/jegg/egg
           key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs') }}-${{ runner.os }}
@@ -72,7 +72,7 @@ jobs:
             grep -h '^FUZZ' prop.out math.out || echo 'no FUZZ summary line: see the logs'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: fuzz-${{ github.run_number }}
@@ -107,7 +107,7 @@ jobs:
           distribution: zulu
           java-version: 25
           cache: maven
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/jegg/egg
           key: egg-73975c9-${{ hashFiles('dev/fuzz/*.rs') }}-${{ runner.os }}
@@ -127,7 +127,7 @@ jobs:
             echo
             cat compare/summary.md
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: compare-${{ github.run_number }}
